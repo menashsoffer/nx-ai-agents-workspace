@@ -1,0 +1,11 @@
+packages:
+  - 'apps/*'
+  - 'libs/*'
+  - 'libs/*/*'
+  - 'tools/*'
+
+autoInstallPeers: true
+onlyBuiltDependencies:
+  - '@swc/core'
+  - esbuild
+  - nx
