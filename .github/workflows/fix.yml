@@ -1,0 +1,260 @@
+name: Pipeline · Fix
+
+# Review feedback -> bounded automated fix loop.
+#   adapter (deterministic): collect actionable review comments newer than
+#     the <!-- pipeline-state --> comment, dedupe by comment id, then
+#     no fix-loop label -> fix-loop:1 + fix; fix-loop:1 -> fix-loop:2 + fix;
+#     fix-loop:2 -> stage:needs-attention, stop. No new comments -> no-op.
+#   fix (agent, Gemini, read-only token): edit the working tree only.
+#   push (deterministic): check the patch, commit, push, reply to threads.
+on:
+  pull_request_review:
+    types: [submitted]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: number
+
+permissions: {}
+
+jobs:
+  adapter:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Shared with approval.yml: both read-modify-write the state comment.
+    concurrency:
+      group: pipeline-pr-${{ github.event.pull_request.number || inputs.pr }}-state
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    outputs:
+      action: ${{ steps.adapter.outputs.action }}
+      loop: ${{ steps.adapter.outputs.loop }}
+      pr: ${{ steps.pr.outputs.pr }}
+      head_ref: ${{ steps.pr.outputs.head_ref }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+          permission-issues: write
+
+      - id: pr
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ github.event.pull_request.number || inputs.pr }}
+        run: |
+          gh pr view "$N" --repo "$GITHUB_REPOSITORY" --json number,state,headRefName,headRefOid,isCrossRepository > pr.json
+          if [[ "$(jq -r .state pr.json)" != "OPEN" || "$(jq -r .isCrossRepository pr.json)" == "true" ]]; then
+            echo "::notice::PR is closed or from a fork; skipping."; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          { echo "pr=$N"; echo "head_ref=$(jq -r .headRefName pr.json)"; echo "head_sha=$(jq -r .headRefOid pr.json)"; } >> "$GITHUB_OUTPUT"
+
+      - id: adapter
+        if: ${{ steps.pr.outputs.skip != 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: node .github/scripts/pipeline.mjs fix-adapter "${{ steps.pr.outputs.pr }}" "$RUNNER_TEMP/items.json"
+
+      - if: ${{ steps.adapter.outputs.action == 'fix' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fix-items
+          path: ${{ runner.temp }}/items.json
+          retention-days: 7
+
+  fix:
+    needs: adapter
+    if: ${{ needs.adapter.outputs.action == 'fix' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: pipeline-pr-${{ needs.adapter.outputs.pr }}-fix
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      summary: ${{ steps.gemini.outputs.summary }}
+      prompt_version: ${{ steps.prompt.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.adapter.outputs.head_sha }}
+          persist-credentials: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: .pipeline/trusted
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
+            .github/prompts
+
+      - uses: ./.pipeline/trusted/.github/actions/setup
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fix-items
+          path: .pipeline
+
+      - name: Collect diff (untrusted data)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr diff "${{ needs.adapter.outputs.pr }}" --repo "$GITHUB_REPOSITORY" > .pipeline/pr.diff
+
+      - id: prompt
+        run: |
+          node .pipeline/trusted/.github/scripts/pipeline.mjs render-prompt \
+            --prompt .pipeline/trusted/.github/prompts/fix.md --output prompt \
+            --context "repository=$GITHUB_REPOSITORY" \
+            --context "pull request=#${{ needs.adapter.outputs.pr }}" \
+            --context "fix loop=${{ needs.adapter.outputs.loop }} of 2" \
+            --data review_items=.pipeline/items.json \
+            --data diff=.pipeline/pr.diff
+
+      - id: gemini
+        uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: ${{ vars.GEMINI_MODEL }}
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          settings: |
+            {
+              "tools": { "core": ["read_file", "read_many_files", "list_directory", "glob", "search_file_content", "write_file", "replace", "run_shell_command(pnpm)"] },
+              "telemetry": { "enabled": false },
+              "privacy": { "usageStatisticsEnabled": false }
+            }
+
+      - name: Package edits as a patch
+        run: |
+          # Undo the Gemini action's own files (settings, commands).
+          git checkout -- .gemini 2>/dev/null || true
+          git clean -fdq -- .gemini
+          mv .pipeline/trusted "$RUNNER_TEMP/trusted"
+          rm -rf .pipeline gemini-artifacts
+          git add -A
+          mkdir -p "$RUNNER_TEMP/out"
+          git diff --cached --binary > "$RUNNER_TEMP/out/fix.patch"
+          test -s "$RUNNER_TEMP/out/fix.patch" || { echo "::error::The fixer made no changes"; exit 1; }
+          node "$RUNNER_TEMP/trusted/.github/scripts/pipeline.mjs" check-patch "$RUNNER_TEMP/out/fix.patch"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fix-patch
+          path: ${{ runner.temp }}/out/fix.patch
+          retention-days: 7
+
+  push:
+    needs: [adapter, fix]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: pipeline-pr-${{ needs.adapter.outputs.pr }}-fix-push
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      # App token so the push re-triggers CI; no `workflows` permission.
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.adapter.outputs.head_ref }}
+          token: ${{ steps.app.outputs.token }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: .pipeline/trusted
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: fix-*
+          path: .pipeline/in
+          merge-multiple: true
+
+      - name: Commit and push
+        id: push
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          HEAD_SHA: ${{ needs.adapter.outputs.head_sha }}
+          HEAD_REF: ${{ needs.adapter.outputs.head_ref }}
+          LOOP: ${{ needs.adapter.outputs.loop }}
+          SUMMARY: ${{ needs.fix.outputs.summary }}
+          VERSION: ${{ needs.fix.outputs.prompt_version }}
+        run: |
+          node .pipeline/trusted/.github/scripts/pipeline.mjs check-patch .pipeline/in/fix.patch
+          if [[ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]]; then
+            echo "::error::Branch moved since the review; not pushing a stale fix."; exit 1
+          fi
+          git apply --index .pipeline/in/fix.patch
+          git config user.name "pipeline-agent"
+          git config user.email "pipeline-agent@users.noreply.github.com"
+          printf 'Address review feedback (fix loop %s)\n\n%s\n\nGenerated by Gemini with prompt fix.md@%s.\n' \
+            "$LOOP" "$(printf '%s' "$SUMMARY" | head -c 4000)" "$VERSION" > msg.txt
+          git commit -F msg.txt
+          git push origin "HEAD:refs/heads/$HEAD_REF"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Reply to review threads
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+        run: node .pipeline/trusted/.github/scripts/pipeline.mjs fix-reply "${{ needs.adapter.outputs.pr }}" "${{ steps.push.outputs.sha }}" .pipeline/in/items.json
+
+  needs-attention:
+    needs: [adapter, fix, push]
+    if: ${{ always() && needs.adapter.outputs.action == 'fix' && (needs.fix.result != 'success' || needs.push.result != 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+          permission-issues: write
+
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.adapter.outputs.pr }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          printf '**Automated fix failed; needs attention.** The fixer made no usable change, its patch was rejected, or the branch moved. Run: %s\n' "$RUN_URL" > body.md
+          node .github/scripts/pipeline.mjs upsert-comment "$N" notice body.md
+          node .github/scripts/pipeline.mjs set-stage "$N" stage:needs-attention

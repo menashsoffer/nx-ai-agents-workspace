@@ -1,0 +1,44 @@
+name: Pipeline · Done
+
+# PR merged -> move the PR card and every issue it closes to "Done" in the
+# Project. (The Project's built-in "Pull request merged" / "Item closed"
+# automations do the same; this keeps it deterministic if they are off.)
+on:
+  pull_request:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  done:
+    if: ${{ github.event.pull_request.merged && vars.PROJECT_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pipeline-pr-${{ github.event.pull_request.number }}-done
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: linked
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/pipeline.mjs linked-issues "${{ github.event.pull_request.number }}"
+
+      - name: Move cards to Done
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PROJECT_URL: ${{ vars.PROJECT_URL }}
+          PR_ID: ${{ steps.linked.outputs.pr_node_id }}
+          ISSUE_IDS: ${{ steps.linked.outputs.issue_node_ids }}
+        run: |
+          node .github/scripts/pipeline.mjs project-status --project-url "$PROJECT_URL" --status Done \
+            --content-id "$PR_ID" --content-id "$ISSUE_IDS"
