@@ -38,7 +38,12 @@ tools/
   security/        `pnpm security`: audit, exceptions, AI-config checks, pinned scanners
   scripts/         one-off repo scripts (template-only; removed by template:init)
 docs/              architecture, conventions, decisions (ADRs); read before big changes
+                   pipeline.md: the issue → PR multi-agent pipeline
 ```
+
+If you are running inside the pipeline (`.github/workflows/`), your prompt
+in `.github/prompts/` is authoritative for your step. Never edit `.github/`,
+`CODEOWNERS`, `.claude/` or `.gemini/` there; such patches are rejected.
 
 ## Commands
 

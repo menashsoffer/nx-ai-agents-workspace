@@ -1,48 +1,63 @@
 name: CI
 
-# Runs on PRs, on demand, and as the first job of every deploy to main.
+# `ci` is the required check for the main ruleset. Deterministic gate in
+# front of every AI step: nothing an agent writes reaches review, preview
+# or a human until this is green. Also reused by deploy.yml.
 on:
   pull_request:
   workflow_dispatch:
   workflow_call:
 
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
 
 jobs:
-  verify:
+  ci:
+    name: ci
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: pipeline-pr-${{ github.event.pull_request.number || github.run_id }}-ci
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-
-      # pnpm comes from "packageManager" (version + integrity hash) via corepack.
-      - run: corepack enable
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       # Fails if TS project references weren't committed after `nx sync`.
-      - run: pnpm nx sync:check
+      - name: Nx sync check
+        run: pnpm nx sync:check
 
-      - run: pnpm verify
+      - name: Format check
+        run: pnpm nx format:check --all
+
+      - name: Unused dependencies
+        run: pnpm exec knip --dependencies
+
+      - name: Lint
+        run: pnpm nx run-many -t lint
+
+      - name: Typecheck
+        run: pnpm nx run-many -t typecheck
+
+      - name: Unit tests
+        run: pnpm nx run-many -t test
+
+      - name: Pipeline script tests
+        run: pnpm test:pipeline
+
+      - name: Build
+        run: pnpm nx run-many -t build
 
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: E2E (site, production build)
+      - name: Playwright (apps/site, production build)
         run: pnpm e2e
 
-      - name: E2E (assembled Pages artifact under a base path)
+      - name: Playwright (assembled Pages artifact under a base path)
         run: pnpm e2e:pages
 
       - if: failure()
@@ -55,19 +70,16 @@ jobs:
   security:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: pipeline-pr-${{ github.event.pull_request.number || github.run_id }}-security-gates
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0 # gitleaks scans the full history
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-
-      - run: corepack enable
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup
 
       - name: Security gates (docs/security.md)
         run: pnpm security

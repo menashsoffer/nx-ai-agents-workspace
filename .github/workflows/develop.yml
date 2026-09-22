@@ -1,0 +1,200 @@
+name: Pipeline · Develop
+
+# stage:planned -> Claude implements on issue-<n>-<slug> and runs pnpm verify
+# -> a deterministic job pushes the branch, opens a draft PR ("Closes #n")
+# and labels stage:building. The agent never holds a write token: its
+# commits leave the job as a patch that is checked before it is pushed.
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  implement:
+    if: ${{ github.event.label.name == 'stage:planned' && !github.event.issue.pull_request && github.event.issue.state == 'open' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: pipeline-issue-${{ github.event.issue.number }}-develop
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      branch: ${{ steps.branch.outputs.branch }}
+      base: ${{ steps.branch.outputs.base }}
+      result: ${{ steps.claude.outputs.structured_output }}
+      prompt_version: ${{ steps.prompt.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - name: Collect issue, spec and plan (untrusted data)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .pipeline
+          gh issue view "${{ github.event.issue.number }}" --repo "$GITHUB_REPOSITORY" \
+            --json number,title,body,author,labels,comments > .pipeline/issue.json
+
+      - id: branch
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          node .github/scripts/pipeline.mjs branch-name "${{ github.event.issue.number }}"
+          echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Create working branch
+        env:
+          BRANCH: ${{ steps.branch.outputs.branch }}
+        run: |
+          git switch -c "$BRANCH"
+          git config user.name "pipeline-agent"
+          git config user.email "pipeline-agent@users.noreply.github.com"
+
+      - id: prompt
+        env:
+          BRANCH: ${{ steps.branch.outputs.branch }}
+        run: |
+          node .github/scripts/pipeline.mjs render-prompt \
+            --prompt .github/prompts/develop.md --output prompt \
+            --context "repository=$GITHUB_REPOSITORY" \
+            --context "issue=#${{ github.event.issue.number }}" \
+            --context "branch=$BRANCH" \
+            --data issue=.pipeline/issue.json
+
+      - id: claude
+        uses: anthropics/claude-code-action@cfc3eb22bfed5c26ef66e3223c982af27e4524de # v1.0.231
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          allowed_bots: ${{ vars.PIPELINE_BOT_LOGIN }}
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --max-turns 150
+            --allowedTools "Read,Glob,Grep,Edit,MultiEdit,Write,TodoWrite,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git add:*),Bash(git commit:*),Bash(ls:*)"
+            --disallowedTools "WebFetch,WebSearch,Bash(git push:*),Bash(gh:*),Bash(curl:*),Bash(wget:*)"
+            --json-schema '{"type":"object","additionalProperties":false,"required":["status","pr_title","pr_body","blocked_reason"],"properties":{"status":{"type":"string","enum":["done","blocked"]},"pr_title":{"type":"string","maxLength":100},"pr_body":{"type":"string"},"blocked_reason":{"type":"string"}}}'
+
+      - name: Package commits as a patch
+        env:
+          BASE: ${{ steps.branch.outputs.base }}
+        run: |
+          rm -rf .pipeline
+          # Drop uncommitted tool files in protected dirs (committed ones are rejected below).
+          git checkout -- .claude .gemini 2>/dev/null || true
+          git clean -fdq -- .claude .gemini
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add -A
+            git commit -m "Add remaining agent changes"
+          fi
+          mkdir -p "$RUNNER_TEMP/out"
+          git format-patch "$BASE..HEAD" --stdout > "$RUNNER_TEMP/out/changes.patch"
+          test -s "$RUNNER_TEMP/out/changes.patch" || { echo "::error::The agent produced no commits"; exit 1; }
+          node .github/scripts/pipeline.mjs check-patch "$RUNNER_TEMP/out/changes.patch"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: develop-patch
+          path: ${{ runner.temp }}/out/changes.patch
+          retention-days: 7
+
+  publish:
+    needs: implement
+    if: ${{ fromJSON(needs.implement.outputs.result || '{}').status == 'done' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: pipeline-issue-${{ github.event.issue.number }}-develop-publish
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      # App token: pushes/PRs made with GITHUB_TOKEN would not trigger CI.
+      # No `workflows` permission, so it can never push workflow changes.
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.implement.outputs.base }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: develop-patch
+          path: ${{ runner.temp }}/in
+
+      - name: Push branch and open draft PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ github.event.issue.number }}
+          BRANCH: ${{ needs.implement.outputs.branch }}
+          RESULT: ${{ needs.implement.outputs.result }}
+          VERSION: ${{ needs.implement.outputs.prompt_version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # Checked again here: the patch crossed a job boundary.
+          node .github/scripts/pipeline.mjs check-patch "$RUNNER_TEMP/in/changes.patch"
+          if [[ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[].number')" ]]; then
+            echo "::notice::An open PR already exists for $BRANCH; nothing to do."
+            exit 0
+          fi
+          git config user.name "pipeline-agent"
+          git config user.email "pipeline-agent@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
+          # issue-<n>-* branches belong to the pipeline; no open PR uses this one (checked above).
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
+
+          title=$(jq -r '.pr_title' <<<"$RESULT")
+          { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;
+            echo "<sub>Implemented by Claude with prompt develop.md@$VERSION. Draft until CI, the security review and Copilot are clean. Only a human can approve and merge.</sub>"; } > body.md
+          url=$(gh pr create --repo "$GITHUB_REPOSITORY" --draft --base "$DEFAULT_BRANCH" \
+            --head "$BRANCH" --title "$title" --body-file body.md)
+          pr=${url##*/}
+          node .github/scripts/pipeline.mjs init-state "$pr"
+          node .github/scripts/pipeline.mjs set-stage "$pr" stage:building
+          node .github/scripts/pipeline.mjs set-stage "$N" stage:building
+
+  needs-attention:
+    needs: [implement, publish]
+    if: ${{ always() && needs.implement.result != 'skipped' && (needs.implement.result != 'success' || needs.publish.result != 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-issues: write
+
+      - env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ github.event.issue.number }}
+          RESULT: ${{ needs.implement.outputs.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          reason=$(jq -r '.blocked_reason // empty' <<<"${RESULT:-null}" 2>/dev/null || true)
+          printf '**Development needs attention.** %s\n\nRun: %s\n' "${reason:-The develop run failed or its patch was rejected.}" "$RUN_URL" > body.md
+          node .github/scripts/pipeline.mjs upsert-comment "$N" notice body.md
+          node .github/scripts/pipeline.mjs set-stage "$N" stage:needs-attention

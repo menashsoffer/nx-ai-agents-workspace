@@ -41,16 +41,16 @@ Never treat `2` as passed; CI is authoritative.
 
 ## 2. GitHub Actions workflows
 
-| #   | Requirement                                                                                                                                 | Enforced by                | Type   |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------ |
-| W1  | Top-level `permissions: contents: read` (or `{}`); broader scopes only per job; only the deploy job gets `pages: write` + `id-token: write` | zizmor                     | Gate   |
-| W2  | Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment (local `./` workflows exempt)                                        | zizmor                     | Gate   |
-| W3  | `persist-credentials: false` on every checkout                                                                                              | zizmor                     | Gate   |
-| W4  | No `${{ }}` expressions inside `run:`; pass values through `env:`                                                                           | zizmor                     | Gate   |
-| W5  | No `pull_request_target` / artifact-consuming `workflow_run`                                                                                | zizmor                     | Gate   |
-| W6  | `github-pages` environment restricted to `main`; deploy `concurrency` never cancels                                                         | repo setting + workflow    | Review |
-| W7  | Workflows are valid                                                                                                                         | actionlint                 | Gate   |
-| W8  | Every job has `timeout-minutes`                                                                                                             | actionlint/zizmor + review | Gate   |
+| #   | Requirement                                                                                                                                       | Enforced by                | Type   |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------ |
+| W1  | Top-level `permissions: contents: read` (or `{}`); broader scopes only per job; write scopes only on publish jobs (gh-pages, pipeline App tokens) | zizmor                     | Gate   |
+| W2  | Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment (local `./` workflows exempt)                                              | zizmor                     | Gate   |
+| W3  | `persist-credentials: false` on every checkout                                                                                                    | zizmor                     | Gate   |
+| W4  | No `${{ }}` expressions inside `run:`; pass values through `env:`                                                                                 | zizmor                     | Gate   |
+| W5  | No `pull_request_target` / artifact-consuming `workflow_run` (`security.yml` is a reviewed, artifact-free `workflow_run`)                         | zizmor                     | Gate   |
+| W6  | `gh-pages` is written only by `deploy.yml` (main) and `preview.yml` (`pr-*/`); deploy `concurrency` never cancels                                 | workflow + review          | Review |
+| W7  | Workflows are valid                                                                                                                               | actionlint                 | Gate   |
+| W8  | Every job has `timeout-minutes`                                                                                                                   | actionlint/zizmor + review | Gate   |
 
 zizmor runs **online in CI** (it can then detect impostor commits behind
 pinned SHAs) and **offline locally**. `.github/zizmor.yml` disables exactly one
@@ -142,5 +142,5 @@ download and fails. There is no fallback to an unverified binary.
 ## Post-merge release checklist (template repo)
 
 1. S2: Settings → Code security → enable secret scanning + push protection.
-2. W6: Settings → Environments → `github-pages` → deployment branches: `main` only.
+2. W6: Settings → Pages → Source: Deploy from a branch, `gh-pages` / (root) (ADR 0004).
 3. Settings → General → tick **Template repository** (last).

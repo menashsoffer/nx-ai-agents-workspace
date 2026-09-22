@@ -1,0 +1,19 @@
+name: Setup workspace
+description: Node from .nvmrc, pnpm from "packageManager" via corepack, frozen install. No dependency cache (cache poisoning, docs/security.md).
+inputs:
+  install:
+    description: Run pnpm install --frozen-lockfile.
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version-file: .nvmrc
+        package-manager-cache: false
+    # pnpm comes from "packageManager" (version + integrity hash) via corepack.
+    - shell: bash
+      run: corepack enable
+    - if: inputs.install == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile

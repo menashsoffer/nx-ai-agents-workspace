@@ -47,9 +47,12 @@ A single GitHub Pages site per repo (`https://<user>.github.io/<repo>/`):
 | ------------- | -------------------------------- |
 | `/`           | `apps/site` production build     |
 | `/storybook/` | `libs/ui` Storybook static build |
+| `/pr-<n>/`    | `apps/site` preview of PR `<n>`  |
 
 `tools/pages` assembles the artifact (`pnpm pages:build`) and refuses a site
 that already contains `storybook/`, source maps, or third-party scripts.
 `apps/pages-e2e` tests that exact artifact under a non-root base path with a
-Pages-like server; `.github/workflows/deploy.yml` deploys it. `sandbox` is
-never deployed.
+Pages-like server. `.github/workflows/deploy.yml` publishes it to the root of
+the `gh-pages` branch, next to the PR previews that `preview.yml` puts under
+`pr-<n>/` (ADR 0004). `sandbox` is never deployed. The issue → PR agent
+pipeline is described in `docs/pipeline.md`.

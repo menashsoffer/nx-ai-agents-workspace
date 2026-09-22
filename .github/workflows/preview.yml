@@ -1,0 +1,126 @@
+name: Pipeline · Preview
+
+# Builds apps/site for the PR and publishes it to the gh-pages branch under
+# pr-<n>/, i.e. https://<owner>.github.io/<repo>/pr-<n>/. Removed on close.
+# The build (PR code) runs without write access; only static files cross
+# into the deploy job.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions: {}
+
+jobs:
+  build:
+    if: ${{ github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: pipeline-pr-${{ github.event.pull_request.number }}-preview-build
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - name: Build site for /<repo>/pr-<n>/
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/pr-${{ github.event.pull_request.number }}/
+        run: pnpm nx run site:build
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: preview
+          path: apps/site/dist
+          retention-days: 3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: pipeline-pr-${{ github.event.pull_request.number }}-preview
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      # Bootstrap: until the scripts exist on the default branch, use the
+      # PR's own copy (same-repo PRs only; agents cannot change .github/).
+      - if: ${{ hashFiles('.github/scripts/gh-pages-publish.sh') == '' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: preview
+          path: preview
+
+      - name: Publish to gh-pages/pr-<n>/
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/gh-pages-publish.sh dir "pr-${{ github.event.pull_request.number }}" preview
+
+      - name: Comment preview URL
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.event.repository.name }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          url="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/$REPO/pr-$N/"
+          printf '**Preview:** %s\n\nBuilt from commit %s. Pages can take a minute to update. Removed when the PR closes.\n' \
+            "$url" "${SHA:0:7}" > body.md
+          node .github/scripts/pipeline.mjs upsert-comment "$N" preview body.md
+
+  cleanup:
+    if: ${{ github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: pipeline-pr-${{ github.event.pull_request.number }}-preview
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      # Bootstrap: until the scripts exist on the default branch, use the
+      # PR's own copy (same-repo PRs only; agents cannot change .github/).
+      - if: ${{ hashFiles('.github/scripts/gh-pages-publish.sh') == '' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - name: Remove gh-pages/pr-<n>/
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/gh-pages-publish.sh remove "pr-${{ github.event.pull_request.number }}"
+
+      - name: Update comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.event.pull_request.number }}
+        run: |
+          printf '**Preview removed** (PR closed).\n' > body.md
+          node .github/scripts/pipeline.mjs upsert-comment "$N" preview body.md
