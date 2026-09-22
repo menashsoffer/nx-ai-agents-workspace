@@ -67,6 +67,8 @@ pnpm storybook              # components on http://localhost:6006 (RTL/LTR toggl
 pnpm nx dev sandbox         # experiments on http://localhost:4201
 pnpm verify                 # everything: sync, format, lint, typecheck, test, build
 pnpm e2e                    # Playwright against the production build
+pnpm e2e:pages              # Playwright against the assembled Pages artifact
+pnpm security               # security gates (docs/security.md)
 
 pnpm new:app <name>         # new app in apps/ (--scope=product for shipped apps)
 pnpm new:lib <name> --type=util|ui|feature
@@ -76,13 +78,13 @@ pnpm new:spike <name>       # new sandbox experiment
 
 ## AI assistants
 
-| Tool           | Reads                                                                                     |
-| -------------- | ----------------------------------------------------------------------------------------- |
-| Claude Code    | `CLAUDE.md` → imports `AGENTS.md`; `.claude/settings.json` (Nx plugin, SessionStart hook) |
-| OpenAI Codex   | `AGENTS.md`; `.codex/config.toml` (Nx MCP)                                                |
-| GitHub Copilot | `AGENTS.md`, `.github/copilot-instructions.md`, `.github/skills/`                         |
-| Gemini CLI     | `AGENTS.md` via `.gemini/settings.json` (`contextFileName`), Nx MCP                       |
-| Grok Build     | `AGENTS.md` (native)                                                                      |
+| Tool           | Reads                                                                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Claude Code    | `CLAUDE.md` → imports `AGENTS.md`; `.claude/settings.json` (narrow allow-list, SessionStart hook; Nx plugin listed but opt-in, see `docs/security.md`) |
+| OpenAI Codex   | `AGENTS.md`; `.codex/config.toml` (Nx MCP via `pnpm exec`)                                                                                             |
+| GitHub Copilot | `AGENTS.md`, `.github/copilot-instructions.md`, `.github/skills/`                                                                                      |
+| Gemini CLI     | `AGENTS.md` via `.gemini/settings.json` (`contextFileName`), Nx MCP via `pnpm exec`                                                                    |
+| Grok Build     | `AGENTS.md` (native)                                                                                                                                   |
 
 Edit rules in **`AGENTS.md` only**; the other files just point to it. Nx
 maintains its own block at the end of `AGENTS.md` and the skills in

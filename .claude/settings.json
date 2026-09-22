@@ -7,9 +7,6 @@
       }
     }
   },
-  "enabledPlugins": {
-    "nx@nx-claude-plugins": true
-  },
   "sandbox": {
     "filesystem": {
       "allowRead": ["/tmp/.nx", "~/.nx"],
@@ -35,15 +32,32 @@
     "allow": [
       "Bash(pnpm verify)",
       "Bash(pnpm verify:affected)",
-      "Bash(pnpm nx:*)",
+      "Bash(pnpm security)",
       "Bash(pnpm test)",
       "Bash(pnpm lint)",
       "Bash(pnpm typecheck)",
       "Bash(pnpm format)",
       "Bash(pnpm build)",
       "Bash(pnpm e2e)",
+      "Bash(pnpm e2e:pages)",
       "Bash(pnpm install)",
-      "Bash(pnpm new:*)"
+      "Bash(pnpm new:app:*)",
+      "Bash(pnpm new:lib:*)",
+      "Bash(pnpm new:component:*)",
+      "Bash(pnpm new:spike:*)",
+      "Bash(pnpm nx run-many:*)",
+      "Bash(pnpm nx affected:*)",
+      "Bash(pnpm nx show:*)",
+      "Bash(pnpm nx graph:*)",
+      "Bash(pnpm nx sync)",
+      "Bash(pnpm nx sync:check)",
+      "Bash(pnpm nx format:write:*)",
+      "Bash(pnpm nx test:*)",
+      "Bash(pnpm nx lint:*)",
+      "Bash(pnpm nx typecheck:*)",
+      "Bash(pnpm nx build:*)",
+      "Bash(pnpm nx dev:*)",
+      "Bash(pnpm nx g @starter/workspace-plugin:*)"
     ]
   }
 }

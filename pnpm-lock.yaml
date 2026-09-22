@@ -218,6 +218,8 @@ importers:
 
   tools/pages: {}
 
+  tools/security: {}
+
   tools/vite-config: {}
 
   tools/workspace-plugin:
