@@ -44,6 +44,14 @@ jobs:
             --context "issue=#${{ github.event.issue.number }}" \
             --data issue=.pipeline/issue.json
 
+      # Step-level `env:` on the run-gemini-cli step itself does not reliably
+      # reach that composite action's own internal steps; $GITHUB_ENV is the
+      # documented way to make a var visible to every later step in the job.
+      # Same-repo issue content only, and the CLI is restricted to
+      # read-only tools (settings below).
+      - name: Trust the workspace for Gemini CLI
+        run: echo "GEMINI_CLI_TRUST_WORKSPACE=true" >> "$GITHUB_ENV"
+
       - id: gemini
         uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
         with:
