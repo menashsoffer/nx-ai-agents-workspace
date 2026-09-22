@@ -22,7 +22,8 @@
     "new:app": "nx g @starter/workspace-plugin:app",
     "new:lib": "nx g @starter/workspace-plugin:lib",
     "new:component": "nx g @starter/workspace-plugin:component",
-    "new:spike": "nx g @starter/workspace-plugin:spike"
+    "new:spike": "nx g @starter/workspace-plugin:spike",
+    "prepare": "simple-git-hooks"
   },
   "dependencies": {
     "react": "^19.3.0",
@@ -73,8 +74,10 @@
     "jiti": "2.4.2",
     "jsdom": "^27.1.0",
     "jsonc-eslint-parser": "^2.1.0",
+    "lint-staged": "^17.5.1",
     "nx": "23.2.1",
     "prettier": "~3.6.2",
+    "simple-git-hooks": "^2.14.0",
     "storybook": "^10.5.0",
     "tailwindcss": "^4.3.3",
     "tslib": "^2.3.0",
@@ -82,5 +85,11 @@
     "typescript-eslint": "^8.58.0",
     "vite": "^8.0.0",
     "vitest": "~4.1.0"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm exec lint-staged"
+  },
+  "lint-staged": {
+    "*": "prettier --write --ignore-unknown"
   }
 }

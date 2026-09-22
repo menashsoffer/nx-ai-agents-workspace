@@ -1,3 +1,162 @@
+# AGENTS.md
+
+Single source of truth for every AI coding assistant working in this repo
+(Claude Code, Codex, Copilot, Gemini, Grok, ...). Tool-specific files only
+point here. Humans: see `README.md` and `docs/`.
+
+## This project
+
+<!-- Fill in when starting a project from the template: what it is, who uses it,
+     where it is deployed. Keep it to a few lines. -->
+
+- **What:** _TODO_
+- **Live:** _TODO_ (GitHub Pages: `https://<user>.github.io/<repo>/`, Storybook at `/storybook/`)
+- **Language/direction:** Hebrew, RTL
+
+## Stack
+
+Nx 23 monorepo · pnpm workspaces · TypeScript 6 · React 19 · Vite 8 ·
+React Router 8 · Tailwind CSS v4 · Vitest · Playwright · Storybook 10.
+Static sites only: no server, no SSR. Deployed to GitHub Pages.
+
+## Layout
+
+```
+apps/
+  site/            the product (scope:product), deployed to Pages at /
+  site-e2e/        Playwright tests for site
+  sandbox/         throwaway experiments (scope:dev), one folder per spike in src/spikes/
+libs/
+  ui/              design system: React components + Tailwind tokens + Storybook (deployed at /storybook/)
+  shared/utils/    framework-free TS helpers (@starter/shared-utils)
+tools/
+  vite-config/     defineAppConfig(): shared Vite/Vitest config for every app
+  workspace-plugin/ local Nx generators (pnpm new:*)
+  scripts/         one-off repo scripts (init-template)
+docs/              architecture, conventions, decisions (ADRs); read before big changes
+```
+
+## Commands
+
+Always run tasks through pnpm/Nx, never `npx vite`, `npx vitest`, etc.
+
+| Task                                   | Command                                                    |
+| -------------------------------------- | ---------------------------------------------------------- |
+| Dev server (site)                      | `pnpm dev` (http://localhost:4200)                         |
+| Any app                                | `pnpm nx dev <app>`                                        |
+| Storybook                              | `pnpm storybook` (http://localhost:6006)                   |
+| **Verify (required before finishing)** | `pnpm verify`                                              |
+| Faster verify on changed projects only | `pnpm verify:affected`                                     |
+| Unit tests for one project             | `pnpm nx test <project>`                                   |
+| E2E                                    | `pnpm e2e`                                                 |
+| Format                                 | `pnpm format`                                              |
+| New app / lib / component / spike      | `pnpm new:app` · `new:lib` · `new:component` · `new:spike` |
+
+Project names are short: `site`, `site-e2e`, `sandbox`, `ui`, `shared-utils`,
+`vite-config`, `workspace-plugin`. List them with `pnpm nx show projects`.
+
+## Definition of done
+
+1. `pnpm verify` passes (sync, format check, lint, typecheck, test, build on all projects).
+2. New behavior has a test next to the code (`*.spec.ts(x)`); UI components also have a story.
+3. If you changed routes or user-visible flows in `site`, `pnpm e2e` passes.
+4. If you made an architectural decision, add a short ADR in `docs/decisions/`.
+
+Never finish with a failing `verify`, and never "fix" it by disabling a lint
+rule, skipping a test, or loosening a tsconfig.
+
+## Rules
+
+### Creating things
+
+- **Use the workspace generators, not stock Nx ones.** `pnpm new:app`,
+  `pnpm new:lib`, `pnpm new:component`, `pnpm new:spike` (see
+  `tools/workspace-plugin/README.md`). They apply tags, shared Vite config, RTL
+  shell and dependencies that `@nx/react:*` does not. Add `--dry-run` first if
+  unsure.
+- Nx config lives in each project's `package.json` under `"nx"`. Do not add
+  `project.json` files.
+- Workspace packages depend on each other with `"workspace:*"` in the
+  consumer's `package.json`. Run `pnpm install` after changing dependencies.
+
+### Where code goes
+
+| You are writing...                         | Put it in                                         |
+| ------------------------------------------ | ------------------------------------------------- |
+| A reusable, presentational React component | `libs/ui` (`pnpm new:component <name>`)           |
+| A pure TS helper (no React/DOM)            | `libs/shared/utils`                               |
+| A page or app-specific component           | `apps/<app>/src/pages` or `src/components`        |
+| Feature logic shared by several apps       | a `feature` lib (`pnpm new:lib x --type=feature`) |
+| An experiment / "does this work?"          | `pnpm new:spike <name>` (sandbox)                 |
+
+Module boundaries are enforced by ESLint via tags in `package.json`:
+
+- `scope:product` (site) may use only `scope:product` and `scope:shared`, never `scope:dev`.
+- `type:util` depends only on `type:util`; `type:ui` only on `ui`/`util`.
+- Import other projects only through their package name (`@starter/ui`),
+  never with relative paths across project folders or into `src/lib/...`.
+
+### RTL and Hebrew
+
+- Every app's `index.html` has `<html lang="he" dir="rtl">`. Direction is per
+  app; components must work in both directions.
+- **Logical Tailwind utilities only**: `ms-*`/`me-*`, `ps-*`/`pe-*`,
+  `start-*`/`end-*`, `text-start`/`text-end`, `rounded-s-*`/`rounded-e-*`,
+  `border-s`/`border-e`. ESLint rejects `ml-*`, `pr-*`, `left-*`,
+  `text-right`, and similar. In plain CSS, use `margin-inline-start`,
+  `inset-inline-end` and the like.
+- Direction-bearing icons (arrows, chevrons) must flip: `rtl:rotate-180`.
+- UI text is Hebrew. Code, identifiers, comments and commit messages are English.
+- Wrap LTR fragments (code, URLs, English product names) in `dir="ltr"` or
+  `<bdi>` when they sit inside Hebrew sentences.
+- Check new `ui` components in Storybook with the Direction toolbar set to both RTL and LTR.
+
+### Styling
+
+- Tailwind v4 only; no CSS-in-JS and no other CSS frameworks.
+- Design tokens (colors, fonts) live in `libs/ui/src/styles.css` under
+  `@theme`. Add tokens there instead of hard-coding hex values.
+- Apps import styles once: `@import '@starter/ui/styles.css';` in `src/styles.css`.
+- Join conditional classes with `cn()` from `@starter/shared-utils`.
+
+### Routing and deployment
+
+- Routing uses `react-router` (v8) with `<BrowserRouter basename={import.meta.env.BASE_URL}>`.
+  Always use `<Link>`/`<NavLink>` for internal links, never raw `<a href="/...">`,
+  so the GitHub Pages base path (`/<repo>/`) is respected.
+- Public assets: reference them via `import.meta.env.BASE_URL + 'file.png'` or
+  import them from `src/`. Never hard-code a leading `/`.
+- The base path comes from the `BASE_PATH` env var (set by the deploy
+  workflow). A `404.html` copy of `index.html` makes deep links work on Pages.
+  Both are handled in `tools/vite-config`; don't reimplement them per app.
+
+### Dependencies
+
+- Add a dependency only when it clearly beats a few lines of code. Prefer
+  what's already installed.
+- Single-version policy: third-party packages go in the **root**
+  `package.json` (`pnpm add -w <pkg>`, or `pnpm add -Dw` for tooling). Project
+  `package.json` files list only `workspace:*` links to other projects.
+
+## Gotchas
+
+- `pnpm verify` runs `nx sync` first to update TS project references. If
+  `typecheck` complains that a file "is not listed within the file list of
+  project", run `pnpm nx sync`.
+- TypeScript 6 doesn't load `@types/*` automatically. Add them to a tsconfig's
+  `"types"` when needed, e.g. `"node"`.
+- Playwright config must not import `@nx/*` (it crashes Nx's native loader
+  under ESM). In sandboxes whose preinstalled Chromium doesn't match
+  Playwright's version, set `PLAYWRIGHT_CHROMIUM_PATH` to the Chromium binary.
+- Nx caches builds. `BASE_PATH` is part of the cache key, so don't pass the
+  base path any other way.
+
+## Nx
+
+The section below is managed by Nx (`nx configure-ai-agents`). Where it
+conflicts with the rules above, **the rules above win**. In particular, prefer
+the `pnpm new:*` generators over stock `@nx/*` generators.
+
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
 
