@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import { readJson, updateJson, type Tree } from '@nx/devkit';
 
-/** npm scope of this workspace, e.g. "@starter" (from the root package name). */
+/** npm scope of this workspace, e.g. "@acme" (from the root package name). */
 export function getScope(tree: Tree): string {
   const { name } = readJson<{ name: string }>(tree, 'package.json');
   return name.split('/')[0];

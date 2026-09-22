@@ -1,102 +1,85 @@
-# Starter
+# Nx AI-agents workspace template
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+A GitHub template for Hebrew-first (RTL) static React sites, built so that any
+AI coding assistant works the same way in every project. The conventions live
+in the repo itself: [`AGENTS.md`](AGENTS.md), enforced lint rules, and
+generators.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
+**Stack:** Nx 23 · pnpm · TypeScript 6 · React 19 · Vite 8 · React Router 8 ·
+Tailwind CSS v4 · Vitest · Playwright · Storybook 10 · GitHub Pages.
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/getting-started/tutorials/react-monorepo-tutorial?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+## What you get
 
-## Run tasks
+| Path                     | What                                                                        |
+| ------------------------ | --------------------------------------------------------------------------- |
+| `apps/site`              | The product. Hebrew RTL shell, deployed to Pages at `/`                     |
+| `apps/site-e2e`          | Playwright tests for `site`                                                 |
+| `apps/sandbox`           | Throwaway experiments, one auto-listed page per spike                       |
+| `libs/ui`                | Design system: components + Tailwind tokens + Storybook (`/storybook/`)     |
+| `libs/shared/utils`      | Framework-free helpers                                                      |
+| `tools/vite-config`      | One shared Vite/Vitest config for every app (Pages base path, 404 fallback) |
+| `tools/workspace-plugin` | `pnpm new:*` generators that apply the conventions                          |
+| `docs/`                  | Architecture, conventions, decision records                                 |
 
-To run the dev server for your app, use:
+Guard-rails: module-boundary tags (product code can't import dev helpers), an
+ESLint rule that rejects non-RTL-safe Tailwind classes (`ml-4`, `text-right`,
+...), and a single `pnpm verify` gate that humans, AI agents and CI all run.
 
-```sh
-npx nx serve site
-```
+## Start a new project
 
-To create a production bundle:
+1. On GitHub, click **Use this template** and create the repo.
+2. Clone it, then:
 
-```sh
-npx nx build site
-```
+   ```sh
+   corepack enable            # uses the pnpm version pinned in package.json
+   pnpm install
+   pnpm template:init --scope my-project   # renames @starter/* → @my-project/*
+   ```
 
-To see all available targets to run for a project, run:
+3. Fill in **This project** at the top of `AGENTS.md` and set the title in
+   `apps/site/index.html`.
+4. GitHub → **Settings → Pages → Source: GitHub Actions**. Every push to
+   `main` then verifies and deploys to `https://<user>.github.io/<repo>/`.
 
-```sh
-npx nx show project site
-```
+Requires Node 22+ (see `.nvmrc`).
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
-
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Add new projects
-
-While you could add new projects to your workspace manually, you might want to leverage [Nx plugins](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) and their [code generation](https://nx.dev/features/generate-code?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) feature.
-
-Use the plugin's generator to create new projects.
-
-To generate a new application, use:
-
-```sh
-npx nx g @nx/react:app demo
-```
-
-To generate a new library, use:
-
-```sh
-npx nx g @nx/react:lib mylib
-```
-
-You can use `npx nx list` to get a list of installed plugins. Then, run `npx nx list <plugin-name>` to learn about more specific capabilities of a particular plugin. Alternatively, [install Nx Console](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) to browse plugins and generators in your IDE.
-
-[Learn more about Nx plugins &raquo;](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) | [Browse the plugin registry &raquo;](https://nx.dev/plugin-registry?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Set up CI!
-
-### Step 1
-
-To connect to Nx Cloud, run the following command:
+## Daily commands
 
 ```sh
-npx nx connect
+pnpm dev                    # site on http://localhost:4200
+pnpm storybook              # components on http://localhost:6006 (RTL/LTR toggle)
+pnpm nx dev sandbox         # experiments on http://localhost:4201
+pnpm verify                 # everything: sync, format, lint, typecheck, test, build
+pnpm e2e                    # Playwright against the production build
+
+pnpm new:app <name>         # new app in apps/ (--scope=product for shipped apps)
+pnpm new:lib <name> --type=util|ui|feature
+pnpm new:component <name>   # in libs/ui (or --project=<lib>)
+pnpm new:spike <name>       # new sandbox experiment
 ```
 
-Connecting to Nx Cloud ensures a [fast and scalable CI](https://nx.dev/ci/intro/why-nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
+## AI assistants
 
-- [Remote caching](https://nx.dev/ci/features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/ci/features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/ci/features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/ci/features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+| Tool           | Reads                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------------- |
+| Claude Code    | `CLAUDE.md` → imports `AGENTS.md`; `.claude/settings.json` (Nx plugin, SessionStart hook) |
+| OpenAI Codex   | `AGENTS.md`; `.codex/config.toml` (Nx MCP)                                                |
+| GitHub Copilot | `AGENTS.md`, `.github/copilot-instructions.md`, `.github/skills/`                         |
+| Gemini CLI     | `AGENTS.md` via `.gemini/settings.json` (`contextFileName`), Nx MCP                       |
+| Grok Build     | `AGENTS.md` (native)                                                                      |
 
-### Step 2
+Edit rules in **`AGENTS.md` only**; the other files just point to it. Nx
+maintains its own block at the end of `AGENTS.md` and the skills in
+`.agents/skills/` and `.github/skills/`; refresh them with
+`pnpm nx configure-ai-agents`.
 
-Use the following command to configure a CI workflow for your workspace:
+## Updating the template later
+
+Projects are snapshots of the template. To upgrade a project's Nx and plugins:
 
 ```sh
-npx nx g ci-workflow
+pnpm nx migrate latest && pnpm install && pnpm nx migrate --run-migrations
 ```
 
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Install Nx Console
-
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
-
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Useful links
-
-Learn more:
-
-- [Learn more about this workspace setup](https://nx.dev/getting-started/tutorials/react-monorepo-tutorial?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-And join the Nx community:
-
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+The generators live in `tools/workspace-plugin`. They are designed so they can
+later be published to npm and shared across projects.
