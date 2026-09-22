@@ -46,8 +46,13 @@ export function deleteAll(tree: Tree, paths: string[]): void {
 export function installAndSync(tree: Tree) {
   return () => {
     // Plain `pnpm install`: Nx's installPackagesTask skips when an earlier
-    // generator in the same run already installed.
-    execSync('pnpm install', { cwd: tree.root, stdio: 'inherit' });
+    // generator in the same run already installed. --no-frozen-lockfile:
+    // adding a project must update the lockfile, and pnpm defaults to a
+    // frozen lockfile whenever CI=true (CI, many agent sandboxes).
+    execSync('pnpm install --no-frozen-lockfile', {
+      cwd: tree.root,
+      stdio: 'inherit',
+    });
     execSync('pnpm exec nx sync', { cwd: tree.root, stdio: 'inherit' });
   };
 }

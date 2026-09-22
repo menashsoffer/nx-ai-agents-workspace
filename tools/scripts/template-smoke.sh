@@ -107,7 +107,7 @@ node -e '
   p.dependencies["@smoke/devtools"] = "workspace:*";
   fs.writeFileSync(f, JSON.stringify(p, null, 2) + "\n");
 '
-pnpm install
+pnpm install --no-frozen-lockfile # adding a dependency; CI=true would default to frozen
 printf "import '@smoke/devtools';\n" >> apps/shop/src/main.tsx
 if lint_out="$(pnpm nx lint shop --skip-nx-cache 2>&1)"; then
   fail "lint accepted a scope:product -> scope:dev import"
