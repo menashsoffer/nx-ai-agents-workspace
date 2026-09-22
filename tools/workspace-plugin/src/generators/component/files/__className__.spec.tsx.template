@@ -1,0 +1,9 @@
+import { render, screen } from '@testing-library/react';
+import { <%= className %> } from './<%= className %>';
+
+describe('<%= className %>', () => {
+  it('renders its children', () => {
+    render(<<%= className %>>תוכן</<%= className %>>);
+    expect(screen.getByText('תוכן')).toBeTruthy();
+  });
+});

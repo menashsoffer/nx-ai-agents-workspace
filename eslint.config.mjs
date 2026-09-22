@@ -1,5 +1,4 @@
 import nx from '@nx/eslint-plugin';
-
 /**
  * Tailwind classes that hard-code a physical side. They break RTL layouts, so
  * use the logical equivalent instead:
@@ -102,6 +101,14 @@ export default [
           message: PHYSICAL_MESSAGE,
         },
       ],
+    },
+  },
+  {
+    files: ['**/*.json'],
+    // Override or add rules here
+    rules: {},
+    languageOptions: {
+      parser: await import('jsonc-eslint-parser'),
     },
   },
 ];

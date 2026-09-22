@@ -20,6 +20,9 @@
     },
     {
       "path": "./apps/sandbox"
+    },
+    {
+      "path": "./tools/workspace-plugin"
     }
   ]
 }

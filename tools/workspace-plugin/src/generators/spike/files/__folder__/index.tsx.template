@@ -1,0 +1,14 @@
+import type { SpikeMeta } from '../../app/spikes';
+
+export const meta: SpikeMeta = {
+  title: '<%= title %>',
+  description: 'What question does this spike answer?',
+};
+
+export default function <%= className %>Spike() {
+  return (
+    <section className="space-y-4">
+      <h1 className="text-2xl font-bold"><%= title %></h1>
+    </section>
+  );
+}

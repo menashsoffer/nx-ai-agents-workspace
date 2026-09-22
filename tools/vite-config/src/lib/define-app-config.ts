@@ -58,6 +58,7 @@ export function defineAppConfig(
     test: {
       name: projectPath.split('/').pop(),
       watch: false,
+      passWithNoTests: true,
       globals: true,
       environment: 'jsdom',
       include: ['{src,tests}/**/*.{test,spec}.{ts,tsx}'],
