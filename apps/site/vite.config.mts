@@ -27,7 +27,7 @@ export default defineConfig(() => ({
     },
   },
   test: {
-    name: '@starter/site',
+    name: 'site',
     watch: false,
     globals: true,
     environment: 'jsdom',

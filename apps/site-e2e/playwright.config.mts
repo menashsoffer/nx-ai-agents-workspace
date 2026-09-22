@@ -14,7 +14,7 @@ export default defineConfig({
     locale: 'he-IL',
   },
   webServer: {
-    command: 'pnpm exec nx run @starter/site:preview',
+    command: 'pnpm exec nx run site:preview',
     url: 'http://localhost:4300',
     reuseExistingServer: !process.env['CI'],
     cwd: workspaceRoot,

@@ -1,0 +1,30 @@
+{
+  "name": "@starter/ui",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json",
+    "./styles.css": "./src/styles.css"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "nx": {
+    "name": "ui",
+    "tags": [
+      "type:ui",
+      "scope:shared"
+    ]
+  },
+  "dependencies": {
+    "@starter/shared-utils": "workspace:*"
+  }
+}
