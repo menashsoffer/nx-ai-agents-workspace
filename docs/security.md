@@ -19,7 +19,7 @@ Never treat `2` as passed; CI is authoritative.
 | D4   | Reproducible installs: `--frozen-lockfile` in CI, deploy and the SessionStart hook; `packageManager` pins pnpm with its integrity hash            | CI install step, corepack                      | Gate   |
 | D5   | Install scripts are allow-listed: `strictDepBuilds: true`; every package with build scripts is in `allowBuilds` (reasons below)                   | pnpm install fails otherwise                   | Gate   |
 | D6   | No versions published less than 3 days ago: `minimumReleaseAge: 4320`                                                                             | pnpm config                                    | Gate   |
-| D7   | Dependabot for npm (weekly, grouped, 3-day cooldown) and GitHub Actions                                                                           | `.github/dependabot.yml`                       | Review |
+| D7   | Dependabot for npm (weekly, grouped, 7-day cooldown) and GitHub Actions                                                                           | `.github/dependabot.yml`                       | Review |
 | D8   | Each `overrides` entry has an advisory ID and a removal condition                                                                                 | comment in `pnpm-workspace.yaml`               | Review |
 
 ### D5: build-script decisions
@@ -53,7 +53,13 @@ Never treat `2` as passed; CI is authoritative.
 | W8  | Every job has `timeout-minutes`                                                                                                             | actionlint/zizmor + review | Gate   |
 
 zizmor runs **online in CI** (it can then detect impostor commits behind
-pinned SHAs) and **offline locally**.
+pinned SHAs) and **offline locally**. `.github/zizmor.yml` disables exactly one
+audit, `self-repository`: a style suggestion (not W1-W5) for the `$/...` reusable
+workflow syntax, which actionlint 1.7.12 (W7) rejects. Re-enable it when both
+tools agree.
+
+Workflows install pnpm through corepack from the hash-pinned `packageManager`
+(D4), so no third-party setup Action is needed.
 
 ## 3. Secrets
 

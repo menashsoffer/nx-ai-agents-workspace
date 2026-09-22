@@ -26,6 +26,7 @@
     "new:spike": "nx g @starter/workspace-plugin:spike",
     "prepare": "simple-git-hooks",
     "template:init": "node tools/scripts/init-template.mjs",
+    "template:smoke": "bash tools/scripts/template-smoke.sh",
     "pages:build": "nx run-many -t build build-storybook -p site ui && node tools/pages/src/assemble.mjs",
     "pages:serve": "node tools/pages/src/serve.mjs",
     "security": "node tools/security/src/run.mjs"

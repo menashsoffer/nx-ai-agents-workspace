@@ -145,7 +145,7 @@ Module boundaries are enforced by ESLint via tags in `package.json`:
 ### Protected files (security)
 
 Do **not** change these unless the user explicitly asks for that change:
-`.github/workflows/`, `.github/dependabot.yml`, `.claude/settings.json`,
+`.github/workflows/`, `.github/dependabot.yml`, `.github/zizmor.yml`, `.claude/settings.json`,
 `.claude/hooks/`, `.gemini/`, `.codex/`, the supply-chain settings in
 `pnpm-workspace.yaml` (`allowBuilds`, `strictDepBuilds`, `minimumReleaseAge`,
 `overrides`), `packageManager` in `package.json`, and `tools/security/`.

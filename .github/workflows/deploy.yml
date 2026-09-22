@@ -23,36 +23,35 @@ jobs:
   build:
     needs: ci
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       BASE_PATH: /${{ github.event.repository.name }}/
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # No dependency cache in the deploy path (cache poisoning).
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+          package-manager-cache: false
+
+      - run: corepack enable
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm nx run-many -t build build-storybook -p site ui
+      # Same script as the pages-e2e tests: what was tested is what ships.
+      - run: pnpm pages:build
 
-      - name: Assemble site
-        run: |
-          mkdir -p _site
-          cp -r apps/site/dist/. _site/
-          mkdir -p _site/storybook
-          cp -r libs/ui/storybook-static/. _site/storybook/
-          touch _site/.nojekyll
-
-      - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: _site
+          path: dist/pages
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write
@@ -61,4 +60,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
