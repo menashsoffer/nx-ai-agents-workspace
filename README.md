@@ -37,8 +37,12 @@ ESLint rule that rejects non-RTL-safe Tailwind classes (`ml-4`, `text-right`,
    ```
 
 3. Set the site title in `apps/site/index.html`.
-4. GitHub → **Settings → Pages → Source: GitHub Actions**. Every push to
-   `main` then verifies and deploys to `https://<user>.github.io/<repo>/`.
+4. GitHub → **Settings → Pages → Source: Deploy from a branch**, branch
+   `gh-pages`, folder `/ (root)`. Every push to `main` then verifies and
+   deploys to `https://<user>.github.io/<repo>/`; PR previews live under
+   `/pr-<n>/`.
+5. Optional: set up the multi-agent issue → PR pipeline, see
+   [`docs/pipeline.md`](docs/pipeline.md).
 
 Requires Node 22.18+ (Node 24 LTS recommended; see `.nvmrc`). On Windows, use
 WSL2.

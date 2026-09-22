@@ -1,0 +1,46 @@
+name: Pipeline · Inbox
+
+# issues opened -> label stage:inbox, add to the Project in "Inbox".
+# A maintainer triages and adds stage:qualified to start the pipeline.
+on:
+  issues:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  inbox:
+    if: ${{ !github.event.issue.pull_request }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pipeline-issue-${{ github.event.issue.number }}-inbox
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - name: Label stage:inbox
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/pipeline.mjs set-stage "${{ github.event.issue.number }}" stage:inbox
+
+      - id: add
+        if: ${{ vars.PROJECT_URL != '' }}
+        uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+        with:
+          project-url: ${{ vars.PROJECT_URL }}
+          github-token: ${{ secrets.PROJECT_TOKEN }}
+
+      - name: Set Status = Inbox
+        if: ${{ vars.PROJECT_URL != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PROJECT_URL: ${{ vars.PROJECT_URL }}
+          ITEM_ID: ${{ steps.add.outputs.itemId }}
+        run: node .github/scripts/pipeline.mjs project-status --project-url "$PROJECT_URL" --item-id "$ITEM_ID" --status stage:inbox

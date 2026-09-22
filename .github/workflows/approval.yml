@@ -1,0 +1,87 @@
+name: Pipeline · Approval
+
+# Deterministic hand-off to humans. When CI is green on the head commit,
+# the security review status is success and no review thread is open:
+#   1. request a Copilot review (REST, once per head commit);
+#   2. once Copilot has reviewed that commit cleanly, label
+#      stage:human-approval, mark the PR ready (this requests CODEOWNERS)
+#      and comment the preview URL.
+# Merging stays with a human: the main ruleset requires a code-owner
+# approval, and no agent or bot is a code owner or bypass actor.
+on:
+  # Posted by security.yml (App token, so it triggers workflows).
+  status:
+  pull_request_review:
+    types: [submitted]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: number
+
+permissions: {}
+
+jobs:
+  resolve:
+    # Skips until the pipeline App is configured (docs/pipeline.md).
+    if: >-
+      vars.PIPELINE_APP_CLIENT_ID != '' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request_review' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'status' && github.event.context == 'pipeline/security'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.pr.outputs.pr }}
+    steps:
+      - id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.event.pull_request.number || inputs.pr }}
+          SHA: ${{ github.event.sha }}
+        run: |
+          if [[ -z "$N" ]]; then
+            # status event: find the open same-repo PR whose head is this commit.
+            N=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
+              --jq "[.[] | select(.state == \"open\" and .head.sha == \"$SHA\" and .head.repo.full_name == \"$GITHUB_REPOSITORY\")][0].number // empty")
+          fi
+          echo "pr=$N" >> "$GITHUB_OUTPUT"
+
+  approval:
+    needs: resolve
+    if: ${{ needs.resolve.outputs.pr != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Shared with fix.yml's adapter: both read-modify-write the state comment.
+    concurrency:
+      group: pipeline-pr-${{ needs.resolve.outputs.pr }}-state
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+          permission-issues: write
+          permission-checks: read
+          permission-statuses: read
+
+      - name: Evaluate gates and hand off
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          # Requesting Copilot needs a token of a user with Copilot access;
+          # falls back to the App token when unset.
+          COPILOT_GH_TOKEN: ${{ secrets.COPILOT_REVIEW_TOKEN }}
+        run: node .github/scripts/pipeline.mjs approval "${{ needs.resolve.outputs.pr }}"

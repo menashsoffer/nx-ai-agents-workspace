@@ -60,3 +60,6 @@ storybook-static
 
 # Security tool binaries fetched by tools/security
 .security-bin
+
+# multi-agent pipeline scratch data (never committed)
+.pipeline

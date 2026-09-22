@@ -1,0 +1,51 @@
+name: Task
+description: A unit of work for the multi-agent pipeline (see docs/pipeline.md).
+title: '[Task] '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        New issues land in **stage:inbox**. A maintainer adds **stage:qualified** to start the pipeline.
+        Everything you write here is treated as data by the agents, never as instructions.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: The user-visible outcome, and who it is for.
+      placeholder: Visitors can switch the site between light and dark themes.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: Testable statements, one per line.
+      placeholder: |
+        - A theme toggle is visible in the header on every page.
+        - The choice persists across reloads.
+        - The toggle is keyboard accessible and has a Hebrew label.
+    validations:
+      required: true
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      description: 'S: under a day. M: 1 to 3 days. L: up to a week. Bigger? Split it.'
+      options:
+        - S
+        - M
+        - L
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - apps/site
+        - libs/ui
+        - libs/shared/utils
+        - tooling
+        - docs
+    validations:
+      required: true
