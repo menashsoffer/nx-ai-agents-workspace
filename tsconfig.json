@@ -23,6 +23,9 @@
     },
     {
       "path": "./tools/workspace-plugin"
+    },
+    {
+      "path": "./apps/pages-e2e"
     }
   ]
 }

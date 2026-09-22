@@ -13,6 +13,7 @@
     "storybook": "nx run ui:storybook",
     "test": "nx run-many -t test",
     "e2e": "nx run site-e2e:e2e",
+    "e2e:pages": "nx e2e pages-e2e",
     "lint": "nx run-many -t lint",
     "typecheck": "nx run-many -t typecheck",
     "format": "nx format:write --all",
@@ -24,7 +25,9 @@
     "new:component": "nx g @starter/workspace-plugin:component",
     "new:spike": "nx g @starter/workspace-plugin:spike",
     "prepare": "simple-git-hooks",
-    "template:init": "node tools/scripts/init-template.mjs"
+    "template:init": "node tools/scripts/init-template.mjs",
+    "pages:build": "nx run-many -t build build-storybook -p site ui && node tools/pages/src/assemble.mjs",
+    "pages:serve": "node tools/pages/src/serve.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",
