@@ -51,3 +51,5 @@ test-output
 
 
 storybook-static
+# multi-agent pipeline scratch data (never committed)
+.pipeline
