@@ -35,6 +35,25 @@ Every project has one `type:*` and one `scope:*` tag in `package.json` → `nx.t
 
 The rules live in the root `eslint.config.mjs` (`@nx/enforce-module-boundaries`).
 
+## Sandbox spikes
+
+A spike answers **one question** quickly and then goes away.
+
+| Stage   | What happens                                                                                                                                                                                                                |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create  | `pnpm new:spike <slug>` creates `src/spikes/<yyyy-mm>-<slug>/meta.ts` (title + the question, in `description`) and `index.tsx` (the experiment). It appears on the sandbox index automatically. Reusing a slug is an error. |
+| Run     | `pnpm nx dev sandbox` (http://localhost:4201). Each spike is lazy-loaded in its own chunk; the build fails if one lands in the main chunk.                                                                                  |
+| Verify  | Spikes are linted (including the RTL rule), typechecked and built by `pnpm verify`. They need no tests. A spike that doesn't compile is fixed or deleted, never excluded.                                                   |
+| Promote | The question was answered with "yes": move the code into a lib or app (`pnpm new:lib`, `pnpm new:component`), then delete the spike.                                                                                        |
+| Delete  | Remove the folder. Nothing else references it; `verify` stays green even with zero spikes.                                                                                                                                  |
+
+Rules: nothing imports from the sandbox (module boundaries enforce it), and
+the sandbox is never deployed.
+
+Projects that don't want a sandbox remove it with
+`pnpm nx g @nx/workspace:remove sandbox`. `pnpm new:spike` then fails with a
+clear "No sandbox app" message.
+
 ## RTL
 
 - `dir`/`lang` are set per app in `index.html`. Libraries never assume a direction.

@@ -1,0 +1,6 @@
+import type { SpikeMeta } from '../../app/spike-types';
+
+export const meta: SpikeMeta = {
+  title: '<%= title %>',
+  description: 'What question does this spike answer?',
+};

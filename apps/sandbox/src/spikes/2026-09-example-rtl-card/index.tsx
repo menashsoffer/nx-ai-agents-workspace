@@ -1,11 +1,4 @@
 import { Button } from '@starter/ui';
-import type { SpikeMeta } from '../../app/spikes';
-
-export const meta: SpikeMeta = {
-  title: 'כרטיס RTL לדוגמה',
-  description: 'Example spike: delete me once you add your own.',
-};
-
 export default function ExampleRtlCard() {
   return (
     <article className="max-w-sm space-y-3 rounded-xl border border-brand-100 p-5 shadow-sm">

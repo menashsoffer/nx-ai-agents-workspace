@@ -66,6 +66,7 @@ export async function appGenerator(tree: Tree, options: AppGeneratorSchema) {
     devDependencies: [`${scope}/vite-config`],
   });
   addDomLib(tree, `${projectRoot}/tsconfig.app.json`);
+  addDomLib(tree, `${projectRoot}/tsconfig.spec.json`);
 
   await formatFiles(tree);
   return installAndSync(tree);
