@@ -1,5 +1,8 @@
 name: Pipeline · Spec
 
+env:
+  GEMINI_CLI_TRUST_WORKSPACE: true
+
 # stage:qualified -> Gemini writes a structured spec -> comment -> stage:spec.
 # The agent job holds no GitHub write token; a deterministic job validates
 # the output and posts it.

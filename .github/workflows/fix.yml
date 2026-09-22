@@ -1,5 +1,8 @@
 name: Pipeline · Fix
 
+env:
+  GEMINI_CLI_TRUST_WORKSPACE: true
+
 # Review feedback -> bounded automated fix loop.
 #   adapter (deterministic): collect actionable review comments newer than
 #     the <!-- pipeline-state --> comment, dedupe by comment id, then

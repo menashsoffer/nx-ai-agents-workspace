@@ -1,5 +1,8 @@
 name: Pipeline · Security Review
 
+env:
+  GEMINI_CLI_TRUST_WORKSPACE: true
+
 # After CI passes on a PR: Gemini reviews the diff for security and
 # correctness. A deterministic job parses its JSON, posts a PR review
 # (blocking findings as inline threads), sets the `pipeline/security`
