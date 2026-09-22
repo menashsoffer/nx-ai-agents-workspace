@@ -24,10 +24,12 @@ permissions: {}
 
 jobs:
   resolve:
+    # Skips until the pipeline App is configured (docs/pipeline.md).
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      vars.PIPELINE_APP_CLIENT_ID != '' &&
+      (github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request_review' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'status' && github.event.context == 'pipeline/security')
+      (github.event_name == 'status' && github.event.context == 'pipeline/security'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

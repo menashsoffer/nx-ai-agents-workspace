@@ -21,9 +21,11 @@ permissions: {}
 
 jobs:
   adapter:
+    # Skips until the pipeline App is configured (docs/pipeline.md).
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      vars.PIPELINE_APP_CLIENT_ID != '' &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Shared with approval.yml: both read-modify-write the state comment.
