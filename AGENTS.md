@@ -160,7 +160,7 @@ rules are in `docs/security.md`.
   `package.json` (`pnpm add -w <pkg>`, or `pnpm add -Dw` for tooling). Project
   `package.json` files list only `workspace:*` links to other projects.
 - Every declared dependency must be used (`knip` in `verify`). A package used
-  only indirectly (a plugin loaded by config) goes in `knip.jsonc` with a reason.
+  only indirectly (a plugin loaded by config) goes in `knip.ts` with a reason.
 - pnpm won't install versions younger than 3 days (`minimumReleaseAge`). If
   the newest release is too fresh, it picks the newest mature one; don't
   work around this.
