@@ -119,6 +119,12 @@ if ('unsupported' in platform) {
     'git',
     '--redact',
     '--no-banner',
+    // gh-pages holds generated Pages/Storybook build artifacts, not source;
+    // its orphan history is pure noise for secret scanning (minified JS
+    // frequently trips entropy-based rules). Exclude it from source and
+    // remote-tracking refs alike; source branches stay fully scanned.
+    '--log-opts',
+    '--exclude=refs/heads/gh-pages --exclude=refs/remotes/*/gh-pages --all',
     '.',
   ]);
 }
