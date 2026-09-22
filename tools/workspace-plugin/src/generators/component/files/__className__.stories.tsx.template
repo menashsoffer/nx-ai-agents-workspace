@@ -1,0 +1,13 @@
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import { <%= className %> } from './<%= className %>';
+
+const meta = {
+  component: <%= className %>,
+  title: 'Components/<%= className %>',
+  args: { children: 'תוכן לדוגמה' },
+} satisfies Meta<typeof <%= className %>>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const Default: Story = {};

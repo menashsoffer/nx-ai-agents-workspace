@@ -1,0 +1,35 @@
+/*
+ * Design-system entry stylesheet. Every app and Storybook imports this one
+ * file instead of importing Tailwind directly, so tokens stay in one place:
+ *
+ *   @import '@starter/ui/styles.css';
+ *
+ * RTL rule: use logical utilities only (ms-/me-, ps-/pe-, start-/end-,
+ * text-start/text-end, rounded-s/-e, border-s/-e). Physical ones (ml-, pr-,
+ * left-, text-right, ...) are rejected by ESLint.
+ */
+@import 'tailwindcss';
+
+/* Scan this library's components for class names (path is relative to this file). */
+@source '.';
+
+@theme {
+  --font-sans:
+    system-ui, 'Segoe UI', 'Arial Hebrew', 'Noto Sans Hebrew', Arial, sans-serif;
+
+  --color-brand-50: oklch(0.97 0.02 250);
+  --color-brand-100: oklch(0.93 0.04 250);
+  --color-brand-500: oklch(0.58 0.17 255);
+  --color-brand-600: oklch(0.5 0.17 258);
+  --color-brand-700: oklch(0.43 0.15 260);
+
+  --color-surface: oklch(0.99 0 0);
+  --color-ink: oklch(0.22 0.02 260);
+  --color-muted: oklch(0.5 0.02 260);
+}
+
+@layer base {
+  html {
+    @apply bg-surface text-ink font-sans antialiased;
+  }
+}

@@ -1,0 +1,75 @@
+name: CI
+
+# Runs on PRs, on demand, and as the first job of every deploy to main.
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      # pnpm comes from "packageManager" (version + integrity hash) via corepack.
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+
+      # Fails if TS project references weren't committed after `nx sync`.
+      - run: pnpm nx sync:check
+
+      - run: pnpm verify
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E (site, production build)
+        run: pnpm e2e
+
+      - name: E2E (assembled Pages artifact under a base path)
+        run: pnpm e2e:pages
+
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-reports
+          path: apps/*-e2e/test-output/playwright/
+          retention-days: 7
+
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # gitleaks scans the full history
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+
+      - name: Security gates (docs/security.md)
+        run: pnpm security
+        env:
+          GH_TOKEN: ${{ github.token }} # lets zizmor run its online audits

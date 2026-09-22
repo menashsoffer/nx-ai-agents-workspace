@@ -1,0 +1,7 @@
+# zizmor configuration (docs/security.md, section 2).
+rules:
+  # Style suggestion, not a W1-W5 security audit: it asks for the `$/...`
+  # self-repository syntax, which actionlint 1.7.12 (W7) rejects. Keep the
+  # documented `./.github/workflows/...` form until both tools agree.
+  self-repository:
+    disable: true

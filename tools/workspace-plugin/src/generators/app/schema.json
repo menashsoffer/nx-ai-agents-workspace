@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "$id": "WorkspaceApp",
+  "title": "Create a React app wired to the workspace conventions",
+  "description": "Vite + React Router + Tailwind v4 via the shared ui styles, Hebrew RTL shell, GitHub Pages base path.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "App name in kebab-case. Creates apps/<name>.",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "App name (kebab-case)?"
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["dev", "product"],
+      "default": "dev",
+      "description": "dev = internal helper app (may import anything); product = shipped to users (cannot import scope:dev)."
+    },
+    "port": {
+      "type": "number",
+      "description": "Dev server port. Defaults to the next free port after the existing apps."
+    }
+  },
+  "required": ["name"]
+}

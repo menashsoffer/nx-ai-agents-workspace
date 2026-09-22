@@ -1,0 +1,19 @@
+{
+  "name": "@starter/site",
+  "version": "0.0.1",
+  "private": true,
+  "nx": {
+    "name": "site",
+    "tags": [
+      "type:app",
+      "scope:product"
+    ]
+  },
+  "dependencies": {
+    "@starter/shared-utils": "workspace:*",
+    "@starter/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@starter/vite-config": "workspace:*"
+  }
+}

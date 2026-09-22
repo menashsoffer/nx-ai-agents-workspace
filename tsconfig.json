@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compileOnSave": false,
+  "files": [],
+  "references": [
+    {
+      "path": "./apps/site-e2e"
+    },
+    {
+      "path": "./apps/site"
+    },
+    {
+      "path": "./libs/ui"
+    },
+    {
+      "path": "./libs/shared/utils"
+    },
+    {
+      "path": "./tools/vite-config"
+    },
+    {
+      "path": "./apps/sandbox"
+    },
+    {
+      "path": "./tools/workspace-plugin"
+    },
+    {
+      "path": "./apps/pages-e2e"
+    }
+  ]
+}

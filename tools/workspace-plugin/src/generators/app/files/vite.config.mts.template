@@ -1,0 +1,4 @@
+import { defineConfig } from 'vite';
+import { defineAppConfig } from '<%= scope %>/vite-config';
+
+export default defineConfig(defineAppConfig(import.meta.dirname, { port: <%= port %> }));

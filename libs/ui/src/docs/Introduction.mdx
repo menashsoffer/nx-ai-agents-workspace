@@ -1,0 +1,32 @@
+import { Meta } from '@storybook/addon-docs/blocks';
+
+<Meta title="Docs/Introduction" />
+
+# Design system
+
+`@starter/ui` holds the shared React components and design tokens for every app
+in this workspace. Stories default to **RTL / Hebrew**; use the **Direction**
+toolbar button to check a component in LTR as well.
+
+## Using it in an app
+
+```css
+/* apps/<name>/src/styles.css */
+@import '@starter/ui/styles.css';
+```
+
+```tsx
+import { Button } from '@starter/ui';
+```
+
+## Rules
+
+- Tailwind v4 utilities only; tokens live in `libs/ui/src/styles.css` (`@theme`).
+- **Logical properties only**: `ms-4`, `pe-2`, `start-0`, `text-start`,
+  `rounded-s-lg`, `border-e`. Physical classes (`ml-4`, `right-0`,
+  `text-left`, ...) fail lint.
+- Every component ships with a `*.stories.tsx` and a `*.spec.tsx` next to it.
+- Icons that imply direction (arrows, chevrons) must flip: use `rtl:rotate-180`
+  or pick the glyph from `dir`.
+
+See `docs/` at the repo root for workspace-wide architecture and conventions.

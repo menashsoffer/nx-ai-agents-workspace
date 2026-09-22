@@ -1,0 +1,27 @@
+packages:
+  - 'apps/*'
+  - 'libs/*'
+  - 'libs/*/*'
+  - 'tools/*'
+
+autoInstallPeers: true
+
+# Supply-chain controls (docs/security.md, D5/D6/D8).
+# Every dependency with install scripts must be listed: true = may run its
+# scripts, false = scripts are skipped. Unlisted ones fail the install.
+# Reasons for each entry: docs/security.md (D5).
+strictDepBuilds: true
+allowBuilds:
+  '@swc/core': true
+  esbuild: true
+  nx: true
+  '@parcel/watcher': false
+  simple-git-hooks: false
+  unrs-resolver: false
+# Don't resolve package versions published less than 3 days ago (D6).
+minimumReleaseAge: 4320
+
+# Each override carries an advisory ID and a removal condition (D8).
+overrides:
+  # GHSA-7w5x-hrqm-74c2 (high, DoS). Remove once nx depends on smol-toml >=1.7.1.
+  smol-toml: '>=1.7.1'

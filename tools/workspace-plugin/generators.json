@@ -1,0 +1,24 @@
+{
+  "generators": {
+    "app": {
+      "factory": "./src/generators/app/app",
+      "schema": "./src/generators/app/schema.json",
+      "description": "React app (Vite, Router, Tailwind, RTL shell, Pages base path) in apps/<name>"
+    },
+    "lib": {
+      "factory": "./src/generators/lib/lib",
+      "schema": "./src/generators/lib/schema.json",
+      "description": "util / ui / feature library, tagged for module boundaries"
+    },
+    "component": {
+      "factory": "./src/generators/component/component",
+      "schema": "./src/generators/component/schema.json",
+      "description": "React component with story and spec, exported from the lib"
+    },
+    "spike": {
+      "factory": "./src/generators/spike/spike",
+      "schema": "./src/generators/spike/schema.json",
+      "description": "Throwaway experiment page in apps/sandbox/src/spikes/<yyyy-mm>-<name>"
+    }
+  }
+}

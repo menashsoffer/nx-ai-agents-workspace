@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "$id": "WorkspaceLib",
+  "title": "Create a library wired to the workspace conventions",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Library name in kebab-case.",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "$default": { "$source": "argv", "index": 0 },
+      "x-prompt": "Library name (kebab-case)?"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["util", "ui", "feature"],
+      "default": "util",
+      "description": "util = framework-free TS; ui = presentational React components; feature = React code with app logic (pages, data, state).",
+      "x-prompt": {
+        "message": "Library type?",
+        "type": "list",
+        "items": ["util", "ui", "feature"]
+      }
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["shared", "product", "dev"],
+      "default": "shared",
+      "description": "shared = usable by any project; product = only product apps; dev = only dev helper apps."
+    }
+  },
+  "required": ["name"]
+}

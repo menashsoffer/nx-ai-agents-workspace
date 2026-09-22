@@ -1,0 +1,10 @@
+import type { HTMLAttributes } from 'react';
+import { cn } from '<%= scope %>/shared-utils';
+
+export type <%= className %>Props = HTMLAttributes<HTMLDivElement>;
+
+export function <%= className %>({ className, ...props }: <%= className %>Props) {
+  return <div className={cn('', className)} {...props} />;
+}
+
+export default <%= className %>;

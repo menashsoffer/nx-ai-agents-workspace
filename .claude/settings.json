@@ -1,0 +1,63 @@
+{
+  "extraKnownMarketplaces": {
+    "nx-claude-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "nrwl/nx-ai-agents-config"
+      }
+    }
+  },
+  "sandbox": {
+    "filesystem": {
+      "allowRead": ["/tmp/.nx", "~/.nx"],
+      "allowWrite": ["/tmp/.nx", "~/.nx"]
+    },
+    "network": {
+      "allowUnixSockets": ["/tmp/.nx", "~/.nx"]
+    }
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pnpm verify)",
+      "Bash(pnpm verify:affected)",
+      "Bash(pnpm security)",
+      "Bash(pnpm test)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm format)",
+      "Bash(pnpm build)",
+      "Bash(pnpm e2e)",
+      "Bash(pnpm e2e:pages)",
+      "Bash(pnpm install)",
+      "Bash(pnpm new:app:*)",
+      "Bash(pnpm new:lib:*)",
+      "Bash(pnpm new:component:*)",
+      "Bash(pnpm new:spike:*)",
+      "Bash(pnpm nx run-many:*)",
+      "Bash(pnpm nx affected:*)",
+      "Bash(pnpm nx show:*)",
+      "Bash(pnpm nx graph:*)",
+      "Bash(pnpm nx sync)",
+      "Bash(pnpm nx sync:check)",
+      "Bash(pnpm nx format:write:*)",
+      "Bash(pnpm nx test:*)",
+      "Bash(pnpm nx lint:*)",
+      "Bash(pnpm nx typecheck:*)",
+      "Bash(pnpm nx build:*)",
+      "Bash(pnpm nx dev:*)",
+      "Bash(pnpm nx g @starter/workspace-plugin:*)"
+    ]
+  }
+}
