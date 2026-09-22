@@ -35,7 +35,9 @@ export async function appGenerator(tree: Tree, options: AppGeneratorSchema) {
     name,
     bundler: 'vite',
     style: 'css',
-    routing: true,
+    // The shell below brings its own react-router setup; `routing: true` would
+    // add the legacy react-router-dom package.
+    routing: false,
     linter: 'eslint',
     unitTestRunner: 'vitest',
     e2eTestRunner: 'none',
@@ -58,11 +60,13 @@ export async function appGenerator(tree: Tree, options: AppGeneratorSchema) {
     title: className,
   });
 
+  // Only what the generated shell uses (knip flags unused dependencies).
   addWorkspaceDeps(tree, `${projectRoot}/package.json`, {
-    dependencies: [`${scope}/shared-utils`, `${scope}/ui`],
+    dependencies: [`${scope}/ui`],
     devDependencies: [`${scope}/vite-config`],
   });
   addDomLib(tree, `${projectRoot}/tsconfig.app.json`);
+  addDomLib(tree, `${projectRoot}/tsconfig.spec.json`);
 
   await formatFiles(tree);
   return installAndSync(tree);

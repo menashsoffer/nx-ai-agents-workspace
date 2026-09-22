@@ -6,11 +6,12 @@ point here. Humans: see `README.md` and `docs/`.
 
 ## This project
 
-<!-- Fill in when starting a project from the template: what it is, who uses it,
-     where it is deployed. Keep it to a few lines. -->
+> **Agents:** if a field below still says `_TODO_`, ask the user for it
+> before doing any project-specific work. Never invent or guess it.
+> (`pnpm template:init` fills these in when a project is created.)
 
 - **What:** _TODO_
-- **Live:** _TODO_ (GitHub Pages: `https://<user>.github.io/<repo>/`, Storybook at `/storybook/`)
+- **Live:** _TODO_
 - **Language/direction:** Hebrew, RTL
 
 ## Stack
@@ -25,6 +26,7 @@ Static sites only: no server, no SSR. Deployed to GitHub Pages.
 apps/
   site/            the product (scope:product), deployed to Pages at /
   site-e2e/        Playwright tests for site
+  pages-e2e/       Playwright tests of the assembled GitHub Pages artifact (base path, 404.html, Storybook)
   sandbox/         throwaway experiments (scope:dev), one folder per spike in src/spikes/
 libs/
   ui/              design system: React components + Tailwind tokens + Storybook (deployed at /storybook/)
@@ -32,7 +34,9 @@ libs/
 tools/
   vite-config/     defineAppConfig(): shared Vite/Vitest config for every app
   workspace-plugin/ local Nx generators (pnpm new:*)
-  scripts/         one-off repo scripts (init-template)
+  pages/           assembles + serves the Pages artifact (site at /, Storybook at /storybook/)
+  security/        `pnpm security`: audit, exceptions, AI-config checks, pinned scanners
+  scripts/         one-off repo scripts (template-only; removed by template:init)
 docs/              architecture, conventions, decisions (ADRs); read before big changes
                    pipeline.md: the issue → PR multi-agent pipeline
 ```
@@ -54,18 +58,26 @@ Always run tasks through pnpm/Nx, never `npx vite`, `npx vitest`, etc.
 | Faster verify on changed projects only | `pnpm verify:affected`                                     |
 | Unit tests for one project             | `pnpm nx test <project>`                                   |
 | E2E                                    | `pnpm e2e`                                                 |
+| E2E of the deployed artifact           | `pnpm e2e:pages`                                           |
+| Security gates                         | `pnpm security`                                            |
 | Format                                 | `pnpm format`                                              |
 | New app / lib / component / spike      | `pnpm new:app` · `new:lib` · `new:component` · `new:spike` |
 
-Project names are short: `site`, `site-e2e`, `sandbox`, `ui`, `shared-utils`,
-`vite-config`, `workspace-plugin`. List them with `pnpm nx show projects`.
+Project names are short: `site`, `site-e2e`, `pages-e2e`, `sandbox`, `ui`,
+`shared-utils`, `vite-config`, `workspace-plugin`, `pages`, `security`. List them with `pnpm nx show projects`.
 
 ## Definition of done
 
-1. `pnpm verify` passes (sync, format check, lint, typecheck, test, build on all projects).
+1. `pnpm verify` passes (sync, format check, unused-dependency check, lint,
+   typecheck, test, build on all projects).
 2. New behavior has a test next to the code (`*.spec.ts(x)`); UI components also have a story.
-3. If you changed routes or user-visible flows in `site`, `pnpm e2e` passes.
-4. If you made an architectural decision, add a short ADR in `docs/decisions/`.
+3. If you changed routes or user-visible flows in `site`, `pnpm e2e` passes; if
+   you changed routing, assets, the base path or Storybook, `pnpm e2e:pages` too.
+4. If you changed dependencies, workflows, or anything in `.claude/`,
+   `.gemini/`, `.codex/` or `tools/security/`, `pnpm security` passes.
+   **Exit code 2 means the checks were NOT run** (unsupported platform). Say so
+   in your summary; never report it as passing. CI is authoritative.
+5. If you made an architectural decision, add a short ADR in `docs/decisions/`.
 
 Never finish with a failing `verify`, and never "fix" it by disabling a lint
 rule, skipping a test, or loosening a tsconfig.
@@ -135,6 +147,16 @@ Module boundaries are enforced by ESLint via tags in `package.json`:
   workflow). A `404.html` copy of `index.html` makes deep links work on Pages.
   Both are handled in `tools/vite-config`; don't reimplement them per app.
 
+### Protected files (security)
+
+Do **not** change these unless the user explicitly asks for that change:
+`.github/workflows/`, `.github/dependabot.yml`, `.github/zizmor.yml`, `.claude/settings.json`,
+`.claude/hooks/`, `.gemini/`, `.codex/`, the supply-chain settings in
+`pnpm-workspace.yaml` (`allowBuilds`, `strictDepBuilds`, `minimumReleaseAge`,
+`overrides`), `packageManager` in `package.json`, and `tools/security/`.
+Never add exceptions to `tools/security/exceptions.json` on your own. The
+rules are in `docs/security.md`.
+
 ### Dependencies
 
 - Add a dependency only when it clearly beats a few lines of code. Prefer
@@ -142,12 +164,19 @@ Module boundaries are enforced by ESLint via tags in `package.json`:
 - Single-version policy: third-party packages go in the **root**
   `package.json` (`pnpm add -w <pkg>`, or `pnpm add -Dw` for tooling). Project
   `package.json` files list only `workspace:*` links to other projects.
+- Every declared dependency must be used (`knip` in `verify`). A package used
+  only indirectly (a plugin loaded by config) goes in `knip.ts` with a reason.
+- pnpm won't install versions younger than 3 days (`minimumReleaseAge`). If
+  the newest release is too fresh, it picks the newest mature one; don't
+  work around this.
 
 ## Gotchas
 
 - `pnpm verify` runs `nx sync` first to update TS project references. If
   `typecheck` complains that a file "is not listed within the file list of
   project", run `pnpm nx sync`.
+- Node 22.18+ is required: `tools/vite-config` is loaded as TypeScript through
+  Node's built-in type stripping. Windows: use WSL2.
 - TypeScript 6 doesn't load `@types/*` automatically. Add them to a tsconfig's
   `"types"` when needed, e.g. `"node"`.
 - Playwright config must not import `@nx/*` (it crashes Nx's native loader

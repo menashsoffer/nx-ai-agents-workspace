@@ -3,9 +3,9 @@
   "version": "0.0.0",
   "license": "MIT",
   "private": true,
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@11.27.0+sha512.ad12821463bb143295f1fa3ecde77a6b9b97a7990386da800ff57bffc3964dc64b7b1c7559d5dbe5c337aea659ed9c8937d4370bd198ca2009bc6fa0249808e7",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
     "dev": "nx run site:dev",
@@ -13,11 +13,12 @@
     "storybook": "nx run ui:storybook",
     "test": "nx run-many -t test",
     "e2e": "nx run site-e2e:e2e",
+    "e2e:pages": "nx e2e pages-e2e",
     "lint": "nx run-many -t lint",
     "typecheck": "nx run-many -t typecheck",
     "format": "nx format:write --all",
-    "verify": "nx sync && nx format:check --all && nx run-many -t lint typecheck test build && pnpm test:pipeline",
-    "verify:affected": "nx sync && nx format:check && nx affected -t lint typecheck test build",
+    "verify": "nx sync && nx format:check --all && knip --dependencies && nx run-many -t lint typecheck test build && pnpm test:pipeline",
+    "verify:affected": "nx sync && nx format:check --all && knip --dependencies && nx affected -t lint typecheck test build && pnpm test:pipeline",
     "test:pipeline": "node --test .github/scripts/*.test.mjs",
     "graph": "nx graph",
     "new:app": "nx g @starter/workspace-plugin:app",
@@ -25,17 +26,18 @@
     "new:component": "nx g @starter/workspace-plugin:component",
     "new:spike": "nx g @starter/workspace-plugin:spike",
     "prepare": "simple-git-hooks",
-    "template:init": "node tools/scripts/init-template.mjs"
+    "template:init": "node tools/scripts/init-template.mjs",
+    "template:smoke": "bash tools/scripts/template-smoke.sh",
+    "pages:build": "nx run-many -t build build-storybook -p site ui && node tools/pages/src/assemble.mjs",
+    "pages:serve": "node tools/pages/src/serve.mjs",
+    "security": "node tools/security/src/run.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router": "^8.4.0",
-    "react-router-dom": "6.30.3"
+    "react-router": "^8.4.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.14.5",
-    "@babel/preset-react": "^7.14.5",
     "@eslint/js": "^9.8.0",
     "@nx/devkit": "23.2.1",
     "@nx/eslint": "23.2.1",
@@ -63,6 +65,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@typescript-eslint/parser": "^8.58.0",
     "@vitejs/plugin-react": "^6.0.0",
     "@vitest/coverage-v8": "~4.1.0",
     "@vitest/ui": "~4.1.0",
@@ -76,6 +79,7 @@
     "jiti": "2.4.2",
     "jsdom": "^27.1.0",
     "jsonc-eslint-parser": "^2.1.0",
+    "knip": "^6.37.0",
     "lint-staged": "^17.5.1",
     "nx": "23.2.1",
     "prettier": "~3.6.2",

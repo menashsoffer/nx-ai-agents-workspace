@@ -1,0 +1,17 @@
+{
+  "name": "@starter/pages-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "nx": {
+    "name": "pages-e2e",
+    "tags": [
+      "type:e2e",
+      "scope:product"
+    ],
+    "implicitDependencies": [
+      "site",
+      "ui",
+      "pages"
+    ]
+  }
+}

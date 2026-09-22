@@ -33,11 +33,10 @@ ESLint rule that rejects non-RTL-safe Tailwind classes (`ml-4`, `text-right`,
    ```sh
    corepack enable            # uses the pnpm version pinned in package.json
    pnpm install
-   pnpm template:init --scope my-project   # renames @starter/* → @my-project/*
+   pnpm template:init --scope my-project --what "Workshop registration site"
    ```
 
-3. Fill in **This project** at the top of `AGENTS.md` and set the title in
-   `apps/site/index.html`.
+3. Set the site title in `apps/site/index.html`.
 4. GitHub → **Settings → Pages → Source: Deploy from a branch**, branch
    `gh-pages`, folder `/ (root)`. Every push to `main` then verifies and
    deploys to `https://<user>.github.io/<repo>/`; PR previews live under
@@ -45,7 +44,24 @@ ESLint rule that rejects non-RTL-safe Tailwind classes (`ml-4`, `text-right`,
 5. Optional: set up the multi-agent issue → PR pipeline, see
    [`docs/pipeline.md`](docs/pipeline.md).
 
-Requires Node 22+ (see `.nvmrc`).
+Requires Node 22.18+ (Node 24 LTS recommended; see `.nvmrc`). On Windows, use
+WSL2.
+
+### Initialization contract
+
+After `template:init`, a project must have **nothing left from the template**:
+
+| Item                   | Resolved by                                                    |
+| ---------------------- | -------------------------------------------------------------- |
+| npm scope `@starter/*` | `template:init --scope` (renamed in every tracked file)        |
+| AGENTS.md → **What**   | `template:init --what`                                         |
+| AGENTS.md → **Live**   | `template:init` (from `git remote get-url origin`, or `--url`) |
+| Template-only files    | `template:init` (removes itself and the template smoke test)   |
+| Site title             | you, in `apps/site/index.html`                                 |
+| Pages source           | you, in GitHub settings                                        |
+
+Until a field in AGENTS.md is filled in, it says `_TODO_`, and AI assistants
+are instructed to ask rather than guess.
 
 ## Daily commands
 
@@ -55,6 +71,8 @@ pnpm storybook              # components on http://localhost:6006 (RTL/LTR toggl
 pnpm nx dev sandbox         # experiments on http://localhost:4201
 pnpm verify                 # everything: sync, format, lint, typecheck, test, build
 pnpm e2e                    # Playwright against the production build
+pnpm e2e:pages              # Playwright against the assembled Pages artifact
+pnpm security               # security gates (docs/security.md)
 
 pnpm new:app <name>         # new app in apps/ (--scope=product for shipped apps)
 pnpm new:lib <name> --type=util|ui|feature
@@ -64,13 +82,13 @@ pnpm new:spike <name>       # new sandbox experiment
 
 ## AI assistants
 
-| Tool           | Reads                                                                                     |
-| -------------- | ----------------------------------------------------------------------------------------- |
-| Claude Code    | `CLAUDE.md` → imports `AGENTS.md`; `.claude/settings.json` (Nx plugin, SessionStart hook) |
-| OpenAI Codex   | `AGENTS.md`; `.codex/config.toml` (Nx MCP)                                                |
-| GitHub Copilot | `AGENTS.md`, `.github/copilot-instructions.md`, `.github/skills/`                         |
-| Gemini CLI     | `AGENTS.md` via `.gemini/settings.json` (`contextFileName`), Nx MCP                       |
-| Grok Build     | `AGENTS.md` (native)                                                                      |
+| Tool           | Reads                                                                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Claude Code    | `CLAUDE.md` → imports `AGENTS.md`; `.claude/settings.json` (narrow allow-list, SessionStart hook; Nx plugin listed but opt-in, see `docs/security.md`) |
+| OpenAI Codex   | `AGENTS.md`; `.codex/config.toml` (Nx MCP via `pnpm exec`)                                                                                             |
+| GitHub Copilot | `AGENTS.md`, `.github/copilot-instructions.md`, `.github/skills/`                                                                                      |
+| Gemini CLI     | `AGENTS.md` via `.gemini/settings.json` (`contextFileName`), Nx MCP via `pnpm exec`                                                                    |
+| Grok Build     | `AGENTS.md` (native)                                                                                                                                   |
 
 Edit rules in **`AGENTS.md` only**; the other files just point to it. Nx
 maintains its own block at the end of `AGENTS.md` and the skills in

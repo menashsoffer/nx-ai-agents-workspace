@@ -1,0 +1,39 @@
+name: Template smoke test
+
+# Template repo only: `pnpm template:init` deletes this workflow, so projects
+# created from the template never inherit it.
+# Proves a fresh copy initializes, verifies and generates cleanly on the
+# declared minimum Node and on the default (.nvmrc) Node.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.18.0', '24']
+    name: smoke (Node ${{ matrix.node }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+
+      - run: corepack enable
+      - run: bash tools/scripts/template-smoke.sh

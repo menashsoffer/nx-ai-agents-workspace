@@ -1,3 +1,4 @@
+# MCP servers run from the lockfile-pinned local install (docs/security.md, A3).
 [mcp_servers.nx-mcp]
-command = "npx"
-args = [ "nx", "mcp" ]
+command = "pnpm"
+args = [ "exec", "nx", "mcp" ]

@@ -46,6 +46,8 @@ export async function libGenerator(tree: Tree, options: LibGeneratorSchema) {
       ...common,
       style: 'css',
       component: false,
+      // swc instead of the default babel: nothing here needs a Babel toolchain.
+      compiler: 'swc',
     });
     for (const tsconfig of ['tsconfig.lib.json', 'tsconfig.spec.json']) {
       addDomLib(tree, `${directory}/${tsconfig}`);

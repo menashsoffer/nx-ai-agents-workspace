@@ -1,8 +1,8 @@
 import { Suspense } from 'react';
 import { Link, Route, Routes } from 'react-router';
-import { spikes } from './spikes';
+import { spikes as allSpikes, type Spike } from './spikes';
 
-function SpikeIndex() {
+function SpikeIndex({ spikes }: { spikes: Spike[] }) {
   return (
     <section className="space-y-4">
       <h1 className="text-2xl font-bold">Sandbox</h1>
@@ -32,7 +32,7 @@ function SpikeIndex() {
   );
 }
 
-export function App() {
+export function App({ spikes = allSpikes }: { spikes?: Spike[] }) {
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
       <nav className="mb-6">
@@ -42,7 +42,7 @@ export function App() {
       </nav>
       <Suspense fallback={<p>טוען…</p>}>
         <Routes>
-          <Route index element={<SpikeIndex />} />
+          <Route index element={<SpikeIndex spikes={spikes} />} />
           {spikes.map(({ slug, Component }) => (
             <Route key={slug} path={slug} element={<Component />} />
           ))}

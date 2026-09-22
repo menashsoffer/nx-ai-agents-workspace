@@ -129,7 +129,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.implement.outputs.base }}
-          token: ${{ steps.app.outputs.token }}
+          persist-credentials: false
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -143,6 +143,7 @@ jobs:
           BRANCH: ${{ needs.implement.outputs.branch }}
           RESULT: ${{ needs.implement.outputs.result }}
           VERSION: ${{ needs.implement.outputs.prompt_version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           # Checked again here: the patch crossed a job boundary.
           node .github/scripts/pipeline.mjs check-patch "$RUNNER_TEMP/in/changes.patch"
@@ -155,12 +156,12 @@ jobs:
           git switch -c "$BRANCH"
           git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
           # issue-<n>-* branches belong to the pipeline; no open PR uses this one (checked above).
-          git push --force origin "HEAD:refs/heads/$BRANCH"
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
 
           title=$(jq -r '.pr_title' <<<"$RESULT")
           { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;
             echo "<sub>Implemented by Claude with prompt develop.md@$VERSION. Draft until CI, the security review and Copilot are clean. Only a human can approve and merge.</sub>"; } > body.md
-          url=$(gh pr create --repo "$GITHUB_REPOSITORY" --draft --base "${{ github.event.repository.default_branch }}" \
+          url=$(gh pr create --repo "$GITHUB_REPOSITORY" --draft --base "$DEFAULT_BRANCH" \
             --head "$BRANCH" --title "$title" --body-file body.md)
           pr=${url##*/}
           node .github/scripts/pipeline.mjs init-state "$pr"

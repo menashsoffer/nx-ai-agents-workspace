@@ -1,8 +1,8 @@
 name: Deploy to GitHub Pages
 
-# Publishes apps/site at / and the ui Storybook at /storybook/ to
-# https://<owner>.github.io/<repo>/ via the gh-pages branch, keeping PR
-# previews under /pr-<n>/ (see preview.yml and docs/decisions/0004).
+# Publishes the assembled Pages artifact (apps/site at /, the ui Storybook
+# at /storybook/) to the root of the gh-pages branch, keeping PR previews
+# under /pr-<n>/ (preview.yml, docs/decisions/0004).
 # One-time setup: Settings → Pages → Source: "Deploy from a branch",
 # branch gh-pages, folder / (root).
 
@@ -25,7 +25,7 @@ jobs:
   build:
     needs: ci
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       BASE_PATH: /${{ github.event.repository.name }}/
     steps:
@@ -33,21 +33,16 @@ jobs:
         with:
           persist-credentials: false
 
+      # No dependency cache in the deploy path (cache poisoning).
       - uses: ./.github/actions/setup
 
-      - run: pnpm nx run-many -t build build-storybook -p site ui
-
-      - name: Assemble site
-        run: |
-          mkdir -p _site
-          cp -r apps/site/dist/. _site/
-          mkdir -p _site/storybook
-          cp -r libs/ui/storybook-static/. _site/storybook/
+      # Same script as the pages-e2e tests: what was tested is what ships.
+      - run: pnpm pages:build
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: site
-          path: _site
+          name: pages
+          path: dist/pages
           retention-days: 3
 
   deploy:
@@ -64,10 +59,10 @@ jobs:
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: site
-          path: _site
+          name: pages
+          path: pages
 
-      - name: Publish to gh-pages (root)
+      - name: Publish to gh-pages (root, keeps pr-*/ previews)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .github/scripts/gh-pages-publish.sh root _site
+        run: .github/scripts/gh-pages-publish.sh root pages

@@ -11,6 +11,7 @@
  libs       │  ui (type:ui, Storybook) ──► shared-utils (type:util)               │
             └─────────────────────────────────────────────────────────────────────┘
  tools         vite-config (every app's vite.config)   workspace-plugin (pnpm new:*)
+               pages (assemble + serve the Pages artifact)   security (pnpm security)
 ```
 
 - **Apps** are thin: routing, pages, and composition. Anything reusable moves
@@ -48,6 +49,10 @@ A single GitHub Pages site per repo (`https://<user>.github.io/<repo>/`):
 | `/storybook/` | `libs/ui` Storybook static build |
 | `/pr-<n>/`    | `apps/site` preview of PR `<n>`  |
 
-Served from the `gh-pages` branch (ADR 0004). See
-`.github/workflows/deploy.yml` and `preview.yml`. `sandbox` is never
-deployed. The issue → PR agent pipeline is described in `docs/pipeline.md`.
+`tools/pages` assembles the artifact (`pnpm pages:build`) and refuses a site
+that already contains `storybook/`, source maps, or third-party scripts.
+`apps/pages-e2e` tests that exact artifact under a non-root base path with a
+Pages-like server. `.github/workflows/deploy.yml` publishes it to the root of
+the `gh-pages` branch, next to the PR previews that `preview.yml` puts under
+`pr-<n>/` (ADR 0004). `sandbox` is never deployed. The issue → PR agent
+pipeline is described in `docs/pipeline.md`.

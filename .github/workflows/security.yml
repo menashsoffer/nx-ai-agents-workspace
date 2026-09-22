@@ -4,7 +4,9 @@ name: Pipeline · Security Review
 # correctness. A deterministic job parses its JSON, posts a PR review
 # (blocking findings as inline threads), sets the `pipeline/security`
 # commit status and labels stage:reviewing. Findings feed fix.yml.
-on:
+# W5 (docs/security.md): consumes no artifacts, runs only for same-repo PRs,
+# never executes PR code, and loads prompts/scripts from the default branch.
+on: # zizmor: ignore[dangerous-triggers]
   workflow_run:
     workflows: [CI]
     types: [completed]
