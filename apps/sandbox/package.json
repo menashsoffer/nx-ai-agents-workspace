@@ -10,7 +10,6 @@
     ]
   },
   "dependencies": {
-    "@starter/shared-utils": "workspace:*",
     "@starter/ui": "workspace:*"
   },
   "devDependencies": {

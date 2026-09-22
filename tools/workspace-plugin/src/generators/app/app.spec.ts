@@ -31,6 +31,11 @@ describe('app generator', () => {
 
     const pkg = readJson(tree, 'apps/admin-panel/package.json');
     expect(pkg.dependencies['@acme/ui']).toBe('workspace:*');
+
+    // Routing comes from `react-router` in the root package.json, never the legacy package.
+    const rootPkg = readJson(tree, 'package.json');
+    expect(rootPkg.dependencies?.['react-router-dom']).toBeUndefined();
+    expect(rootPkg.devDependencies?.['react-router-dom']).toBeUndefined();
   });
 
   it('supports product scope', async () => {

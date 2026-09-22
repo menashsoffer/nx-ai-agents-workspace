@@ -51,3 +51,12 @@ test-output
 
 
 storybook-static
+# Secrets never belong in the repo (docs/security.md, S3)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Security tool binaries fetched by tools/security
+.security-bin

@@ -41,7 +41,7 @@ ESLint rule that rejects non-RTL-safe Tailwind classes (`ml-4`, `text-right`,
 4. GitHub → **Settings → Pages → Source: GitHub Actions**. Every push to
    `main` then verifies and deploys to `https://<user>.github.io/<repo>/`.
 
-Requires Node 22+ (see `.nvmrc`).
+Requires Node 22.18+ (Node 24 LTS recommended; see `.nvmrc`).
 
 ## Daily commands
 
