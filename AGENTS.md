@@ -34,7 +34,12 @@ tools/
   workspace-plugin/ local Nx generators (pnpm new:*)
   scripts/         one-off repo scripts (init-template)
 docs/              architecture, conventions, decisions (ADRs); read before big changes
+                   pipeline.md: the issue → PR multi-agent pipeline
 ```
+
+If you are running inside the pipeline (`.github/workflows/`), your prompt
+in `.github/prompts/` is authoritative for your step. Never edit `.github/`,
+`CODEOWNERS`, `.claude/` or `.gemini/` there; such patches are rejected.
 
 ## Commands
 
