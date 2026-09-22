@@ -33,15 +33,31 @@ ESLint rule that rejects non-RTL-safe Tailwind classes (`ml-4`, `text-right`,
    ```sh
    corepack enable            # uses the pnpm version pinned in package.json
    pnpm install
-   pnpm template:init --scope my-project   # renames @starter/* → @my-project/*
+   pnpm template:init --scope my-project --what "Workshop registration site"
    ```
 
-3. Fill in **This project** at the top of `AGENTS.md` and set the title in
-   `apps/site/index.html`.
+3. Set the site title in `apps/site/index.html`.
 4. GitHub → **Settings → Pages → Source: GitHub Actions**. Every push to
    `main` then verifies and deploys to `https://<user>.github.io/<repo>/`.
 
-Requires Node 22.18+ (Node 24 LTS recommended; see `.nvmrc`).
+Requires Node 22.18+ (Node 24 LTS recommended; see `.nvmrc`). On Windows, use
+WSL2.
+
+### Initialization contract
+
+After `template:init`, a project must have **nothing left from the template**:
+
+| Item                   | Resolved by                                                    |
+| ---------------------- | -------------------------------------------------------------- |
+| npm scope `@starter/*` | `template:init --scope` (renamed in every tracked file)        |
+| AGENTS.md → **What**   | `template:init --what`                                         |
+| AGENTS.md → **Live**   | `template:init` (from `git remote get-url origin`, or `--url`) |
+| Template-only files    | `template:init` (removes itself and the template smoke test)   |
+| Site title             | you, in `apps/site/index.html`                                 |
+| Pages source           | you, in GitHub settings                                        |
+
+Until a field in AGENTS.md is filled in, it says `_TODO_`, and AI assistants
+are instructed to ask rather than guess.
 
 ## Daily commands
 

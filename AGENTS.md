@@ -6,11 +6,12 @@ point here. Humans: see `README.md` and `docs/`.
 
 ## This project
 
-<!-- Fill in when starting a project from the template: what it is, who uses it,
-     where it is deployed. Keep it to a few lines. -->
+> **Agents:** if a field below still says `_TODO_`, ask the user for it
+> before doing any project-specific work. Never invent or guess it.
+> (`pnpm template:init` fills these in when a project is created.)
 
 - **What:** _TODO_
-- **Live:** _TODO_ (GitHub Pages: `https://<user>.github.io/<repo>/`, Storybook at `/storybook/`)
+- **Live:** _TODO_
 - **Language/direction:** Hebrew, RTL
 
 ## Stack
