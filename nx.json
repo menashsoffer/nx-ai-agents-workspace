@@ -14,7 +14,11 @@
       "!{projectRoot}/.storybook/**/*",
       "!{projectRoot}/tsconfig.storybook.json"
     ],
-    "sharedGlobals": []
+    "sharedGlobals": [
+      {
+        "env": "BASE_PATH"
+      }
+    ]
   },
   "plugins": [
     {
