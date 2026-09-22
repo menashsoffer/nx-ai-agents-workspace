@@ -131,13 +131,16 @@ jobs:
             --data review_items=.pipeline/items.json \
             --data diff=.pipeline/pr.diff
 
+      # Step-level `env:` on the run-gemini-cli step itself does not reliably
+      # reach that composite action's own internal steps; $GITHUB_ENV is the
+      # documented way to make a var visible to every later step in the job.
+      # Same-repo PRs only (adapter job's if:), and the CLI is scoped to
+      # specific tools (settings below).
+      - name: Trust the workspace for Gemini CLI
+        run: echo "GEMINI_CLI_TRUST_WORKSPACE=true" >> "$GITHUB_ENV"
+
       - id: gemini
         uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
-        env:
-          # Same-repo PRs only (adapter job's if:), and the CLI is scoped
-          # to specific tools (settings below); matches the official
-          # run-gemini-cli example workflows' step-level placement.
-          GEMINI_CLI_TRUST_WORKSPACE: true
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
           gemini_model: ${{ vars.GEMINI_MODEL }}
