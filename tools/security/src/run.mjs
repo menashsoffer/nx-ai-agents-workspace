@@ -101,11 +101,15 @@ if ('unsupported' in platform) {
   };
 
   run('W7/W8: actionlint', 'actionlint', []);
-  const hasToken = Boolean(
-    process.env['GH_TOKEN'] || process.env['GITHUB_TOKEN'],
+  // Online audits (e.g. impostor commits behind pinned SHAs) need a working
+  // GitHub token; CI provides one. Locally, tokens are often absent or scoped
+  // differently, so run offline there.
+  const online = Boolean(
+    process.env['CI'] &&
+      (process.env['GH_TOKEN'] || process.env['GITHUB_TOKEN']),
   );
-  run('W1-W5: zizmor', 'zizmor', [
-    ...(hasToken ? [] : ['--offline']),
+  run(`W1-W5: zizmor (${online ? 'online' : 'offline'})`, 'zizmor', [
+    ...(online ? [] : ['--offline']),
     '--min-severity',
     'low',
     '--no-progress',

@@ -11,6 +11,7 @@
  libs       │  ui (type:ui, Storybook) ──► shared-utils (type:util)               │
             └─────────────────────────────────────────────────────────────────────┘
  tools         vite-config (every app's vite.config)   workspace-plugin (pnpm new:*)
+               pages (assemble + serve the Pages artifact)   security (pnpm security)
 ```
 
 - **Apps** are thin: routing, pages, and composition. Anything reusable moves
@@ -47,4 +48,8 @@ A single GitHub Pages site per repo (`https://<user>.github.io/<repo>/`):
 | `/`           | `apps/site` production build     |
 | `/storybook/` | `libs/ui` Storybook static build |
 
-See `.github/workflows/deploy.yml`. `sandbox` is never deployed.
+`tools/pages` assembles the artifact (`pnpm pages:build`) and refuses a site
+that already contains `storybook/`, source maps, or third-party scripts.
+`apps/pages-e2e` tests that exact artifact under a non-root base path with a
+Pages-like server; `.github/workflows/deploy.yml` deploys it. `sandbox` is
+never deployed.

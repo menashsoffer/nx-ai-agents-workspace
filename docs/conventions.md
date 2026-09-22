@@ -2,17 +2,17 @@
 
 ## Naming
 
-| Thing             | Convention                                             | Example                                |
-| ----------------- | ------------------------------------------------------ | -------------------------------------- |
-| Folders, projects | kebab-case; Nx project name = folder name              | `apps/site`, project `site`            |
-| Shared util libs  | `libs/shared/<name>`, project `shared-<name>`          | `libs/shared/utils` → `shared-utils`   |
-| Other libs        | `libs/<name>`                                          | `libs/booking`                         |
-| Import paths      | `@starter/<project>`                                   | `@starter/ui`, `@starter/shared-utils` |
-| Components        | PascalCase file + named export, in a kebab-case folder | `src/lib/date-picker/DatePicker.tsx`   |
-| Tests / stories   | next to the file: `Name.spec.tsx`, `Name.stories.tsx`  |                                        |
-| Pages             | `src/pages/<Name>Page.tsx`                             | `HomePage.tsx`                         |
-| Spikes            | `apps/sandbox/src/spikes/<yyyy-mm>-<slug>/index.tsx`   | `2026-09-hebrew-fonts`                 |
-| ADRs              | `docs/decisions/NNNN-short-title.md`                   | `0004-use-zustand.md`                  |
+| Thing             | Convention                                                     | Example                                |
+| ----------------- | -------------------------------------------------------------- | -------------------------------------- |
+| Folders, projects | kebab-case; Nx project name = folder name                      | `apps/site`, project `site`            |
+| Shared util libs  | `libs/shared/<name>`, project `shared-<name>`                  | `libs/shared/utils` → `shared-utils`   |
+| Other libs        | `libs/<name>`                                                  | `libs/booking`                         |
+| Import paths      | `@starter/<project>`                                           | `@starter/ui`, `@starter/shared-utils` |
+| Components        | PascalCase file + named export, in a kebab-case folder         | `src/lib/date-picker/DatePicker.tsx`   |
+| Tests / stories   | next to the file: `Name.spec.tsx`, `Name.stories.tsx`          |                                        |
+| Pages             | `src/pages/<Name>Page.tsx`                                     | `HomePage.tsx`                         |
+| Spikes            | `apps/sandbox/src/spikes/<yyyy-mm>-<slug>/{meta.ts,index.tsx}` | `2026-09-hebrew-fonts`                 |
+| ADRs              | `docs/decisions/NNNN-short-title.md`                           | `0004-use-zustand.md`                  |
 
 Prefer named exports. Default exports exist only where a tool requires them
 (Storybook meta, lazy-loaded spikes).

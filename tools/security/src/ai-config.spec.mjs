@@ -11,6 +11,7 @@ import {
 describe('A1: Claude permission allow-list', () => {
   it.each([
     'Bash(pnpm nx:*)',
+    'Bash(pnpm nx run:*)',
     'Bash(pnpm exec:*)',
     'Bash(npx:*)',
     'Bash(*)',

@@ -31,6 +31,8 @@ const ARBITRARY_PREFIXES = [
   'wget',
   'pnpm nx exec',
   'pnpm nx run-commands',
+  // String prefix of `pnpm nx run-commands`, which runs arbitrary shell commands.
+  'pnpm nx run',
 ];
 
 const PINNED_REF = /^([0-9a-f]{40}|v?\d+\.\d+\.\d+)$/;
