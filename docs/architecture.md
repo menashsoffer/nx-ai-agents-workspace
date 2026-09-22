@@ -46,5 +46,8 @@ A single GitHub Pages site per repo (`https://<user>.github.io/<repo>/`):
 | ------------- | -------------------------------- |
 | `/`           | `apps/site` production build     |
 | `/storybook/` | `libs/ui` Storybook static build |
+| `/pr-<n>/`    | `apps/site` preview of PR `<n>`  |
 
-See `.github/workflows/deploy.yml`. `sandbox` is never deployed.
+Served from the `gh-pages` branch (ADR 0004). See
+`.github/workflows/deploy.yml` and `preview.yml`. `sandbox` is never
+deployed. The issue → PR agent pipeline is described in `docs/pipeline.md`.

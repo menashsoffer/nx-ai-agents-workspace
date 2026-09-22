@@ -38,8 +38,12 @@ ESLint rule that rejects non-RTL-safe Tailwind classes (`ml-4`, `text-right`,
 
 3. Fill in **This project** at the top of `AGENTS.md` and set the title in
    `apps/site/index.html`.
-4. GitHub → **Settings → Pages → Source: GitHub Actions**. Every push to
-   `main` then verifies and deploys to `https://<user>.github.io/<repo>/`.
+4. GitHub → **Settings → Pages → Source: Deploy from a branch**, branch
+   `gh-pages`, folder `/ (root)`. Every push to `main` then verifies and
+   deploys to `https://<user>.github.io/<repo>/`; PR previews live under
+   `/pr-<n>/`.
+5. Optional: set up the multi-agent issue → PR pipeline, see
+   [`docs/pipeline.md`](docs/pipeline.md).
 
 Requires Node 22+ (see `.nvmrc`).
 

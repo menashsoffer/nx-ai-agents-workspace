@@ -1,6 +1,6 @@
 # 0003. GitHub Pages project sites with a 404.html SPA fallback
 
-- Status: accepted
+- Status: accepted (deployment mechanism superseded by 0004)
 - Date: 2026-09-22
 
 ## Context
