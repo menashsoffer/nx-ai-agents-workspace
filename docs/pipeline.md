@@ -150,7 +150,7 @@ Nothing happens until these files are on `main`.
    | variable | `PIPELINE_APP_CLIENT_ID`   | the App's client ID                                                                |
    | secret   | `PIPELINE_APP_PRIVATE_KEY` | the App's private key (PEM)                                                        |
    | variable | `PIPELINE_BOT_LOGIN`       | the App's bot login, e.g. `my-pipeline[bot]` (lets Claude run on its label events) |
-   | secret   | `ANTHROPIC_API_KEY`        | Claude API key                                                                     |
+   | secret   | `CLAUDE_CODE_OAUTH_TOKEN`  | Claude subscription token from `claude setup-token` (Pro/Max); no API billing      |
    | secret   | `GEMINI_API_KEY`           | Gemini API key                                                                     |
    | variable | `GEMINI_MODEL`             | optional, e.g. a specific Gemini model                                             |
    | variable | `PROJECT_URL`              | set by `setup-project.sh`; leave unset to run without a Project                    |
