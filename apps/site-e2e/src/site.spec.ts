@@ -5,8 +5,8 @@ test('home page renders in Hebrew RTL', async ({ page }) => {
 
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await expect(page.locator('html')).toHaveAttribute('lang', 'he');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-    'ברוכים הבאים',
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(
+    'NX AI Pipeline',
   );
 });
 

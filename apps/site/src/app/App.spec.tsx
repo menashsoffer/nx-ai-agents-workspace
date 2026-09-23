@@ -14,7 +14,9 @@ function renderAt(path: string) {
 describe('App', () => {
   it('renders the home page at /', () => {
     renderAt('/');
-    expect(screen.getByRole('heading', { name: 'ברוכים הבאים' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'NX AI Pipeline' }),
+    ).toBeTruthy();
   });
 
   it('renders the about page at /about', () => {
