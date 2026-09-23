@@ -4,6 +4,10 @@
 // developer's own GitHub account. Reads APP_ID and PEM_PATH from .env.local
 // (never committed) and prints only the token to stdout; everything else
 // goes to stderr so stdout stays safe to capture as a credential.
+//
+// The token expires after ~1 hour (a GitHub API limit on installation access
+// tokens, not something this script controls). To re-mint mid-session, run:
+//   "$CLAUDE_PROJECT_DIR"/.claude/hooks/mint-app-identity.sh
 
 import { createSign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
