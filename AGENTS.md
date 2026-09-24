@@ -44,9 +44,11 @@ docs/              architecture, conventions, decisions (ADRs); read before big 
 
 If you are running inside the pipeline (`.github/workflows/`), your prompt
 in `.github/prompts/` is authoritative for your step. Never edit `.github/`,
-`CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`, `tools/security/`,
-`tools/workspace-plugin/` or `tools/pipeline-map/` there (see "Protected files" below); such patches
-are rejected.
+`CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`, `tools/security/`,
+`.npmrc` or `.gitmodules` there; such patches are rejected. Package manifests,
+the lockfile, `pnpm-workspace.yaml`, `tools/workspace-plugin/` and
+`tools/pipeline-map/` only as the plan lists them: the branch is then pushed
+with no PR and the owner approves it first (see "Protected files" below).
 
 ## Commands
 
@@ -163,6 +165,24 @@ Do **not** change these unless the user explicitly asks for that change:
 `pnpm verify` runs it).
 Never add exceptions to `tools/security/exceptions.json` on your own. The
 rules are in `docs/security.md`.
+
+The pipeline splits the protected paths in two (`APPROVABLE_PATH_PATTERNS`
+and `FORBIDDEN_PATH_PATTERNS` in `.github/scripts/pipeline-lib.mjs`):
+
+- **Approvable** by the owner, once, before any PR exists: any
+  `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`,
+  `tools/workspace-plugin/**`, `tools/pipeline-map/**`. A pipeline patch that
+  touches only these is pushed to its branch with no PR; the owner reads the
+  diff and comments `/approve-protected <sha>`. The approval covers that
+  commit only.
+- **Never approvable, local session only:** `.github/**`, `CODEOWNERS`,
+  `tools/security/**`, `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`,
+  `.npmrc`, `.gitmodules`. A patch touching any of them is rejected, whatever
+  else is in it.
+
+The supply-chain settings and `packageManager` above stay off limits for
+agents even inside an approvable file. See `docs/pipeline.md`,
+"Protected-change approval".
 
 ### Dependencies
 

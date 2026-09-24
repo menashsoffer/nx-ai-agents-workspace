@@ -1,0 +1,129 @@
+name: Pipeline · Protected approval
+
+# The repo owner's decision on protected changes. develop.yml pushes an
+# issue-<n>-<slug> branch whose protected paths are all approvable
+# (package.json, the lockfile, pnpm-workspace.yaml, the workspace generators,
+# the map tool) WITHOUT opening a PR, and posts the diff on the issue. Such
+# content runs with repo secrets as soon as a pull_request workflow runs on
+# it, so the owner approves it first.
+#   decide: a comment whose whole body is one command,
+#     /approve-protected <first 12 hex characters of the head commit>
+#     /reject-protected <reason>
+#   is checked in full (owner only, a human account, an unedited comment,
+#   the issue in stage:awaiting-approval, the SHA is the latest request's
+#   head and the branch's head, the protected path set recomputed from
+#   main...head is the recorded one, and every path is still approvable).
+#   Any failed check: one short reply, no state change. Approve: the bot
+#   opens the PR, appends a record note and sets `pipeline/protected-approval`
+#   to success. Reject: an outcome note for the router (a human).
+#   Only newly created comments count: an edit never re-runs this.
+#   sync: on every new PR head (CI requested), `pipeline/protected-approval`
+#   is recomputed. A head that differs from the approved one is pending
+#   again and a new request is posted on the issue.
+# docs/pipeline.md, "Protected-change approval". The comment is data: it
+# reaches the script through the environment and is never executed.
+on: # zizmor: ignore[dangerous-triggers]
+  issue_comment:
+    types: [created]
+  # Runs the default branch's workflow and reads nothing from the run: only
+  # its head SHA and PR number. Every new head, including a push after an
+  # approval, starts a CI run.
+  workflow_run:
+    workflows: [CI]
+    types: [requested]
+
+permissions: {}
+
+jobs:
+  decide:
+    # Comments on issues only, from a human, that start with a command.
+    # Fails closed: with PIPELINE_OWNER_LOGIN unset the job never runs. Anyone
+    # can comment on a public repo, so a non-owner's command gets a reply from
+    # the script (which checks the owner again); nothing else.
+    if: >-
+      github.event_name == 'issue_comment' &&
+      vars.PIPELINE_APP_CLIENT_ID != '' && vars.PIPELINE_BOT_LOGIN != '' &&
+      vars.PIPELINE_OWNER_LOGIN != '' &&
+      !github.event.issue.pull_request &&
+      github.event.comment.user.type == 'User' &&
+      (startsWith(github.event.comment.body, '/approve-protected') ||
+      startsWith(github.event.comment.body, '/reject-protected'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pipeline-issue-${{ github.event.issue.number }}-protected
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      # App token: the PR it opens and the record note must trigger workflows.
+      # No `workflows` permission: a bot-pushed patch can never hold .github/.
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
+          permission-issues: write
+          permission-statuses: write
+
+      - name: Approve or reject the protected changes
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          PIPELINE_OWNER_LOGIN: ${{ vars.PIPELINE_OWNER_LOGIN }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
+          COMMENT_USER_TYPE: ${{ github.event.comment.user.type }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          N: ${{ github.event.issue.number }}
+        run: node .github/scripts/pipeline.mjs protected-decision "$N" "$COMMENT_ID"
+
+  sync:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      vars.PIPELINE_APP_CLIENT_ID != '' && vars.PIPELINE_BOT_LOGIN != '' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.pull_requests[0].number
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pipeline-pr-${{ github.event.workflow_run.pull_requests[0].number }}-protected
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: read
+          permission-issues: write
+          permission-statuses: write
+
+      - name: Recompute pipeline/protected-approval
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          PIPELINE_OWNER_LOGIN: ${{ vars.PIPELINE_OWNER_LOGIN }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          N: ${{ github.event.workflow_run.pull_requests[0].number }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node .github/scripts/pipeline.mjs protected-status "$N" "$SHA"

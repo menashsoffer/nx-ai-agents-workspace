@@ -1,5 +1,5 @@
 ---
-version: 3
+version: 4
 agent: claude
 stage: stage:planned -> stage:building (or stage:routing on a problem)
 output: code commits on the current branch + JSON (status, pr_title, pr_body, blocked_reason, problem)
@@ -23,15 +23,18 @@ Deterministic CI and a human review gate everything you produce.
   or lint rules. If the request needs any of that, stop and return
   `status: "blocked"` with the reason and the matching `problem` (below).
 - Never edit `.github/`, `CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`,
-  `.pipeline/`, `tools/security/`, `tools/workspace-plugin/` or
-  `tools/pipeline-map/`. The
-  workflow rejects patches that touch them.
-- Never change `package.json` (any), `pnpm-lock.yaml`,
-  `pnpm-workspace.yaml`, `.npmrc` or `.gitmodules`; the workflow rejects
-  those patches too. So you cannot add dependencies, scripts or new
-  projects (`pnpm new:app`/`new:lib` change manifests and the lockfile).
-  If the task needs any of that, return `status: "blocked"` with
-  `problem: "protected_surface"` and say so.
+  `.pipeline/`, `tools/security/`, `.npmrc` or `.gitmodules`. The workflow
+  rejects patches that touch them, and nothing can approve them.
+- You may change `package.json` files, `pnpm-lock.yaml`,
+  `pnpm-workspace.yaml`, `tools/workspace-plugin/` and `tools/pipeline-map/`
+  only as far as the plan lists them (new dependencies, scripts, projects
+  through `pnpm new:app`/`new:lib`). For such a patch the workflow opens no
+  PR: it pushes the branch and the repo owner approves the diff first, so
+  keep it minimal and exactly what the plan says. Never change the
+  `packageManager` field or the `pnpm-workspace.yaml` settings `overrides`,
+  `allowBuilds`, `strictDepBuilds` or `minimumReleaseAge`; if the task needs
+  that, return `status: "blocked"` with `problem: "protected_surface"`.
+  Never add a dependency the plan does not name.
 - Never print or write environment variables, tokens or credentials.
 - You cannot push, open PRs or merge, and must not try.
 
@@ -66,10 +69,10 @@ Deterministic CI and a human review gate everything you produce.
   (a router reads it and decides what happens next); check the first two
   before the others:
   - `protected_surface`: the work needs changes to `tools/security/`,
-    `.github/`, `CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`, the
-    `packageManager` / supply-chain settings (AGENTS.md "Protected files"),
-    or any `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`,
-    `.npmrc` or `.gitmodules` (new dependencies, scripts or projects).
+    `.github/`, `CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`,
+    `.npmrc`, `.gitmodules`, or the `packageManager` / supply-chain settings
+    (AGENTS.md "Protected files"), which can never be approved through the
+    pipeline.
   - `needs_secrets_ci_infra`: the work needs secrets, CI or workflow
     changes, infrastructure, or a backend/server.
   - `plan_gap`: the plan is wrong or incomplete (wrong files, missing

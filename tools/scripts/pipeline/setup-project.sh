@@ -33,6 +33,7 @@ mutation($field: ID!) {
       { name: "Qualified",       color: BLUE,   description: "stage:qualified" }
       { name: "Spec",            color: BLUE,   description: "stage:spec" }
       { name: "Planned",         color: GREEN,  description: "stage:planned" }
+      { name: "Awaiting approval", color: YELLOW, description: "stage:awaiting-approval" }
       { name: "Building",        color: PURPLE, description: "stage:building" }
       { name: "Reviewing",       color: PURPLE, description: "stage:reviewing" }
       { name: "Fixing",          color: YELLOW, description: "stage:fixing" }

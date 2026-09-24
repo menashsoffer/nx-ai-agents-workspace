@@ -13,6 +13,11 @@ name: Pipeline · Fix
 #   fix (agent, Gemini, read-only token, no shell): edit the working tree only.
 #   verify (deterministic, no secrets): apply the patch, format, run pnpm verify.
 #   push (deterministic): check the patch, commit, push, reply to threads.
+#   A fix patch never carries protected paths, approvable ones included: it
+#   moves the branch head and an owner approval covers one head only, so
+#   pushing it would run unapproved protected content in CI on an open PR.
+#   It is refused before any push (protected_approval_needed or
+#   forbidden_path, both hard gates for a human).
 #   report: on a failure, an outcome note + stage:routing for the router.
 on:
   pull_request_review:
@@ -113,6 +118,8 @@ jobs:
       summary: ${{ steps.gemini.outputs.summary }}
       prompt_version: ${{ steps.prompt.outputs.version }}
       patch_rejected: ${{ steps.guard.outputs.rejected }}
+      # none | approvable | forbidden (check-patch): tells the two hard gates apart.
+      patch_protected: ${{ steps.guard.outputs.protected }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -186,7 +193,8 @@ jobs:
           git -c core.quotePath=false diff --cached --binary > "$RUNNER_TEMP/out/fix.patch"
           test -s "$RUNNER_TEMP/out/fix.patch" || { echo "::error::The fixer made no changes"; exit 1; }
 
-      # A rejected patch is the forbidden_path hard gate, not an agent error.
+      # A rejected patch is a hard gate (forbidden_path, or protected_approval_needed
+      # when its protected paths are all approvable), not an agent error.
       - id: guard
         run: |
           if ! node "$RUNNER_TEMP/trusted/.github/scripts/pipeline.mjs" check-patch "$RUNNER_TEMP/out/fix.patch"; then
@@ -367,8 +375,10 @@ jobs:
           VERIFY: ${{ needs.verify.result }}
           PUSH: ${{ needs.push.result }}
           REJECTED: ${{ needs.fix.outputs.patch_rejected }}
+          PROTECTED: ${{ needs.fix.outputs.patch_protected }}
           VERSION: ${{ needs.fix.outputs.prompt_version }}
         run: |
           node .github/scripts/pipeline.mjs classify fix --job-result "$FIX" --verify-result "$VERIFY" --push-result "$PUSH" \
-            --patch-rejected "${REJECTED:-false}" --prompt-version "fix.md@${VERSION:-unknown}" --out outcome.json
+            --patch-rejected "${REJECTED:-false}" --patch-protected "${PROTECTED:-none}" \
+            --prompt-version "fix.md@${VERSION:-unknown}" --out outcome.json
           node .github/scripts/pipeline.mjs outcome "$N" outcome.json

@@ -24,20 +24,21 @@ and sets the next label itself. Dashed red arrows: a stage that hits a problem
 appends a problem outcome note and sets `stage:routing`; only the router
 decides what happens next.
 
-| Stage label             | Set by         | Meaning / next step                                                                                         |
-| ----------------------- | -------------- | ----------------------------------------------------------------------------------------------------------- |
-| `stage:inbox`           | `inbox.yml`    | New issue. A maintainer triages it.                                                                         |
-| `stage:qualified`       | **a human**    | Starts the planning agent (`plan.yml`): one Claude run writes the spec **and** the plan.                    |
-| `stage:spec`            | _nothing_      | **Deprecated.** No workflow sets it or starts a stage on it. It stays so old items keep their board column. |
-| `stage:planned`         | `plan.yml`     | Spec and plan comments posted and auto-approved. Starts the develop agent.                                  |
-| `stage:building`        | `develop.yml`  | Draft PR open (on the issue and the PR). CI runs.                                                           |
-| `stage:reviewing`       | `security.yml` | Security review posted on the PR.                                                                           |
-| `stage:fixing`          | `fix.yml`      | Fixer is applying review feedback.                                                                          |
-| `stage:human-approval`  | `approval.yml` | Everything green. A human reviews the PR and the preview, then approves and merges.                         |
-| `stage:routing`         | any step       | A stage reported a problem in an outcome note. `router.yml` decides the next step.                          |
-| `stage:needs-attention` | `router.yml`   | The router handed off. Read its latest `pipeline:route` note and act.                                       |
-| `stage:done`            | `done.yml`     | The PR merged. Set on the PR and its issues; terminal. See [When a PR closes](#when-a-pr-closes).           |
-| `fix-loop:1` / `:2`     | `fix.yml`      | Automated fix rounds used. At most two. Cleared on escalation and at `stage:human-approval`.                |
+| Stage label               | Set by                                 | Meaning / next step                                                                                                                                                     |
+| ------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stage:inbox`             | `inbox.yml`                            | New issue. A maintainer triages it.                                                                                                                                     |
+| `stage:qualified`         | **a human**                            | Starts the planning agent (`plan.yml`): one Claude run writes the spec **and** the plan.                                                                                |
+| `stage:spec`              | _nothing_                              | **Deprecated.** No workflow sets it or starts a stage on it. It stays so old items keep their board column.                                                             |
+| `stage:planned`           | `plan.yml`                             | Spec and plan comments posted and auto-approved. Starts the develop agent.                                                                                              |
+| `stage:awaiting-approval` | `develop.yml`, `protected-approve.yml` | Protected changes are pushed to a branch with **no PR**; the owner reads the diff and approves or rejects. See [Protected-change approval](#protected-change-approval). |
+| `stage:building`          | `develop.yml`                          | Draft PR open (on the issue and the PR). CI runs.                                                                                                                       |
+| `stage:reviewing`         | `security.yml`                         | Security review posted on the PR.                                                                                                                                       |
+| `stage:fixing`            | `fix.yml`                              | Fixer is applying review feedback.                                                                                                                                      |
+| `stage:human-approval`    | `approval.yml`                         | Everything green. A human reviews the PR and the preview, then approves and merges.                                                                                     |
+| `stage:routing`           | any step                               | A stage reported a problem in an outcome note. `router.yml` decides the next step.                                                                                      |
+| `stage:needs-attention`   | `router.yml`                           | The router handed off. Read its latest `pipeline:route` note and act.                                                                                                   |
+| `stage:done`              | `done.yml`                             | The PR merged. Set on the PR and its issues; terminal. See [When a PR closes](#when-a-pr-closes).                                                                       |
+| `fix-loop:1` / `:2`       | `fix.yml`                              | Automated fix rounds used. At most two. Cleared on escalation and at `stage:human-approval`.                                                                            |
 
 From `stage:building` on, the **PR** carries the stage; the issue stays at
 `stage:building` until the PR closes. Then both get `stage:done` (merged),
@@ -74,23 +75,24 @@ and manual runs); an open issue whose PR was closed still routes.
 
 ## Workflows
 
-| Workflow           | Trigger                                                                | Agent                          | Output                                                                                                        |
-| ------------------ | ---------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `inbox.yml`        | issue opened                                                           | none                           | `stage:inbox`, Project item in Inbox                                                                          |
-| `plan.yml`         | `stage:qualified` added                                                | Claude (`plan.md`)             | spec + plan comments, `stage:planned` (or an outcome note + `stage:routing`)                                  |
-| `develop.yml`      | `stage:planned` added                                                  | Claude (`develop.md`)          | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`                                             |
-| `router.yml`       | `stage:routing` added (open issue or PR), or manual                    | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)                                           |
-| `ci.yml`           | every PR                                                               | none                           | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site)                                     |
-| `security.yml`     | CI succeeded on a PR                                                   | Gemini (`security-review.md`)  | PR review, `pipeline/security` status, `stage:reviewing`                                                      |
-| `security.yml`     | CI failed on a pipeline PR's head                                      | none                           | outcome note `ci_failed` + `stage:routing` (router → human)                                                   |
-| `fix.yml`          | review submitted, manual, or router retry                              | Gemini (`fix.md`)              | one fix commit per round, replies on threads                                                                  |
-| `approval.yml`     | `pipeline/security` status, review submitted, disposition note, manual | none                           | `pipeline/gates` status; Copilot review request, then `stage:human-approval` + preview comment                |
-| `approval.yml`     | CI requested on a same-repo PR                                         | none                           | `pipeline/gates` = pending on the new head                                                                    |
-| `disposition.yml`  | comment created on a PR                                                | none                           | owner's `/disposition` → resolved threads + record notes (see [Review gates](#review-gates-and-dispositions)) |
-| `preview.yml`      | PR opened/updated/closed                                               | none                           | `https://<owner>.github.io/<repo>/pr-<n>/`, removed on close                                                  |
-| `done.yml`         | PR closed                                                              | none                           | merged: `stage:done` + Project **Done**; unmerged: `pr_closed` note + `stage:routing` on the issue            |
-| `project-sync.yml` | any `stage:*` label added (closed items: `stage:done` only)            | none                           | Project **Status** follows the label                                                                          |
-| `deploy.yml`       | push to `main`                                                         | none                           | site at `/`, Storybook at `/storybook/`, keeps `pr-*/` previews                                               |
+| Workflow                | Trigger                                                                | Agent                          | Output                                                                                                                                                              |
+| ----------------------- | ---------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inbox.yml`             | issue opened                                                           | none                           | `stage:inbox`, Project item in Inbox                                                                                                                                |
+| `plan.yml`              | `stage:qualified` added                                                | Claude (`plan.md`)             | spec + plan comments, `stage:planned` (or an outcome note + `stage:routing`)                                                                                        |
+| `develop.yml`           | `stage:planned` added                                                  | Claude (`develop.md`)          | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`; approvable protected changes: branch only, `stage:awaiting-approval`                             |
+| `protected-approve.yml` | owner comment on an issue; CI requested on a same-repo PR              | none                           | `/approve-protected` opens the PR and sets `pipeline/protected-approval`; a new PR head recomputes it (see [Protected-change approval](#protected-change-approval)) |
+| `router.yml`            | `stage:routing` added (open issue or PR), or manual                    | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)                                                                                                 |
+| `ci.yml`                | every PR                                                               | none                           | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site)                                                                                           |
+| `security.yml`          | CI succeeded on a PR                                                   | Gemini (`security-review.md`)  | PR review, `pipeline/security` status, `stage:reviewing`                                                                                                            |
+| `security.yml`          | CI failed on a pipeline PR's head                                      | none                           | outcome note `ci_failed` + `stage:routing` (router → human)                                                                                                         |
+| `fix.yml`               | review submitted, manual, or router retry                              | Gemini (`fix.md`)              | one fix commit per round, replies on threads                                                                                                                        |
+| `approval.yml`          | `pipeline/security` status, review submitted, disposition note, manual | none                           | `pipeline/gates` status; Copilot review request, then `stage:human-approval` + preview comment                                                                      |
+| `approval.yml`          | CI requested on a same-repo PR                                         | none                           | `pipeline/gates` = pending on the new head                                                                                                                          |
+| `disposition.yml`       | comment created on a PR                                                | none                           | owner's `/disposition` → resolved threads + record notes (see [Review gates](#review-gates-and-dispositions))                                                       |
+| `preview.yml`           | PR opened/updated/closed                                               | none                           | `https://<owner>.github.io/<repo>/pr-<n>/`, removed on close                                                                                                        |
+| `done.yml`              | PR closed                                                              | none                           | merged: `stage:done` + Project **Done**; unmerged: `pr_closed` note + `stage:routing` on the issue                                                                  |
+| `project-sync.yml`      | any `stage:*` label added (closed items: `stage:done` only)            | none                           | Project **Status** follows the label                                                                                                                                |
+| `deploy.yml`            | push to `main`                                                         | none                           | site at `/`, Storybook at `/storybook/`, keeps `pr-*/` previews                                                                                                     |
 
 Deterministic logic lives in `.github/scripts/pipeline-lib.mjs` (pure,
 unit-tested by `pnpm test:pipeline`, which CI runs) and
@@ -117,14 +119,21 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
     outcome note `invalid_output` → router → human); unknown severities
     count as blocking;
   - develop / fix patches: rejected if they touch `.github/`, `CODEOWNERS`,
-    `.claude/`, `.gemini/` or `.pipeline/`, or the execution surface of
-    `pnpm` (`package.json` and `pnpm-lock.yaml` at any depth,
-    `pnpm-workspace.yaml`, `.npmrc`, `.gitmodules`), checked twice. The
-    check reads every header `git apply` uses (`diff --git`, rename/copy,
-    `---`/`+++`), decodes git's C-quoted names and rejects any patch it
-    cannot parse. So
-    **agents cannot add or change dependencies, scripts or projects**: a
-    task that needs that stops at CI or review and a human finishes it.
+    `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`, `tools/security/`,
+    `.npmrc` or `.gitmodules` (**never approvable**: the `forbidden_path`
+    hard gate, a local session changes those), or the execution surface of
+    `pnpm` and the pre-approved commands (`package.json` and
+    `pnpm-lock.yaml` at any depth, `pnpm-workspace.yaml`,
+    `tools/workspace-plugin/`, `tools/pipeline-map/`: **approvable**),
+    checked twice. The check reads every header `git apply` uses
+    (`diff --git`, rename/copy, `---`/`+++`), decodes git's C-quoted names
+    and rejects any patch it cannot parse. A develop patch whose protected
+    paths are all approvable is not rejected: it is pushed **without a PR**
+    and the owner approves it first ([Protected-change
+    approval](#protected-change-approval)). A fix patch never carries
+    protected paths. So **agents cannot add or change dependencies, scripts
+    or projects on their own**: the owner approves each such change once,
+    before any PR exists.
 - **Minimal tools.** Security review: Gemini read-only file tools.
   Plan (spec + plan): Claude `Read, Glob, Grep`. Develop: file edits, `pnpm` and local
   `git add/commit` only; no push, `gh`, `curl` or web. Fix: file edits only,
@@ -232,29 +241,31 @@ Nothing happens until these files are on `main`.
    (label, push, PR, review, status) is made with this App's token.
 3. **Secrets and variables** (Settings → Secrets and variables → Actions):
 
-   | Kind     | Name                       | Value                                                                                                                   |
-   | -------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-   | variable | `PIPELINE_APP_CLIENT_ID`   | the App's client ID                                                                                                     |
-   | secret   | `PIPELINE_APP_PRIVATE_KEY` | the App's private key (PEM)                                                                                             |
-   | variable | `PIPELINE_BOT_LOGIN`       | **required**: the App's bot login, e.g. `my-pipeline[bot]`; the only author whose marker comments and notes are trusted |
-   | variable | `PIPELINE_OWNER_LOGIN`     | **required for dispositions**: your GitHub login; the only account whose `/disposition` counts. Unset = nobody can      |
-   | secret   | `CLAUDE_CODE_OAUTH_TOKEN`  | Claude subscription token from `claude setup-token` (Pro/Max); no API billing                                           |
-   | secret   | `GEMINI_API_KEY`           | Gemini API key                                                                                                          |
-   | variable | `GEMINI_MODEL`             | optional, e.g. a specific Gemini model                                                                                  |
-   | variable | `PROJECT_URL`              | set by `setup-project.sh`; leave unset to run without a Project                                                         |
-   | secret   | `PROJECT_TOKEN`            | classic PAT, `project` scope (App tokens cannot reach user-owned Projects)                                              |
-   | secret   | `COPILOT_REVIEW_TOKEN`     | PAT of a user with Copilot code review (Pull requests: write); App token if unset                                       |
-   | variable | `ROUTER_MODE`              | optional: `rules` (default when unset) or `external` ([Router](#router))                                                |
-   | variable | `ROUTER_SHADOW`            | optional: `true` records the external brain's pick without using it                                                     |
+   | Kind     | Name                       | Value                                                                                                                                                                                          |
+   | -------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | variable | `PIPELINE_APP_CLIENT_ID`   | the App's client ID                                                                                                                                                                            |
+   | secret   | `PIPELINE_APP_PRIVATE_KEY` | the App's private key (PEM)                                                                                                                                                                    |
+   | variable | `PIPELINE_BOT_LOGIN`       | **required**: the App's bot login, e.g. `my-pipeline[bot]`; the only author whose marker comments and notes are trusted                                                                        |
+   | variable | `PIPELINE_OWNER_LOGIN`     | **required for dispositions and protected-change approvals**: your GitHub login; the only account whose `/disposition`, `/approve-protected` or `/reject-protected` counts. Unset = nobody can |
+   | secret   | `CLAUDE_CODE_OAUTH_TOKEN`  | Claude subscription token from `claude setup-token` (Pro/Max); no API billing                                                                                                                  |
+   | secret   | `GEMINI_API_KEY`           | Gemini API key                                                                                                                                                                                 |
+   | variable | `GEMINI_MODEL`             | optional, e.g. a specific Gemini model                                                                                                                                                         |
+   | variable | `PROJECT_URL`              | set by `setup-project.sh`; leave unset to run without a Project                                                                                                                                |
+   | secret   | `PROJECT_TOKEN`            | classic PAT, `project` scope (App tokens cannot reach user-owned Projects)                                                                                                                     |
+   | secret   | `COPILOT_REVIEW_TOKEN`     | PAT of a user with Copilot code review (Pull requests: write); App token if unset                                                                                                              |
+   | variable | `ROUTER_MODE`              | optional: `rules` (default when unset) or `external` ([Router](#router))                                                                                                                       |
+   | variable | `ROUTER_SHADOW`            | optional: `true` records the external brain's pick without using it                                                                                                                            |
 
 4. **Labels:** `tools/scripts/pipeline/setup-labels.sh` (re-run it after
-   upgrading to add new labels such as `stage:done`; it is idempotent)
+   upgrading to add new labels such as `stage:done` or
+   `stage:awaiting-approval`; it is idempotent)
 5. **Project:** `gh auth refresh -s project && tools/scripts/pipeline/setup-project.sh`,
    then enable the built-in workflows it prints (Item closed → Done,
    Pull request merged → Done, Item reopened → Inbox). Labels are the
    source of truth; `project-sync.yml` moves cards when labels change.
    Dragging a card does **not** change labels. On an existing Project, add
-   missing Status options (such as **Routing**) in the Project UI instead
+   missing Status options (such as **Routing** or **Awaiting approval**) in
+   the Project UI instead
    of re-running the script, which resets every item's Status.
 6. **Pages:** Settings → Pages → Source: **Deploy from a branch**, branch
    `gh-pages`, folder `/ (root)`. Production and previews share that branch
@@ -345,10 +356,18 @@ if **all** of these hold (`evaluatePlanApproval` in `pipeline-lib.mjs`):
 | ------------------------------------------------------------------------ | -------------------------------------------- |
 | Both parts present, every required section non-empty, every change valid | `invalid_output` → re-plan                   |
 | Every acceptance criterion non-empty and marked testable                 | `spec_questions` → human                     |
-| No planned file matches `FORBIDDEN_PATH_PATTERNS`                        | `protected_surface` → human (hard gate)      |
+| No planned file is **never approvable** (see below)                      | `protected_surface` → human (hard gate)      |
 | The planner reports no need for secrets, CI or infrastructure            | `needs_secrets_ci_infra` → human (hard gate) |
 | At most `PLAN_MAX_FILES` (10) files and `PLAN_MAX_LINES` (400) lines     | `scope_split` → human                        |
 | The planner reports no instructions embedded in the issue                | `embedded_instructions` → human (hard gate)  |
+
+Planned files that are protected but **approvable** (`package.json`,
+`pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tools/workspace-plugin/`,
+`tools/pipeline-map/`) pass this check. The success outcome note and the plan
+comment then say that the owner must approve them before a PR opens ([Protected-change
+approval](#protected-change-approval)). Any never-approvable path
+(`.github/`, `CODEOWNERS`, `tools/security/`, `.claude/`, `.gemini/`, `.codex/`,
+`.pipeline/`, `.npmrc`, `.gitmodules`) is still `protected_surface`.
 
 The two size limits are constants at the top of the plan section of
 `pipeline-lib.mjs`, set for a two-week trial: tune them there. When several
@@ -399,24 +418,26 @@ forge a marker.
 
 ### Problem codes (`PROBLEMS`)
 
-| Code                     | Reported by    | Meaning                                                                                                     |
-| ------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------- |
-| `invalid_output`         | plan, security | The agent answered, but not in the required shape (plan: a required spec or plan section is missing)        |
-| `agent_error`            | plan, dev, fix | The run failed: API/quota/timeout, empty output, no changes                                                 |
-| `spec_missing`           | _legacy_       | Old plan-stage note: no spec comment. Still read, no longer written                                         |
-| `spec_questions`         | plan           | The issue is unclear (blocking questions), or a criterion is not testable                                   |
-| `untestable_criteria`    | _legacy_       | Old plan-stage note: criteria untestable. Still read, no longer written                                     |
-| `verify_failed`          | develop, fix   | `pnpm verify` could not be made green (fix: the secret-free verify job failed on the patch)                 |
-| `plan_gap`               | develop        | The plan is wrong or incomplete                                                                             |
-| `budget_exhausted`       | fix            | Both fix rounds used                                                                                        |
-| `copilot_request_failed` | approval       | The Copilot review could not be requested                                                                   |
-| `ci_failed`              | ci             | CI failed on a pipeline PR's current head (`security.yml`'s `ci-failed` job)                                |
-| `pr_closed`              | pr             | The issue's PR was closed without merging and no other open PR is linked (`done.yml`)                       |
-| `protected_surface`      | plan, develop  | **Gate.** Touches `tools/security/`, `.github/`, `CODEOWNERS`, supply-chain settings, any manifest/lockfile |
-| `needs_secrets_ci_infra` | plan, develop  | **Gate.** Needs secrets, CI/workflow changes, infra, a server                                               |
-| `scope_split`            | plan           | Bigger than size L, or over the auto-approval size limits; split the issue (routes to a human)              |
-| `embedded_instructions`  | plan           | **Gate.** The issue contains instructions aimed at the agents                                               |
-| `forbidden_path`         | develop, fix   | **Gate.** `check-patch` rejected the patch                                                                  |
+| Code                        | Reported by    | Meaning                                                                                                                                                                                                              |
+| --------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `invalid_output`            | plan, security | The agent answered, but not in the required shape (plan: a required spec or plan section is missing)                                                                                                                 |
+| `agent_error`               | plan, dev, fix | The run failed: API/quota/timeout, empty output, no changes                                                                                                                                                          |
+| `spec_missing`              | _legacy_       | Old plan-stage note: no spec comment. Still read, no longer written                                                                                                                                                  |
+| `spec_questions`            | plan           | The issue is unclear (blocking questions), or a criterion is not testable                                                                                                                                            |
+| `untestable_criteria`       | _legacy_       | Old plan-stage note: criteria untestable. Still read, no longer written                                                                                                                                              |
+| `verify_failed`             | develop, fix   | `pnpm verify` could not be made green (fix: the secret-free verify job failed on the patch)                                                                                                                          |
+| `plan_gap`                  | develop        | The plan is wrong or incomplete                                                                                                                                                                                      |
+| `budget_exhausted`          | fix            | Both fix rounds used                                                                                                                                                                                                 |
+| `copilot_request_failed`    | approval       | The Copilot review could not be requested                                                                                                                                                                            |
+| `ci_failed`                 | ci             | CI failed on a pipeline PR's current head (`security.yml`'s `ci-failed` job)                                                                                                                                         |
+| `pr_closed`                 | pr             | The issue's PR was closed without merging and no other open PR is linked (`done.yml`)                                                                                                                                |
+| `protected_surface`         | plan, develop  | **Gate.** The work touches a never-approvable path (`tools/security/`, `.github/`, `CODEOWNERS`, ...) or supply-chain settings                                                                                       |
+| `protected_approval_needed` | develop, fix   | **Gate.** develop: the branch is pushed with no PR and the owner is asked (an outcome note, not routed; the issue waits in `stage:awaiting-approval`). fix: the fix patch carries protected paths and was not pushed |
+| `protected_rejected`        | develop        | The owner rejected the protected changes (`/reject-protected`). Routes to a human; the branch is kept                                                                                                                |
+| `needs_secrets_ci_infra`    | plan, develop  | **Gate.** Needs secrets, CI/workflow changes, infra, a server                                                                                                                                                        |
+| `scope_split`               | plan           | Bigger than size L, or over the auto-approval size limits; split the issue (routes to a human)                                                                                                                       |
+| `embedded_instructions`     | plan           | **Gate.** The issue contains instructions aimed at the agents                                                                                                                                                        |
+| `forbidden_path`            | develop, fix   | **Gate.** `check-patch` rejected the patch: a never-approvable path, or a header it cannot parse                                                                                                                     |
 
 ### Rules table (`decideByRules`)
 
@@ -429,6 +450,7 @@ forge a marker.
 | plan     | `spec_missing`, `untestable_criteria`                  | re-plan (legacy notes only)                                 |
 | develop  | `verify_failed`, `agent_error`                         | re-develop (`stage:planned`)                                |
 | develop  | `plan_gap`                                             | re-plan (`stage:qualified`)                                 |
+| develop  | `protected_rejected`                                   | human (the branch is kept for the owner to decide)          |
 | fix      | `agent_error`                                          | retry: `fix.yml` with `retry: true`                         |
 | fix      | `budget_exhausted`                                     | human                                                       |
 | security | `invalid_output`                                       | human                                                       |
@@ -525,8 +547,11 @@ must hold, checked in this order:
    this head has a valid disposition.
 3. **Review threads**: no unresolved thread.
 4. **Copilot**: it reviewed this head.
-5. **`pipeline/protected-approval`**: if that status exists on the head it
-   must be `success`; absent is fine for now (a later session adds it).
+5. **`pipeline/protected-approval`**: a pipeline PR that touches protected
+   paths needs the owner's approval of this exact head (status `success`,
+   recomputed by the `approval` command, not just read back). A PR with no
+   protected paths, and any PR the pipeline did not open, gets `success`
+   automatically. See [Protected-change approval](#protected-change-approval).
 
 The status is `success` when all hold, `failure` for a real blocker (CI failed,
 the reviewer errored, a required approval was refused) and `pending` otherwise,
@@ -600,6 +625,111 @@ may come back worded differently; that shows up as a new id, which is safe
 sees them: the bot's inline finding comments, Copilot threads, and the
 dispositioned items of an actionable review body. An accepted risk is never
 auto-fixed.
+
+## Protected-change approval
+
+A task that needs a dependency, a new app or lib, or a change to a workspace
+generator used to dead-end at a hard gate and the owner redid it locally. Now
+the owner **approves such a change once, before any PR exists**. This is a
+two-week trial.
+
+**Which paths.** `pipeline-lib.mjs` has two lists, and `APPROVABLE_PATH_PATTERNS`
+is a strict subset of `FORBIDDEN_PATH_PATTERNS` (a test asserts it):
+
+| Kind                 | Paths                                                                                                                     | What happens                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **Approvable**       | any `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tools/workspace-plugin/**`, `tools/pipeline-map/**`         | The owner approves the diff with a command (this section)           |
+| **Never approvable** | `.github/**`, `CODEOWNERS`, `tools/security/**`, `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`, `.npmrc`, `.gitmodules` | `forbidden_path` hard gate, exactly as before; a local session only |
+
+A patch that touches **any** never-approvable path stays a hard gate, even
+next to approvable ones. Because `.github/**` can never be in a bot-pushed
+patch, the pipeline App keeps `contents: write` and never needs the
+`workflows` permission.
+
+**Why before the PR.** Package scripts, the lockfile, the generators that
+`pnpm new:*` runs and the map tool that `pnpm verify` runs all execute with
+repo secrets as soon as a `pull_request` workflow runs on them. So nothing
+may run on the branch until the owner has read it: the branch is pushed
+**without a PR**, and no workflow may fire on a push to `issue-<n>-<slug>`.
+A test (`push guard` in `pipeline-lib.test.mjs`) reads every workflow and
+fails if any `on: push` lacks a branch filter that leaves those branches
+out, or if any workflow listens to `create`. Today only `deploy.yml` has
+`on: push`, limited to `main`.
+
+### The flow
+
+1. **Plan.** `evaluatePlanApproval` lets approvable protected files pass.
+   The outcome note and the plan comment say the owner must approve them
+   before a PR opens. A never-approvable planned path is still
+   `protected_surface`.
+2. **Develop.** The implement job runs `check-patch --accept approvable`. If
+   every protected path is approvable and the rest of the patch is fine, it
+   uploads the patch as artifact `protected-patch` (7 days) and outputs
+   `protected=approvable` with the sorted paths; otherwise it is today's
+   `forbidden_path`. The publish job downloads it, checks that it is exactly
+   the kind implement saw, pushes `issue-<n>-<slug>` and opens **no PR**.
+   Then `protected-request` (`pipeline.mjs`):
+   - recomputes the protected paths from `main...head` through the API (a
+     branch that holds a never-approvable path, or a list of 300+ files that
+     may be cut off, is deleted and reported as `forbidden_path`);
+   - posts the bot comment `<!-- pipeline:protected-approval head=<sha>
+paths=<sha256 of the sorted path list> -->` on the issue: the protected
+     paths with their **full diff** (`<details>`; cut only past GitHub's
+     comment size limit, with a link to the branch compare view), a summary
+     of the other files, the commands `/approve-protected <first 12 hex of
+the head>` and `/reject-protected <reason>`, and the proposed PR title
+     and body;
+   - appends an outcome note (`develop` / `protected_approval_needed`) that
+     does **not** set `stage:routing`, and sets `stage:awaiting-approval`.
+     The router never moves an item out of that stage.
+3. **The owner answers** with a comment on the issue whose whole body is one
+   command (`protected-approve.yml`, `issue_comment: created`). It accepts
+   only if **all** of these hold, else one short bot reply with the reason and
+   no state change:
+   - the commenter is `vars.PIPELINE_OWNER_LOGIN` and a `User` (the same
+     `checkDispositionAuthor` as `/disposition`; unset variable = nobody);
+   - the body is exactly the command, nothing else, and the comment was not
+     edited (only `created` events count, and the script re-reads the
+     comment);
+   - the issue is open and in `stage:awaiting-approval`;
+   - the SHA prefix is the **latest** request's head **and** an
+     `issue-<n>-` branch still points at that head;
+   - the protected path set recomputed from `main...head` hashes to the
+     request's `paths=`;
+   - every recomputed path is still approvable.
+4. **Approve.** The bot opens the (draft) PR with `Closes #n` and the approved
+   paths in its body, appends the record note `<!-- pipeline:protected-approved
+issue=<n> pr=<m> head=<sha> paths=<hash> by=<login> comment=<id> -->` on the
+   PR, sets the commit status `pipeline/protected-approval` = `success` on the
+   head and `stage:building` on the issue. From here it is the normal path:
+   CI → security → Copilot → gates.
+5. **Reject.** An outcome note (`develop` / `protected_rejected`) and
+   `stage:routing`; the rules table sends it to a human. The branch is kept.
+6. **A push invalidates the approval.** The approval names one head and one
+   path set. On every new PR head (`protected-approve.yml`, `workflow_run` on
+   CI `requested`) and in every gates evaluation, `pipeline/protected-approval`
+   is recomputed: protected paths and a head that is not the one in the latest
+   record note = `pending`, and a new request for the new head is posted on
+   the issue (`stage:awaiting-approval` again). The status is `success`
+   automatically when the PR has no protected paths, and for a PR the pipeline
+   did not open (a person's own PR, Dependabot: the code-owner review covers
+   it). A never-approvable path on a pipeline PR is `failure`.
+7. **Gates.** `pipeline/gates` requires `pipeline/protected-approval` =
+   `success` whenever the PR touches protected paths.
+
+**Bot pushes after the PR exists.** A fix patch moves the head, and an
+approval covers one head, so `fix.yml` never pushes a patch that touches
+protected paths, approvable ones included. It stops before any push
+(`protected_approval_needed` for approvable paths, `forbidden_path` otherwise;
+both hard gates for a human), so no CI run sees unapproved protected content.
+A **person's** push to the branch does run CI once before the status can turn
+pending: `pull_request` workflows start on every push, and nothing can stop
+that from a workflow. That is the price of a PR that already exists; the
+merge stays blocked until the new head is approved.
+
+**Stale requests.** Each request is for one head. Re-developing force-pushes
+the branch and posts a new request; an approval that names an older head is
+answered with "stale".
 
 ## Prompts
 

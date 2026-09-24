@@ -6,6 +6,13 @@ name: Pipeline · Develop
 # blocked, failed run, rejected patch) the report job appends an outcome
 # note and sets stage:routing. The agent never holds a write token: its
 # commits leave the job as a patch that is checked before it is pushed.
+# A patch whose protected paths are all approvable (package.json, the
+# lockfile, pnpm-workspace.yaml, the workspace generators, the map tool) is
+# pushed WITHOUT a PR and the owner approves it first, on the issue
+# (protected-approve.yml): protected content runs with repo secrets as soon
+# as a pull_request workflow runs on it. No workflow may trigger on a push
+# of an issue-<n>-<slug> branch (pipeline-lib.test.mjs, "push guard").
+# Never-approvable paths (.github/, tools/security/, ...) stay a hard gate.
 on:
   issues:
     types: [labeled]
@@ -29,6 +36,9 @@ jobs:
       result: ${{ steps.claude.outputs.structured_output }}
       prompt_version: ${{ steps.prompt.outputs.version }}
       patch_rejected: ${{ steps.guard.outputs.rejected }}
+      # none | approvable (see check-patch) and the sorted protected paths.
+      protected: ${{ steps.guard.outputs.protected }}
+      protected_paths: ${{ steps.guard.outputs.protected_paths }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -103,15 +113,26 @@ jobs:
           test -s "$RUNNER_TEMP/out/changes.patch" || { echo "::error::The agent produced no commits"; exit 1; }
 
       # A rejected patch is the forbidden_path hard gate, not an agent error.
+      # Protected paths that are all approvable pass with protected=approvable.
       - id: guard
         run: |
-          if ! node .github/scripts/pipeline.mjs check-patch "$RUNNER_TEMP/out/changes.patch"; then
+          if ! node .github/scripts/pipeline.mjs check-patch --accept approvable "$RUNNER_TEMP/out/changes.patch"; then
             echo "rejected=true" >> "$GITHUB_OUTPUT"; exit 1
           fi
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - if: ${{ steps.guard.outputs.protected != 'approvable' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: develop-patch
+          path: ${{ runner.temp }}/out/changes.patch
+          retention-days: 7
+
+      # Protected changes wait for the owner: a separate artifact name so
+      # nothing downstream can mistake it for a patch that opens a PR.
+      - if: ${{ steps.guard.outputs.protected == 'approvable' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: protected-patch
           path: ${{ runner.temp }}/out/changes.patch
           retention-days: 7
 
@@ -126,7 +147,7 @@ jobs:
     permissions:
       contents: read
     outputs:
-      patch_rejected: ${{ steps.guard.outputs.rejected }}
+      patch_rejected: ${{ steps.guard.outputs.rejected || steps.push.outputs.rejected }}
     steps:
       # App token: pushes/PRs made with GITHUB_TOKEN would not trigger CI.
       # No `workflows` permission, so it can never push workflow changes.
@@ -146,17 +167,27 @@ jobs:
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: develop-patch
+          name: ${{ needs.implement.outputs.protected == 'approvable' && 'protected-patch' || 'develop-patch' }}
           path: ${{ runner.temp }}/in
 
-      # Checked again here: the patch crossed a job boundary.
+      # Checked again here: the patch crossed a job boundary, and it must be
+      # exactly the kind the implement job saw.
       - id: guard
+        env:
+          PROTECTED: ${{ needs.implement.outputs.protected }}
         run: |
-          if ! node .github/scripts/pipeline.mjs check-patch "$RUNNER_TEMP/in/changes.patch"; then
+          if ! node .github/scripts/pipeline.mjs check-patch --expect "${PROTECTED:-none}" "$RUNNER_TEMP/in/changes.patch"; then
             echo "rejected=true" >> "$GITHUB_OUTPUT"; exit 1
           fi
 
-      - name: Push branch and open draft PR
+      # The branch is pushed either way. A patch with no protected path then
+      # opens a draft PR. An approvable one opens NO PR: the bot posts the diff
+      # on the issue and the issue waits in stage:awaiting-approval for the
+      # owner's /approve-protected, which opens the PR (protected-approve.yml).
+      # Nothing runs on this code before that. A branch that turns out to hold
+      # a never-approvable path is deleted and reported as forbidden_path.
+      - name: Push branch, then open a draft PR or ask the owner
+        id: push
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ github.event.issue.number }}
@@ -165,6 +196,7 @@ jobs:
           VERSION: ${{ needs.implement.outputs.prompt_version }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          PROTECTED: ${{ steps.guard.outputs.protected }}
         run: |
           if [[ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[].number')" ]]; then
             echo "::notice::An open PR already exists for $BRANCH; nothing to do."
@@ -176,6 +208,13 @@ jobs:
           git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
           # issue-<n>-* branches belong to the pipeline; no open PR uses this one (checked above).
           git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
+
+          if [[ "$PROTECTED" == "approvable" ]]; then
+            printf '%s' "$RESULT" > result.json
+            node .github/scripts/pipeline.mjs protected-request "$N" --branch "$BRANCH" \
+              --result result.json --prompt-version "develop.md@$VERSION"
+            exit 0
+          fi
 
           title=$(jq -r '.pr_title' <<<"$RESULT")
           { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;

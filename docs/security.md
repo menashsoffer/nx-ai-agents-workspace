@@ -41,16 +41,17 @@ Never treat `2` as passed; CI is authoritative.
 
 ## 2. GitHub Actions workflows
 
-| #   | Requirement                                                                                                                                       | Enforced by                | Type   |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------ |
-| W1  | Top-level `permissions: contents: read` (or `{}`); broader scopes only per job; write scopes only on publish jobs (gh-pages, pipeline App tokens) | zizmor                     | Gate   |
-| W2  | Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment (local `./` workflows exempt)                                              | zizmor                     | Gate   |
-| W3  | `persist-credentials: false` on every checkout                                                                                                    | zizmor                     | Gate   |
-| W4  | No `${{ }}` expressions inside `run:`; pass values through `env:`                                                                                 | zizmor                     | Gate   |
-| W5  | No `pull_request_target` / artifact-consuming `workflow_run` (`security.yml` and `approval.yml` are reviewed, artifact-free `workflow_run`s)      | zizmor                     | Gate   |
-| W6  | `gh-pages` is written only by `deploy.yml` (main) and `preview.yml` (`pr-*/`); deploy `concurrency` never cancels                                 | workflow + review          | Review |
-| W7  | Workflows are valid                                                                                                                               | actionlint                 | Gate   |
-| W8  | Every job has `timeout-minutes`                                                                                                                   | actionlint/zizmor + review | Gate   |
+| #   | Requirement                                                                                                                                                           | Enforced by                | Type   |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------ |
+| W1  | Top-level `permissions: contents: read` (or `{}`); broader scopes only per job; write scopes only on publish jobs (gh-pages, pipeline App tokens)                     | zizmor                     | Gate   |
+| W2  | Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment (local `./` workflows exempt)                                                                  | zizmor                     | Gate   |
+| W3  | `persist-credentials: false` on every checkout                                                                                                                        | zizmor                     | Gate   |
+| W4  | No `${{ }}` expressions inside `run:`; pass values through `env:`                                                                                                     | zizmor                     | Gate   |
+| W5  | No `pull_request_target` / artifact-consuming `workflow_run` (`security.yml`, `approval.yml` and `protected-approve.yml` are reviewed, artifact-free `workflow_run`s) | zizmor                     | Gate   |
+| W6  | `gh-pages` is written only by `deploy.yml` (main) and `preview.yml` (`pr-*/`); deploy `concurrency` never cancels                                                     | workflow + review          | Review |
+| W7  | Workflows are valid                                                                                                                                                   | actionlint                 | Gate   |
+| W8  | Every job has `timeout-minutes`                                                                                                                                       | actionlint/zizmor + review | Gate   |
+| W9  | No workflow runs on a push of an `issue-<n>-<slug>` branch (every `on: push` has a branch filter that leaves it out; no `on: create`)                                 | `pnpm test:pipeline`       | Gate   |
 
 zizmor runs **online in CI** (it can then detect impostor commits behind
 pinned SHAs) and **offline locally**. `.github/zizmor.yml` disables exactly one
@@ -60,6 +61,59 @@ tools agree.
 
 Workflows install pnpm through corepack from the hash-pinned `packageManager`
 (D4), so no third-party setup Action is needed.
+
+### Protected-change approval
+
+The pipeline can push a branch that changes an _approvable_ protected path
+(`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`,
+`tools/workspace-plugin/`, `tools/pipeline-map/`) only after the repo owner
+approved the diff. How that stays safe (flow: `docs/pipeline.md`,
+"Protected-change approval"):
+
+- **Why before any PR.** That content executes with repo secrets as soon as a
+  `pull_request` workflow runs on it: package scripts and the lockfile on
+  every `pnpm install`, the generators through the pre-approved `pnpm new:*`,
+  the map tool through `pnpm verify`. So the branch is pushed **without a
+  PR**, and W9 makes sure no workflow reacts to that push. The only `on: push`
+  is `deploy.yml`, limited to `main`. W9 is a test, so a workflow that adds a
+  push trigger fails `pnpm verify` and CI, not review.
+- **Why the owner login, not roles.** The approval is a comment, and anyone
+  can comment on a public repo. It counts only if the account is
+  `vars.PIPELINE_OWNER_LOGIN` and a `User` (the check that `/disposition`
+  uses); collaborator or member status is not enough, and an unset variable
+  means nobody. The workflow runs from the default branch and reads the
+  comment through the environment, as data.
+- **What an approval binds.** The issue, the branch **head SHA** (the
+  command names its first 12 hex characters), and the **set of protected
+  paths** (sha256 of the sorted list, recomputed from `main...head` through
+  the API, never taken from the comment). Any later push is a different SHA,
+  so the approval no longer holds: `pipeline/protected-approval` is
+  recomputed on every new head and in every gates evaluation, and goes back to
+  `pending`. The command must be a newly created, unedited comment, and the
+  whole body, with nothing else in it.
+- **Only bot records count.** The request and the record note are trusted by
+  author (`PIPELINE_BOT_LOGIN`) and read by an anchored header, so text pasted
+  into a diff or a comment cannot forge them. The diff in the request sits in
+  a code fence longer than any backtick run in it.
+- **Fail closed.** A file list that may be cut off (the compare API lists at
+  most 300 files), a path the pipeline cannot parse, or a never-approvable path
+  all end in refusal, and a branch that turns out to
+  hold one is deleted. A fix patch never carries protected paths of any kind.
+- **Why `.github` stays local.** The workflows, prompts and scripts are the
+  trust boundary itself: a change there could weaken this approval, the
+  `pipeline/gates` logic or W9. They are never approvable, `tools/security/`,
+  `.npmrc`, `.gitmodules`, `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`
+  and `CODEOWNERS` with them, and the pipeline App has no `workflows`
+  permission.
+- **What it does not stop.** The owner approves what they read. A dependency
+  or a script that looks harmless is still the owner's call: the diff of every
+  protected file is in the request, and `minimumReleaseAge` and the
+  `allowBuilds` decisions (D5) still apply on install. Approving
+  `pnpm-workspace.yaml` changes can also change those settings; the agents'
+  prompts keep them off limits, but the owner sees any such line in the diff.
+  Once a PR exists, a person's push runs CI before the status can turn pending
+  (GitHub starts `pull_request` workflows on every push); the merge stays
+  blocked until that head is approved.
 
 ## 3. Secrets
 

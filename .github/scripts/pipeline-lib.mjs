@@ -10,6 +10,10 @@ export const STAGES = [
   // by stage:qualified). Kept so old items still show on the board.
   'stage:spec',
   'stage:planned',
+  // Protected (approvable) changes are pushed to a branch, with no PR yet;
+  // the issue waits here for the owner's /approve-protected. The router
+  // never moves an item out of it (see routerSkip).
+  'stage:awaiting-approval',
   'stage:building',
   'stage:reviewing',
   'stage:fixing',
@@ -29,6 +33,7 @@ export const STAGE_STATUS = {
   'stage:qualified': 'Qualified',
   'stage:spec': 'Spec', // deprecated, see STAGES
   'stage:planned': 'Planned',
+  'stage:awaiting-approval': 'Awaiting approval',
   'stage:building': 'Building',
   'stage:reviewing': 'Reviewing',
   'stage:fixing': 'Fixing',
@@ -55,6 +60,11 @@ export const MARKERS = {
   // `disposition` is the bot's record of an owner's /disposition command.
   finding: '<!-- pipeline:finding',
   disposition: '<!-- pipeline:disposition',
+  // Prefixes with attributes. `protectedApproval` is the bot's approval
+  // request on an issue (one per pushed head); `protectedApproved` is its
+  // record of the owner's /approve-protected, written on the PR.
+  protectedApproval: '<!-- pipeline:protected-approval',
+  protectedApproved: '<!-- pipeline:protected-approved',
   // One upserted comment per PR: the review gates and their open findings.
   gates: '<!-- pipeline:gates -->',
   // A pipeline-authored review body that the fixer must act on.
@@ -68,27 +78,45 @@ export const COPILOT_LOGINS = [COPILOT_REVIEWER, 'Copilot'];
 // on a public repo, so their text never becomes agent input.
 export const TRUSTED_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
 
-// Agent-produced patches may never touch these. The pipeline's own
-// workflows, prompts and scripts are the trust boundary. Package manifests,
-// the lockfile and pnpm/npm/git config are the execution surface of every
-// later `pnpm` run, so dependency and script changes need a human.
-export const FORBIDDEN_PATH_PATTERNS = [
+// Agent-produced patches may not carry these without a human. The pipeline's
+// own workflows, prompts and scripts are the trust boundary. Package
+// manifests, the lockfile and pnpm/npm/git config are the execution surface
+// of every later `pnpm` run, so dependency and script changes need a human.
+//
+// Two kinds of protected path (docs/pipeline.md, "Protected-change
+// approval"):
+// - approvable (APPROVABLE_PATH_PATTERNS): the owner may approve them once,
+//   before any PR exists, with /approve-protected;
+// - never approvable: everything else here. A patch that touches one is the
+//   `forbidden_path` hard gate, and only a local session may change it.
+const NEVER_APPROVABLE_PATH_PATTERNS = [
   /^\.github\//,
   /(^|\/)CODEOWNERS$/,
   /^\.pipeline\//,
   /^\.claude\//,
   /^\.gemini\//,
   /^\.codex\//,
-  // Security gates and code run by pre-approved commands (`pnpm new:*`,
-  // `pnpm verify` -> pipeline:map:check).
+  // Security gates.
   /^tools\/security\//,
+  /(^|\/)\.npmrc$/,
+  /(^|\/)\.gitmodules$/,
+];
+
+// Run by pre-approved commands (`pnpm new:*`, `pnpm verify` ->
+// pipeline:map:check) or by every `pnpm install`/`pnpm run`.
+export const APPROVABLE_PATH_PATTERNS = [
   /^tools\/workspace-plugin\//,
   /^tools\/pipeline-map\//,
   /(^|\/)package\.json$/,
   /(^|\/)pnpm-lock\.yaml$/,
   /(^|\/)pnpm-workspace\.yaml$/,
-  /(^|\/)\.npmrc$/,
-  /(^|\/)\.gitmodules$/,
+];
+
+// Approvable patterns are members of this array (same objects), so the
+// subset relation holds by construction; a test also asserts it.
+export const FORBIDDEN_PATH_PATTERNS = [
+  ...NEVER_APPROVABLE_PATH_PATTERNS,
+  ...APPROVABLE_PATH_PATTERNS,
 ];
 
 const BLOCKING_SEVERITIES = new Set(['critical', 'high', 'medium']);
@@ -126,6 +154,10 @@ export function branchName(issueNumber, title) {
 }
 
 const PIPELINE_BRANCH = /^issue-[1-9]\d*-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** True for `issue-<n>-<slug>` (see branchName). */
+export const isPipelineBranch = (name) =>
+  PIPELINE_BRANCH.test(String(name ?? ''));
 
 /** GitHub logins are case-insensitive. */
 export const sameLogin = (a, b) =>
@@ -358,6 +390,37 @@ export function patchPaths(patch) {
   return { paths: [...paths], errors };
 }
 
+const matches = (patterns, p) => patterns.some((re) => re.test(p));
+
+/**
+ * Splits `paths` into the protected ones: `approvable` (the owner can
+ * approve them, see APPROVABLE_PATH_PATTERNS) and `never` (only a local
+ * session may change them). Both lists are sorted and deduplicated, and
+ * `protected` is their union. With `foldCase` a path is also tested in
+ * lower case (planned paths: case-insensitive filesystems make `.GITHUB/`
+ * the same directory); it is `never` if either spelling is never approvable.
+ */
+export function classifyProtectedPaths(paths, { foldCase = false } = {}) {
+  const never = new Set();
+  const approvable = new Set();
+  for (const p of paths) {
+    const spellings = foldCase ? [p, p.toLowerCase()] : [p];
+    if (!spellings.some((x) => matches(FORBIDDEN_PATH_PATTERNS, x))) continue;
+    const isNever = spellings.some(
+      (x) =>
+        matches(FORBIDDEN_PATH_PATTERNS, x) &&
+        !matches(APPROVABLE_PATH_PATTERNS, x),
+    );
+    (isNever ? never : approvable).add(p);
+  }
+  const sort = (set) => [...set].sort();
+  return {
+    approvable: sort(approvable),
+    never: sort(never),
+    protected: sort(new Set([...approvable, ...never])),
+  };
+}
+
 /** check-patch: rejects forbidden paths and anything it cannot parse. */
 export function checkPatch(patch) {
   const { paths, errors } = patchPaths(patch);
@@ -369,8 +432,136 @@ export function checkPatch(patch) {
   };
 }
 
+/**
+ * check-patch with the approvable subset told apart. `kind` is
+ * - `none`: no protected path;
+ * - `approvable`: protected paths, all of them approvable (APPROVABLE_PATH_PATTERNS);
+ * - `forbidden`: a never-approvable path, or a header that cannot be
+ *   parsed (fail closed).
+ * Only develop.yml accepts `approvable`, and only to ask the owner first.
+ */
+export function classifyPatch(patch) {
+  const { paths, errors } = patchPaths(patch);
+  const cls = classifyProtectedPaths(paths);
+  const kind =
+    errors.length || cls.never.length
+      ? 'forbidden'
+      : cls.approvable.length
+        ? 'approvable'
+        : 'none';
+  return {
+    kind,
+    protected: cls.protected,
+    approvable: cls.approvable,
+    never: cls.never,
+    errors,
+  };
+}
+
 export function forbiddenPaths(paths) {
-  return paths.filter((p) => FORBIDDEN_PATH_PATTERNS.some((re) => re.test(p)));
+  return paths.filter((p) => matches(FORBIDDEN_PATH_PATTERNS, p));
+}
+
+/** sha256 of the sorted, deduplicated path list: the approval's path binding. */
+export const pathSetHash = (paths) =>
+  createHash('sha256')
+    .update([...new Set(paths)].sort().join('\n'))
+    .digest('hex');
+
+/**
+ * Changed paths from a GitHub compare response's `files`: every filename,
+ * plus the previous name of a rename. The compare API lists at most 300
+ * files; a list that long may be cut off, so `complete` is false and
+ * callers must not trust it (fail closed).
+ */
+export const COMPARE_FILE_LIMIT = 300;
+export function comparePaths(files) {
+  const list = Array.isArray(files) ? files : [];
+  const paths = new Set();
+  for (const f of list) {
+    for (const raw of [f?.filename, f?.previous_filename]) {
+      if (raw === undefined || raw === null) continue;
+      const p = normalizePath(String(raw));
+      if (p === null) return { paths: [], complete: false };
+      paths.add(p);
+    }
+  }
+  return {
+    paths: [...paths].sort(),
+    complete: list.length < COMPARE_FILE_LIMIT,
+  };
+}
+
+// ---------------------------------------------------------------- push guard
+
+/** Glob (GitHub filter syntax, the parts used here) -> anchored RegExp. */
+function globToRegExp(glob) {
+  let re = '';
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === '*') {
+      if (glob[i + 1] === '*') {
+        re += '.*';
+        i++;
+      } else re += '[^/]*';
+    } else if (c === '?') re += '[^/]';
+    else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/**
+ * Whether a branch name passes a workflow's `branches` / `branches-ignore`
+ * filter (GitHub semantics for one of the two: the last matching pattern
+ * wins, `!` negates). No filter at all means every branch.
+ */
+function branchPasses(filter, branch) {
+  if (filter === undefined || filter === null) return true;
+  const patterns = [].concat(filter);
+  const hit = (list) => list.some((g) => globToRegExp(g).test(branch));
+  if (filter.branchesIgnore) return !hit(patterns);
+  let passes = false;
+  for (const g of patterns) {
+    const negated = g.startsWith('!');
+    if (globToRegExp(negated ? g.slice(1) : g).test(branch)) passes = !negated;
+  }
+  return passes;
+}
+
+/**
+ * The events of a parsed workflow (`on:`) that pushing `branch` would fire
+ * with no PR involved: `push` (unless its branch filter leaves the branch
+ * out; a `tags`-only filter is not fired by a branch push) and `create`. The
+ * approval flow pushes `issue-<n>-<slug>` before any PR exists, so a
+ * workflow that fires here would run protected content with repo secrets
+ * before the owner approved it. Test: pipeline-lib.test.mjs ("push guard").
+ */
+export function branchPushTriggers(on, branch) {
+  let events = {};
+  if (typeof on === 'string') events = { [on]: null };
+  else if (Array.isArray(on))
+    events = Object.fromEntries(on.map((e) => [e, null]));
+  else if (on && typeof on === 'object') events = on;
+  const hits = [];
+  if (Object.hasOwn(events, 'create')) hits.push('create');
+  if (Object.hasOwn(events, 'push')) {
+    const cfg = events.push ?? {};
+    const onlyTags =
+      cfg.tags !== undefined &&
+      cfg.branches === undefined &&
+      cfg['branches-ignore'] === undefined;
+    const passes =
+      cfg['branches-ignore'] !== undefined
+        ? branchPasses(
+            Object.assign([].concat(cfg['branches-ignore']), {
+              branchesIgnore: true,
+            }),
+            branch,
+          )
+        : branchPasses(cfg.branches, branch);
+    if (!onlyTags && passes) hits.push('push');
+  }
+  return hits;
 }
 
 // ---------------------------------------------------------------- state
@@ -1233,6 +1424,472 @@ export function classifyThreads(threads, botLogin) {
   });
 }
 
+// ---------------------------------------------------------------- protected approval
+
+// The owner's approval of protected (approvable) changes: docs/pipeline.md,
+// "Protected-change approval". develop.yml pushes the branch WITHOUT a PR and
+// posts a request on the issue; the owner answers with one command comment.
+// The approval is bound to the issue, the branch head SHA and the set of
+// protected paths, so any later push invalidates it.
+
+/** Status context set on the head: success once the owner approved it. */
+export const PROTECTED_CONTEXT = 'pipeline/protected-approval';
+export const APPROVE_COMMAND = '/approve-protected';
+export const REJECT_COMMAND = '/reject-protected';
+const HEAD_PREFIX_LENGTH = 12;
+const PROTECTED_MIN_REASON = 10;
+const PROTECTED_MAX_REASON = 500;
+// GitHub rejects comments over 65536 characters; leave room for the frame.
+const COMMENT_LIMIT = 64_000;
+const PR_BODY_LIMIT = 8_000;
+
+/**
+ * The protected paths of a compare response's `files`, classified:
+ * `{ approvable, never, protected, complete, hash }`. `hash` binds the whole
+ * protected set (pathSetHash). `complete` is false when the file list may be
+ * cut off (COMPARE_FILE_LIMIT): the result must then not be trusted.
+ */
+export function protectedOfCompare(files) {
+  const { paths, complete } = comparePaths(files);
+  const cls = classifyProtectedPaths(paths);
+  return { ...cls, complete, hash: pathSetHash(cls.protected) };
+}
+
+/**
+ * Parses a comment as an approval command. The whole body must be exactly
+ *   /approve-protected <first 12 hex characters of the head commit>
+ * or
+ *   /reject-protected <reason, 10+ characters>
+ * on one line and nothing else. A comment that starts with neither command
+ * is `{ ok: false, ignore: true }` (ordinary discussion). The body is data:
+ * error texts never repeat it.
+ */
+export function parseProtectedCommand(body) {
+  const text = String(body ?? '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+  const approve = /^\/approve-protected(?:\s|$)/.test(text);
+  const reject = /^\/reject-protected(?:\s|$)/.test(text);
+  if (!approve && !reject) return { ok: false, ignore: true };
+  if (text.includes('\n'))
+    return {
+      ok: false,
+      error: 'the comment must be exactly one command, with no other text',
+    };
+  if (approve) {
+    const m = /^\/approve-protected[ \t]+([0-9a-f]{12})$/.exec(text);
+    if (!m)
+      return {
+        ok: false,
+        error: `expected \`${APPROVE_COMMAND} <first ${HEAD_PREFIX_LENGTH} hex characters of the head commit>\``,
+      };
+    return { ok: true, kind: 'approve', prefix: m[1] };
+  }
+  const m = /^\/reject-protected[ \t]+(\S.*)$/.exec(text);
+  if (!m)
+    return {
+      ok: false,
+      error: `expected \`${REJECT_COMMAND} <reason>\``,
+    };
+  const reason = m[1].trim();
+  if ([...reason].length < PROTECTED_MIN_REASON)
+    return {
+      ok: false,
+      error: `the reason must be at least ${PROTECTED_MIN_REASON} characters`,
+    };
+  if (reason.length > PROTECTED_MAX_REASON)
+    return {
+      ok: false,
+      error: `the reason must be at most ${PROTECTED_MAX_REASON} characters`,
+    };
+  return { ok: true, kind: 'reject', reason };
+}
+
+const htmlText = (s) =>
+  String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/** One-line JSON that survives the single-line json-fence reader. */
+const jsonLine = (value) =>
+  JSON.stringify(value).replace(
+    /[\u2028\u2029]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16)}`,
+  );
+
+/** Lock files last: their diffs are long and the least interesting. */
+const lockLast = (a, b) =>
+  Number(/pnpm-lock\.yaml$/.test(a.filename)) -
+    Number(/pnpm-lock\.yaml$/.test(b.filename)) ||
+  a.filename.localeCompare(b.filename);
+
+/**
+ * The approval request the bot posts on the issue for one pushed head:
+ * the protected paths with their full diffs (`<details>`, cut only when the
+ * comment would pass GitHub's size limit, with a link to `compareUrl`), a
+ * summary of the other files, the two commands, and the proposed PR title
+ * and body (a trailing json block, read back by parseProtectedRequest).
+ * Throws if the change touches a never-approvable path: such a branch
+ * must not be offered for approval.
+ */
+export function renderProtectedRequest({
+  head,
+  branch,
+  compareUrl,
+  files,
+  title = '',
+  body = '',
+  maxChars = COMMENT_LIMIT,
+}) {
+  const changed = protectedOfCompare(files);
+  if (!changed.complete) throw new Error('the changed-file list is incomplete');
+  if (changed.never.length)
+    throw new Error(
+      `never-approvable paths: ${changed.never.join(', ')} (not offered)`,
+    );
+  if (!changed.protected.length) throw new Error('no protected paths');
+  const isProtected = (f) =>
+    changed.protected.includes(f.filename) ||
+    changed.protected.includes(f.previous_filename);
+  const protectedFiles = files.filter(isProtected).sort(lockLast);
+  const others = files.filter((f) => !isProtected(f));
+  const stat = (f) => `+${f.additions ?? 0} −${f.deletions ?? 0}`;
+  const code = (p) => `\`${neutraliseMarkers(p).replace(/`/g, '')}\``;
+  const head12 = head.slice(0, HEAD_PREFIX_LENGTH);
+  const OTHER_LIST_MAX = 40;
+
+  const top = [
+    `${MARKERS.protectedApproval} head=${head} paths=${changed.hash} -->`,
+    '### Owner approval needed: protected changes',
+    `The pipeline pushed ${code(branch)} at \`${head.slice(0, 7)}\` and **did not open a pull request**, because the change touches protected files. Nothing has run on this code yet. Read the diff below, then reply with exactly one of these commands, and nothing else in the comment:`,
+    [
+      `- Approve: \`${APPROVE_COMMAND} ${head12}\``,
+      `- Reject: \`${REJECT_COMMAND} <reason, ${PROTECTED_MIN_REASON}+ characters>\``,
+    ].join('\n'),
+    'Only the pipeline owner counts, and only for this exact commit and path set. Any later push to the branch makes this request stale.',
+    [
+      `**Protected paths (${changed.protected.length}):**`,
+      ...changed.protected.map((p) => `- ${code(p)}`),
+    ].join('\n'),
+    others.length
+      ? [
+          `**Other changed files (${others.length}):**`,
+          ...others
+            .slice(0, OTHER_LIST_MAX)
+            .map((f) => `- ${code(f.filename)} ${stat(f)}`),
+          ...(others.length > OTHER_LIST_MAX
+            ? [`- … and ${others.length - OTHER_LIST_MAX} more`]
+            : []),
+        ].join('\n')
+      : '',
+    '#### Diff of the protected files',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const tail = [
+    `Full branch diff: ${compareUrl}`,
+    '```json',
+    jsonLine({
+      v: 1,
+      title: clean(title, 100),
+      body: neutraliseMarkers(String(body ?? '')).slice(0, PR_BODY_LIMIT),
+    }),
+    '```',
+  ].join('\n');
+
+  const section = (f, patch, note = '') => {
+    const summary = `<summary><code>${htmlText(neutraliseMarkers(f.filename))}</code> ${stat(f)}${f.previous_filename ? ` (renamed from <code>${htmlText(neutraliseMarkers(f.previous_filename))}</code>)` : ''}</summary>`;
+    const fence = fenceFor(patch);
+    return [
+      `<details>${summary}`,
+      '',
+      patch ? `${fence}diff\n${patch}\n${fence}` : '',
+      note,
+      '</details>',
+    ]
+      .filter((x) => x !== '')
+      .join('\n');
+  };
+
+  let budget = maxChars - top.length - tail.length - 4 * (files.length + 2);
+  const parts = [];
+  let cut = false;
+  for (const f of protectedFiles) {
+    const patch = typeof f.patch === 'string' ? f.patch : '';
+    if (!patch) {
+      parts.push(
+        section(
+          f,
+          '',
+          `_The API returned no diff for this file (binary or very large). See the full branch diff below._`,
+        ),
+      );
+      continue;
+    }
+    const whole = section(f, patch);
+    if (!cut && whole.length <= budget) {
+      parts.push(whole);
+      budget -= whole.length;
+      continue;
+    }
+    const note =
+      '_Truncated: the diff does not fit in one comment. See the full branch diff below._';
+    const room = budget - section(f, '', note).length - 40;
+    cut = true;
+    if (room > 500) {
+      const kept = patch.slice(0, room).replace(/\n[^\n]*$/, '');
+      parts.push(section(f, kept, note));
+      budget = 0;
+    } else parts.push(section(f, '', `${note} (not shown)`));
+  }
+  return [top, ...parts, tail].join('\n\n');
+}
+
+const REQUEST_HEADER =
+  /^<!-- pipeline:protected-approval head=([0-9a-f]{40}) paths=([0-9a-f]{64}) -->\n/;
+
+/** Reads a request comment: `{ head, paths, pr }` or null. */
+export function parseProtectedRequest(body) {
+  const text = String(body ?? '');
+  const m = REQUEST_HEADER.exec(text);
+  if (!m) return null;
+  const { value } = lastJsonFence(text);
+  const pr =
+    value?.v === 1 &&
+    typeof value.title === 'string' &&
+    typeof value.body === 'string'
+      ? { title: value.title, body: value.body }
+      : null;
+  return { head: m[1], paths: m[2], pr };
+}
+
+/** The latest request written by the pipeline bot on an issue's comments. */
+export function latestProtectedRequest(comments, botLogin) {
+  if (!botLogin) return null;
+  let latest = null;
+  for (const c of comments) {
+    if (!sameLogin(c.user?.login, botLogin)) continue;
+    const req = parseProtectedRequest(c.body);
+    if (req) latest = { ...req, commentId: c.id };
+  }
+  return latest;
+}
+
+/**
+ * The bot's record of an approval, written on the PR (appended, never
+ * edited). The marker line is the binding: issue, PR, head, path-set hash,
+ * who and which comment.
+ */
+export function renderProtectedApprovedNote({
+  issue,
+  pr,
+  head,
+  paths,
+  by,
+  commentId,
+  protectedPaths,
+}) {
+  return [
+    `${MARKERS.protectedApproved} issue=${issue} pr=${pr} head=${head} paths=${paths} by=${by} comment=${commentId} -->`,
+    `Protected changes approved by @${by} for \`${String(head).slice(0, 7)}\` (issue #${issue}). Approved paths:`,
+    '',
+    ...protectedPaths.map(
+      (p) => `- \`${neutraliseMarkers(p).replace(/`/g, '')}\``,
+    ),
+    '',
+    'The approval covers this commit only: a later push needs a new one.',
+  ].join('\n');
+}
+
+const APPROVED_HEADER =
+  /^<!-- pipeline:protected-approved issue=(\d+) pr=(\d+) head=([0-9a-f]{40}) paths=([0-9a-f]{64}) by=([\w.[\]-]+) comment=(\d+) -->\n/;
+
+/** The approval records the pipeline bot wrote, oldest first. */
+export function parseProtectedApprovedNotes(comments, botLogin) {
+  const out = [];
+  for (const c of comments) {
+    if (!sameLogin(c.user?.login, botLogin)) continue;
+    const m = APPROVED_HEADER.exec(String(c.body ?? ''));
+    if (!m) continue;
+    out.push({
+      issue: Number(m[1]),
+      pr: Number(m[2]),
+      head: m[3],
+      paths: m[4],
+      by: m[5],
+      commentId: Number(m[6]),
+    });
+  }
+  return out;
+}
+
+/**
+ * The state of `pipeline/protected-approval` for one PR head, from the
+ * PR's changed files (`files`, a compare response) and the approval records
+ * (`notes`, parseProtectedApprovedNotes). Recomputed on every evaluation, so
+ * a push after the approval is pending again.
+ * - not a pipeline PR: `success` (a person's own PR is covered by the
+ *   code-owner review), `required: false`;
+ * - no protected path: `success`, `required: false`;
+ * - a never-approvable path, or a file list that may be cut off: `failure`;
+ * - the latest owner record names this head and this path set: `success`;
+ * - otherwise `pending`.
+ */
+export function evaluateProtectedApproval({
+  pipelinePr,
+  head,
+  files,
+  notes = [],
+  ownerLogin,
+}) {
+  const out = (state, description, required, changed = {}) => ({
+    state,
+    description,
+    required,
+    paths: changed.protected ?? [],
+    hash: changed.hash ?? null,
+  });
+  if (!pipelinePr)
+    return out(
+      'success',
+      'Not a pipeline PR: the code owner reviews it',
+      false,
+    );
+  const changed = protectedOfCompare(files);
+  if (!changed.complete)
+    return out(
+      'failure',
+      'The changed files cannot be listed completely (300 or more)',
+      true,
+      changed,
+    );
+  if (!changed.protected.length)
+    return out('success', 'No protected paths', false, changed);
+  if (changed.never.length)
+    return out(
+      'failure',
+      `Not approvable, only a local session may change: ${changed.never.join(', ')}`,
+      true,
+      changed,
+    );
+  const latest = notes.filter((n) => sameLogin(n.by, ownerLogin)).at(-1);
+  if (latest && latest.head === head && latest.paths === changed.hash)
+    return out('success', `Approved by @${latest.by}`, true, changed);
+  return out(
+    'pending',
+    `Waiting for the owner: ${APPROVE_COMMAND} ${head.slice(0, HEAD_PREFIX_LENGTH)}`,
+    true,
+    changed,
+  );
+}
+
+/**
+ * Whether an approval request must be (re)posted on the issue: protected
+ * changes wait for approval and the latest request is not for this head.
+ */
+export const needsProtectedRequest = ({ evaluation, request, head }) =>
+  evaluation.state === 'pending' && request?.head !== head;
+
+/**
+ * What to do with a comment on an issue that might be an approval command.
+ * Pure. Returns `{ action }`:
+ * - `ignore`: not for us (no owner configured, not a command, a bot);
+ * - `reply` + `reason`: a command that cannot be honoured; nothing changes;
+ * - `reject` + `reason`;
+ * - `approve` + `head`, `paths` (hash), `protectedPaths`.
+ * Checks, in order: commenter (owner, a User), one exact command, the
+ * comment was not edited, issue open and in stage:awaiting-approval, a
+ * request exists, and for approve: the SHA prefix is the latest request's
+ * head, some `issue-<n>-` branch still points at that head, the protected
+ * path set recomputed from `main...head` hashes to the request's `paths=`,
+ * and every recomputed protected path is still approvable.
+ *
+ * `request` is latestProtectedRequest; `branchHeads` the heads of the
+ * issue's branches; `changed` is protectedOfCompare of `main...<request head>`.
+ */
+export function decideProtectedCommand({
+  comment,
+  ownerLogin,
+  edited = false,
+  issue,
+  request,
+  branchHeads = [],
+  changed = null,
+}) {
+  const reply = (reason) => ({ action: 'reply', reason });
+  if (!ownerLogin) return { action: 'ignore', reason: 'no owner configured' };
+  const parsed = parseProtectedCommand(comment?.body);
+  if (parsed.ignore)
+    return { action: 'ignore', reason: 'not an approval command' };
+  const author = checkDispositionAuthor({
+    login: comment?.login,
+    type: comment?.type,
+    ownerLogin,
+  });
+  if (!author.ok) {
+    return comment?.type === 'User'
+      ? reply(author.reason)
+      : { action: 'ignore', reason: author.reason };
+  }
+  if (!parsed.ok) return reply(parsed.error);
+  if (edited)
+    return reply('the comment was edited after it was posted; post it again');
+  if (issue?.isPullRequest)
+    return reply('this is a pull request, not an issue');
+  if (issue?.state !== 'open') return reply('the issue is closed');
+  if (!issue?.labels?.includes('stage:awaiting-approval'))
+    return reply('the issue is not awaiting approval');
+  if (!request) return reply('there is no approval request to answer');
+  if (parsed.kind === 'reject')
+    return { action: 'reject', reason: parsed.reason, head: request.head };
+  if (!request.head.startsWith(parsed.prefix))
+    return reply(
+      `that commit is stale (the latest request is for \`${request.head.slice(0, HEAD_PREFIX_LENGTH)}\`)`,
+    );
+  if (!branchHeads.includes(request.head))
+    return reply(
+      'the branch no longer points at the requested commit (it moved or was deleted)',
+    );
+  if (!changed?.complete)
+    return reply('the changed files cannot be listed completely');
+  if (changed.hash !== request.paths)
+    return reply('the set of protected paths changed since the request');
+  if (changed.never.length)
+    return reply(
+      `these paths can no longer be approved: ${changed.never.join(', ')}`,
+    );
+  return {
+    action: 'approve',
+    head: request.head,
+    paths: request.paths,
+    protectedPaths: changed.protected,
+  };
+}
+
+/** The PR body of a PR opened after an approval. */
+export function renderApprovedPrBody({
+  body,
+  issue,
+  protectedPaths,
+  head,
+  by,
+  promptVer = 'develop.md@unknown',
+}) {
+  return [
+    neutraliseMarkers(String(body ?? '')).slice(0, PR_BODY_LIMIT),
+    `Closes #${issue}`,
+    [
+      '### Protected changes approved by the owner',
+      `@${by} approved these paths at \`${String(head).slice(0, 7)}\` before this PR was opened:`,
+      ...protectedPaths.map(
+        (p) => `- \`${neutraliseMarkers(p).replace(/`/g, '')}\``,
+      ),
+    ].join('\n'),
+    `<sub>Implemented by Claude with prompt ${promptVer}. Draft until CI, the security review and Copilot are clean. Only a human can approve and merge.</sub>`,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 // ---------------------------------------------------------------- gates
 
 /** Statuses and check runs are `pipeline/gates`' inputs; this is its name. */
@@ -1252,7 +1909,9 @@ const CI_FAILED = ['failure', 'timed_out'];
  *
  * `securityFindings` is securityIdsForHead for this head (null: none);
  * `dispositioned` is dispositionsInEffect; `securityJobConclusion` is the
- * `security` CI job's check run (undefined: no such run).
+ * `security` CI job's check run (undefined: no such run);
+ * `protectedRequired` / `protectedApprovalState` come from
+ * evaluateProtectedApproval (`required`, `state`).
  */
 export function evaluateGates({
   ciConclusion,
@@ -1262,6 +1921,7 @@ export function evaluateGates({
   dispositioned = new Set(),
   unresolvedThreads = 0,
   copilotReviewedHead = false,
+  protectedRequired = false,
   protectedApprovalState = null,
 }) {
   const ok = (key, label, detail = 'ok') => ({
@@ -1340,22 +2000,27 @@ export function evaluateGates({
     ? ok('copilot', 'Copilot review', 'reviewed this commit')
     : wait('copilot', 'Copilot review', 'Copilot has not reviewed this commit');
 
-  // TODO(session 4): `pipeline/protected-approval` will exist then and be
-  // set on every head. Until it does, an absent status is fine; a status
-  // that exists must be success.
+  // `pipeline/protected-approval` (evaluateProtectedApproval): needed only
+  // when the PR touches protected paths; then it must be success.
   const protectedLabel = 'Protected-file approval';
-  const protectedApproval =
-    protectedApprovalState === null || protectedApprovalState === undefined
-      ? ok('protected-approval', protectedLabel, 'not required yet')
-      : protectedApprovalState === 'success'
-        ? ok('protected-approval', protectedLabel, 'approved')
-        : protectedApprovalState === 'pending'
-          ? wait('protected-approval', protectedLabel, 'approval is pending')
-          : fail(
-              'protected-approval',
-              protectedLabel,
-              `approval is ${protectedApprovalState}`,
-            );
+  const protectedApproval = !protectedRequired
+    ? ok('protected-approval', protectedLabel, 'no protected paths')
+    : protectedApprovalState === 'success'
+      ? ok('protected-approval', protectedLabel, 'approved by the owner')
+      : protectedApprovalState === 'failure' ||
+          protectedApprovalState === 'error'
+        ? fail(
+            'protected-approval',
+            protectedLabel,
+            `approval is ${protectedApprovalState}`,
+          )
+        : wait(
+            'protected-approval',
+            protectedLabel,
+            protectedApprovalState === 'pending'
+              ? 'waiting for the owner to approve the protected changes'
+              : 'the approval status is not set yet',
+          );
 
   const checks = [ci, security, threads, copilot, protectedApproval];
   const failed = checks.find((c) => c.state === 'failure');
@@ -1477,6 +2142,7 @@ export function evaluateApproval({
   dispositioned,
   unresolvedThreads,
   copilotReviewedHead,
+  protectedRequired,
   protectedApprovalState,
   state,
 }) {
@@ -1490,6 +2156,7 @@ export function evaluateApproval({
     dispositioned,
     unresolvedThreads,
     copilotReviewedHead,
+    protectedRequired,
     protectedApprovalState,
   });
   const parked = parkedIn(labels);
@@ -1616,10 +2283,18 @@ export function prClosedOutcome({ pr, closedBy }) {
 
 /**
  * Why the router must leave an item alone, or null. Closed issues and PRs
- * are finished; an open issue whose PR was closed still routes.
+ * are finished; an open issue whose PR was closed still routes. An item in
+ * stage:awaiting-approval waits for the owner and is never moved by the
+ * router.
  */
 export function routerSkip(item) {
-  return item?.state === 'closed' ? `#${item.number} is closed` : null;
+  if (item?.state === 'closed') return `#${item.number} is closed`;
+  const names = (item?.labels ?? []).map((l) =>
+    typeof l === 'string' ? l : l?.name,
+  );
+  return names.includes('stage:awaiting-approval')
+    ? `#${item.number} is awaiting the owner's approval of protected changes`
+    : null;
 }
 
 // ---------------------------------------------------------------- outcomes
@@ -1653,12 +2328,16 @@ export const PROBLEMS = [
   'copilot_request_failed', // approval: could not request Copilot
   'ci_failed', // ci: CI failed on a pipeline PR's current head
   'pr_closed', // pr: the issue's PR was closed without merging
+  'protected_rejected', // develop: the owner rejected the protected changes
   // Hard gates (HARD_GATES): always a human.
   'protected_surface',
   'needs_secrets_ci_infra',
   'scope_split',
   'embedded_instructions',
   'forbidden_path',
+  // The patch needs the owner's approval (a request was posted, no PR yet),
+  // or a fix patch carried protected paths and was not pushed.
+  'protected_approval_needed',
 ];
 
 /**
@@ -1673,6 +2352,7 @@ export const HARD_GATES = [
   'needs_secrets_ci_infra',
   'embedded_instructions',
   'forbidden_path',
+  'protected_approval_needed',
 ];
 
 const OUTCOME_VERSION = 1;
@@ -1753,6 +2433,9 @@ const PROBLEM_TEXT = {
   copilot_request_failed: 'the Copilot review could not be requested',
   ci_failed: 'CI failed on the agent PR',
   pr_closed: 'the pull request was closed without merging',
+  protected_rejected: 'the owner rejected the protected changes',
+  protected_approval_needed:
+    'the change touches protected files and needs owner approval',
   protected_surface: 'the work touches protected files',
   needs_secrets_ci_infra:
     'the work needs secrets, CI, infrastructure or a server',
@@ -1952,6 +2635,15 @@ const RULES = [
     problems: ['ci_failed'],
     target: 'human',
     reason: 'CI failed on the agent PR, see run',
+  },
+  // The owner said no to the protected changes; the branch is kept and the
+  // owner decides what happens to it.
+  {
+    stage: 'develop',
+    problems: ['protected_rejected'],
+    target: 'human',
+    reason:
+      'the owner rejected the protected changes; the branch is kept for the owner to decide',
   },
   // Never retried: someone closed the PR on purpose. A person decides
   // whether to restart the issue or close it.
@@ -2420,12 +3112,15 @@ function checkPlanShape(r) {
  * Pure. All of these must hold:
  * - schema: `spec` and `plan` present with every required section;
  * - every acceptance criterion is non-empty and marked testable;
- * - scope: no planned file matches FORBIDDEN_PATH_PATTERNS, and the planner
- *   reports no need for secrets, CI or infrastructure;
+ * - scope: no planned file is a never-approvable protected path (see
+ *   FORBIDDEN_PATH_PATTERNS; approvable ones pass and are reported as
+ *   `protectedPaths`, the owner approves them before a PR opens), and the
+ *   planner reports no need for secrets, CI or infrastructure;
  * - size: at most `limits.maxFiles` files and `limits.maxLines` estimated
  *   changed lines;
  * - the planner reported no instructions embedded in the issue.
- * Returns `{ approved: true, files, lines }`, or `{ approved: false,
+ * Returns `{ approved: true, files, lines, protectedPaths? }` (the last only
+ * when the plan touches approvable protected paths), or `{ approved: false,
  * problem, details, questions }` (`problem` is the highest-priority failure
  * in PLAN_PROBLEM_PRIORITY; `details` lists every failure).
  */
@@ -2448,13 +3143,11 @@ export function evaluatePlanApproval(
       'needs_secrets_ci_infra',
       'The planner reported that the work needs secrets, CI, infrastructure or a server.',
     );
-  const blocked = forbiddenPaths(
-    shape.files.flatMap((f) => [f, f.toLowerCase()]),
-  );
-  if (blocked.length)
+  const cls = classifyProtectedPaths(shape.files, { foldCase: true });
+  if (cls.never.length)
     fail(
       'protected_surface',
-      `The plan touches protected paths: ${[...new Set(blocked)].join(', ')}.`,
+      `The plan touches protected paths that only a local session may change: ${cls.never.join(', ')}.`,
     );
   if (!shape.errors.length) {
     (r.spec.acceptance_criteria ?? []).forEach((c, i) => {
@@ -2476,7 +3169,12 @@ export function evaluatePlanApproval(
       );
   }
   if (!failures.length)
-    return { approved: true, files: shape.files, lines: shape.lines };
+    return {
+      approved: true,
+      files: shape.files,
+      lines: shape.lines,
+      ...(cls.approvable.length ? { protectedPaths: cls.approvable } : {}),
+    };
   const problem = PLAN_PROBLEM_PRIORITY.find((p) =>
     failures.some((f) => f.problem === p),
   );
@@ -2504,12 +3202,21 @@ export function classifyPlan({ jobResult, raw, limits }) {
     return { stage: 'plan', result: 'problem', problem: 'invalid_output' };
   if (r.status === 'planned') {
     const ev = evaluatePlanApproval(r, limits);
-    if (ev.approved)
+    if (ev.approved) {
+      const prot = ev.protectedPaths;
       return {
         stage: 'plan',
         result: 'success',
-        summary: `Spec and plan posted and auto-approved (${ev.files.length} file(s), ~${ev.lines} lines).`,
+        summary: `Spec and plan posted and auto-approved (${ev.files.length} file(s), ~${ev.lines} lines)${prot ? '; owner approval needed before a PR opens' : ''}.`,
+        ...(prot
+          ? {
+              details: [
+                `Protected paths (owner approval needed before a PR opens): ${prot.join(', ')}`,
+              ],
+            }
+          : {}),
       };
+    }
     return {
       stage: 'plan',
       result: 'problem',
@@ -2600,6 +3307,9 @@ export function renderPlanComment(result, promptVer = 'plan.md@unknown') {
   const plan = result.plan;
   const files = new Set(plan.changes.map((c) => normalizePath(c.file.trim())));
   const lines = plan.changes.reduce((sum, c) => sum + c.lines, 0);
+  const protectedPaths = classifyProtectedPaths([...files], {
+    foldCase: true,
+  }).approvable;
   return [
     '### Implementation plan',
     '',
@@ -2625,7 +3335,19 @@ export function renderPlanComment(result, promptVer = 'plan.md@unknown') {
     '## Definition of done',
     commentText(plan.definition_of_done),
     '',
-    footer(promptVer, 'development starts automatically (stage:planned).'),
+    ...(protectedPaths.length
+      ? [
+          '## Owner approval',
+          `This plan changes protected files: ${protectedPaths.map((p) => `\`${p.replace(/`/g, '')}\``).join(', ')}. The branch is pushed without a pull request and the owner approves the diff once (${APPROVE_COMMAND}) before a PR opens.`,
+          '',
+        ]
+      : []),
+    footer(
+      promptVer,
+      protectedPaths.length
+        ? 'development starts automatically (stage:planned); the protected files need the owner’s approval before a PR opens.'
+        : 'development starts automatically (stage:planned).',
+    ),
   ].join('\n');
 }
 
@@ -2669,7 +3391,22 @@ export function classifyFix({
   verifyResult,
   pushResult,
   patchRejected,
+  patchProtected,
 }) {
+  // A fix moves the branch head, and an approval covers one head only: a
+  // fix patch never carries protected content, approvable or not. It is
+  // refused before anything is pushed, so no CI run sees it.
+  if (patchRejected && patchProtected === 'approvable')
+    return {
+      stage: 'fix',
+      result: 'problem',
+      problem: 'protected_approval_needed',
+      summary:
+        'Fix stopped: the fix touches protected files and was not pushed.',
+      details: [
+        'The fix patch changes approvable protected paths (a manifest, the lockfile, a generator). Nothing was pushed: an approval covers one commit, so push this change yourself, then the owner approves the new head (the pipeline posts a new request).',
+      ],
+    };
   if (patchRejected)
     return {
       stage: 'fix',
@@ -2797,11 +3534,36 @@ export const COMMAND_EFFECTS = {
     emits: ['pull_request_review'],
   },
   // The record note (an issue_comment by the App) is what approval.yml
-  // re-evaluates the gates on.
+  // re-evaluates the gates on (so is protected-decision's approval note).
   disposition: {
     stages: [],
     markers: [],
     appends: ['disposition'],
     emits: ['issue_comment'],
+  },
+  // develop.yml, approvable protected changes: the branch is pushed with no
+  // PR, the issue waits for the owner. Not a problem hand-off to the router.
+  'protected-request': {
+    stages: ['stage:awaiting-approval'],
+    markers: [],
+    appends: ['outcome', 'protectedApproval'],
+    emits: [],
+  },
+  // The owner's /approve-protected: opens the PR (a `pull_request` event) and
+  // appends the record note the gates re-evaluate on. /reject-protected is
+  // the escalation.
+  'protected-decision': {
+    stages: ['stage:building', 'stage:routing'],
+    problems: ['stage:routing'],
+    markers: ['state'],
+    appends: ['outcome', 'protectedApproved'],
+    emits: ['issue_comment', 'pull_request'],
+  },
+  // A new head with protected changes: a new approval request on the issue.
+  'protected-status': {
+    stages: ['stage:awaiting-approval'],
+    markers: [],
+    appends: ['outcome', 'protectedApproval'],
+    emits: [],
   },
 };

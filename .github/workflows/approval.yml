@@ -2,7 +2,8 @@ name: Pipeline · Approval
 
 # Review gates and the hand-off to humans. For a PR's head commit this
 # evaluates the gates (CI, the Gemini security review clean or every finding
-# dispositioned, review threads resolved, Copilot reviewed) and sets the
+# dispositioned, review threads resolved, Copilot reviewed, and for a pipeline
+# PR with protected paths the owner's approval of this head) and sets the
 # `pipeline/gates` commit status, which the main ruleset requires. When CI is
 # green, the security review passes and no review thread is open:
 #   1. request a Copilot review (REST, once per head commit);
@@ -17,7 +18,8 @@ on: # zizmor: ignore[dangerous-triggers]
   status:
   pull_request_review:
     types: [submitted]
-  # The bot's disposition record note (disposition.yml, App token).
+  # The bot's disposition record note (disposition.yml, App token) and its
+  # protected-approval record on the PR (protected-approve.yml).
   issue_comment:
     types: [created]
   # A new head has no gates status yet: give it a pending one at once.
@@ -44,7 +46,8 @@ jobs:
       (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
       vars.PIPELINE_BOT_LOGIN != '' &&
       github.event.comment.user.login == vars.PIPELINE_BOT_LOGIN &&
-      startsWith(github.event.comment.body, '<!-- pipeline:disposition')) ||
+      (startsWith(github.event.comment.body, '<!-- pipeline:disposition') ||
+      startsWith(github.event.comment.body, '<!-- pipeline:protected-approved'))) ||
       (github.event_name == 'status' && github.event.context == 'pipeline/security'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -95,6 +98,8 @@ jobs:
         with:
           client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
           private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          # contents: read lists the PR's changed files (protected paths).
+          permission-contents: read
           permission-pull-requests: write
           permission-issues: write
           permission-checks: read
