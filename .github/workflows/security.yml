@@ -131,6 +131,8 @@ jobs:
           VERSION: ${{ needs.review.outputs.prompt_version }}
           REVIEW_RESULT: ${{ needs.review.result }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          # Dispositioned findings carry over to a new head by id.
+          PIPELINE_OWNER_LOGIN: ${{ vars.PIPELINE_OWNER_LOGIN }}
         run: |
           if [[ "$REVIEW_RESULT" != "success" ]]; then RESPONSE="reviewer run failed ($REVIEW_RESULT)"; fi
           printf '%s\n' "$RESPONSE" > response.md

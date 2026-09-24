@@ -86,6 +86,8 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          # Findings the owner dispositioned are not fixed.
+          PIPELINE_OWNER_LOGIN: ${{ vars.PIPELINE_OWNER_LOGIN }}
           MODE: ${{ inputs.retry && 'retry' || 'normal' }}
         run: node .github/scripts/pipeline.mjs fix-adapter "${{ steps.pr.outputs.pr }}" "$RUNNER_TEMP/items.json" "$MODE"
 

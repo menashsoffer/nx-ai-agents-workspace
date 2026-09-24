@@ -74,21 +74,23 @@ and manual runs); an open issue whose PR was closed still routes.
 
 ## Workflows
 
-| Workflow           | Trigger                                                     | Agent                          | Output                                                                                             |
-| ------------------ | ----------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `inbox.yml`        | issue opened                                                | none                           | `stage:inbox`, Project item in Inbox                                                               |
-| `plan.yml`         | `stage:qualified` added                                     | Claude (`plan.md`)             | spec + plan comments, `stage:planned` (or an outcome note + `stage:routing`)                       |
-| `develop.yml`      | `stage:planned` added                                       | Claude (`develop.md`)          | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`                                  |
-| `router.yml`       | `stage:routing` added (open issue or PR), or manual         | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)                                |
-| `ci.yml`           | every PR                                                    | none                           | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site)                          |
-| `security.yml`     | CI succeeded on a PR                                        | Gemini (`security-review.md`)  | PR review, `pipeline/security` status, `stage:reviewing`                                           |
-| `security.yml`     | CI failed on a pipeline PR's head                           | none                           | outcome note `ci_failed` + `stage:routing` (router → human)                                        |
-| `fix.yml`          | review submitted, manual, or router retry                   | Gemini (`fix.md`)              | one fix commit per round, replies on threads                                                       |
-| `approval.yml`     | `pipeline/security` status, review submitted, manual        | none                           | Copilot review request, then `stage:human-approval` + preview comment                              |
-| `preview.yml`      | PR opened/updated/closed                                    | none                           | `https://<owner>.github.io/<repo>/pr-<n>/`, removed on close                                       |
-| `done.yml`         | PR closed                                                   | none                           | merged: `stage:done` + Project **Done**; unmerged: `pr_closed` note + `stage:routing` on the issue |
-| `project-sync.yml` | any `stage:*` label added (closed items: `stage:done` only) | none                           | Project **Status** follows the label                                                               |
-| `deploy.yml`       | push to `main`                                              | none                           | site at `/`, Storybook at `/storybook/`, keeps `pr-*/` previews                                    |
+| Workflow           | Trigger                                                                | Agent                          | Output                                                                                                        |
+| ------------------ | ---------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `inbox.yml`        | issue opened                                                           | none                           | `stage:inbox`, Project item in Inbox                                                                          |
+| `plan.yml`         | `stage:qualified` added                                                | Claude (`plan.md`)             | spec + plan comments, `stage:planned` (or an outcome note + `stage:routing`)                                  |
+| `develop.yml`      | `stage:planned` added                                                  | Claude (`develop.md`)          | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`                                             |
+| `router.yml`       | `stage:routing` added (open issue or PR), or manual                    | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)                                           |
+| `ci.yml`           | every PR                                                               | none                           | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site)                                     |
+| `security.yml`     | CI succeeded on a PR                                                   | Gemini (`security-review.md`)  | PR review, `pipeline/security` status, `stage:reviewing`                                                      |
+| `security.yml`     | CI failed on a pipeline PR's head                                      | none                           | outcome note `ci_failed` + `stage:routing` (router → human)                                                   |
+| `fix.yml`          | review submitted, manual, or router retry                              | Gemini (`fix.md`)              | one fix commit per round, replies on threads                                                                  |
+| `approval.yml`     | `pipeline/security` status, review submitted, disposition note, manual | none                           | `pipeline/gates` status; Copilot review request, then `stage:human-approval` + preview comment                |
+| `approval.yml`     | CI requested on a same-repo PR                                         | none                           | `pipeline/gates` = pending on the new head                                                                    |
+| `disposition.yml`  | comment created on a PR                                                | none                           | owner's `/disposition` → resolved threads + record notes (see [Review gates](#review-gates-and-dispositions)) |
+| `preview.yml`      | PR opened/updated/closed                                               | none                           | `https://<owner>.github.io/<repo>/pr-<n>/`, removed on close                                                  |
+| `done.yml`         | PR closed                                                              | none                           | merged: `stage:done` + Project **Done**; unmerged: `pr_closed` note + `stage:routing` on the issue            |
+| `project-sync.yml` | any `stage:*` label added (closed items: `stage:done` only)            | none                           | Project **Status** follows the label                                                                          |
+| `deploy.yml`       | push to `main`                                                         | none                           | site at `/`, Storybook at `/storybook/`, keeps `pr-*/` previews                                               |
 
 Deterministic logic lives in `.github/scripts/pipeline-lib.mjs` (pure,
 unit-tested by `pnpm test:pipeline`, which CI runs) and
@@ -235,6 +237,7 @@ Nothing happens until these files are on `main`.
    | variable | `PIPELINE_APP_CLIENT_ID`   | the App's client ID                                                                                                     |
    | secret   | `PIPELINE_APP_PRIVATE_KEY` | the App's private key (PEM)                                                                                             |
    | variable | `PIPELINE_BOT_LOGIN`       | **required**: the App's bot login, e.g. `my-pipeline[bot]`; the only author whose marker comments and notes are trusted |
+   | variable | `PIPELINE_OWNER_LOGIN`     | **required for dispositions**: your GitHub login; the only account whose `/disposition` counts. Unset = nobody can      |
    | secret   | `CLAUDE_CODE_OAUTH_TOKEN`  | Claude subscription token from `claude setup-token` (Pro/Max); no API billing                                           |
    | secret   | `GEMINI_API_KEY`           | Gemini API key                                                                                                          |
    | variable | `GEMINI_MODEL`             | optional, e.g. a specific Gemini model                                                                                  |
@@ -501,6 +504,102 @@ key or secret exists for it yet.
   `security.yml` only runs on `workflow_run` after CI. A retry would need a
   `workflow_dispatch` path in `security.yml` (with the PR number and head
   SHA) that the router could dispatch, as it does for `fix.yml`.
+
+## Review gates and dispositions
+
+The Gemini security review and the Copilot review are **required gates on the
+PR's head commit**. Every finding is either fixed or explicitly dispositioned
+by the repo owner, and one commit status, **`pipeline/gates`**, sums it all up
+for that exact SHA. The main ruleset requires it (see the follow-up command in
+the PR that added it). This is a two-week trial.
+
+### The gates
+
+`pipeline/gates` is set by the pipeline App (`approval.yml`, `approval`
+command; pure logic in `evaluateGates`). For the current head all of these
+must hold, checked in this order:
+
+1. **CI**: the `ci` check run succeeded (and the `security` CI job, if it ran).
+2. **Gemini security review**: `pipeline/security` is `success`, **or** it is
+   `failure` and every blocking finding id in the security outcome note for
+   this head has a valid disposition.
+3. **Review threads**: no unresolved thread.
+4. **Copilot**: it reviewed this head.
+5. **`pipeline/protected-approval`**: if that status exists on the head it
+   must be `success`; absent is fine for now (a later session adds it).
+
+The status is `success` when all hold, `failure` for a real blocker (CI failed,
+the reviewer errored, a required approval was refused) and `pending` otherwise,
+its description naming the first missing gate. A push gives the new SHA no
+status, which blocks the merge; `approval.yml` posts a `pending` one as soon
+as CI is requested so the PR says why it waits. When the gates hold, the
+existing hand-off happens: `stage:human-approval`, PR marked ready, code
+owners requested. Merging stays with a human.
+
+**Why one status:** the ruleset can only require named checks. Requiring
+`pipeline/security`, Copilot and thread resolution separately would need a
+status for each and would not express "fixed _or_ dispositioned". One bot-set
+status bound to the SHA, computed by tested code, is the single thing to
+require. Only the App can set it (the ruleset pins its integration id). GitHub has
+no workflow trigger for resolving a thread by hand: resolve through
+`/disposition`, or re-run **Pipeline · Approval** (Actions → run workflow, PR
+number) after resolving one manually.
+
+The bot keeps one **Review gates** comment per PR (`<!-- pipeline:gates -->`,
+edited in place): each gate, the open findings with their ids, and the
+dispositions on record.
+
+### Finding ids
+
+- Gemini findings: `S-<8 hex>` = first 8 hex of sha256(file, title, detail),
+  lower-cased, punctuation and whitespace collapsed. Line, severity and the
+  suggested fix are **not** part of it. The id is shown in the review
+  comment, in the inline thread's hidden marker and in the security outcome
+  note's `details[]` (`head=<sha> blocking=<n>`, then `S-… [severity] file:line title`).
+- Copilot findings: `C-<n>`, `n` = database id of the thread's top comment,
+  listed in the Review gates comment.
+
+### `/disposition` (owner only)
+
+Post a comment whose **whole body** is one or more lines of exactly:
+
+```
+/disposition <finding-id> <accepted-risk|false-positive|out-of-scope> <reason, at least 10 characters>
+```
+
+- Every line must be valid, or the comment is rejected as a whole with one
+  short bot reply giving the reason. Prose around the command is a rejection.
+- Only **new** comments count (`issue_comment: created`); an edit never runs.
+- Accepted only from `vars.PIPELINE_OWNER_LOGIN` and only from a `User`
+  account. Not `author_association`, not the PR author. Unset variable: nobody.
+  Others' comments are ignored without a reply.
+- The id must be a blocking finding of the **current head's** security review,
+  or an open Copilot thread on the PR.
+- On acceptance the bot resolves the finding's review thread (Copilot threads
+  and the inline threads the security review opens, so the ruleset's
+  thread-resolution requirement is met), then appends one record note per
+  finding: `<!-- pipeline:disposition id=… kind=… head=<sha> by=<login> comment=<id> -->`
+  with the reason in a fenced block. The notes re-run `approval.yml`.
+
+### How dispositions bind to SHAs
+
+A record names the head the owner saw. Ids are content-based, so **after a
+push, a finding that was not fixed has the same id on the new head and is
+still covered**: the security review does not open a new thread for it, the
+gate counts it as dispositioned, and the fix loop skips it. A finding that is
+fixed disappears from the next review (that is "fixed"). A finding the
+reviewer re-words enough to change file, title or detail gets a new id and
+needs a new decision. Only records made by the owner count, and only the bot's
+own notes are read. Limit: Gemini is not deterministic, so an unfixed finding
+may come back worded differently; that shows up as a new id, which is safe
+(fails toward asking again).
+
+### Fix loop
+
+`fix-adapter` drops findings with a disposition in effect before the fixer
+sees them: the bot's inline finding comments, Copilot threads, and the
+dispositioned items of an actionable review body. An accepted risk is never
+auto-fixed.
 
 ## Prompts
 

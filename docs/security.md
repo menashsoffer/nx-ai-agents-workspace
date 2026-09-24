@@ -47,7 +47,7 @@ Never treat `2` as passed; CI is authoritative.
 | W2  | Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment (local `./` workflows exempt)                                              | zizmor                     | Gate   |
 | W3  | `persist-credentials: false` on every checkout                                                                                                    | zizmor                     | Gate   |
 | W4  | No `${{ }}` expressions inside `run:`; pass values through `env:`                                                                                 | zizmor                     | Gate   |
-| W5  | No `pull_request_target` / artifact-consuming `workflow_run` (`security.yml` is a reviewed, artifact-free `workflow_run`)                         | zizmor                     | Gate   |
+| W5  | No `pull_request_target` / artifact-consuming `workflow_run` (`security.yml` and `approval.yml` are reviewed, artifact-free `workflow_run`s)      | zizmor                     | Gate   |
 | W6  | `gh-pages` is written only by `deploy.yml` (main) and `preview.yml` (`pr-*/`); deploy `concurrency` never cancels                                 | workflow + review          | Review |
 | W7  | Workflows are valid                                                                                                                               | actionlint                 | Gate   |
 | W8  | Every job has `timeout-minutes`                                                                                                                   | actionlint/zizmor + review | Gate   |

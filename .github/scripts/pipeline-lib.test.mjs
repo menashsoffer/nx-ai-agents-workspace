@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   COPILOT_REVIEWER,
+  DISPOSITION_KINDS,
   LEGACY_ROUTE_TARGETS,
   PLAN_AGENT_PROBLEMS,
   PLAN_MAX_FILES,
@@ -70,6 +71,23 @@ import {
   stageTransition,
   threadsToResolve,
   unquoteCPath,
+  GATES_CONTEXT,
+  validateDispositions,
+  securityOutcomeDetails,
+  securityIdsForHead,
+  renderGatesComment,
+  renderDispositionNote,
+  parseDispositionNotes,
+  parseDispositionComment,
+  inlineFindingId,
+  findingId,
+  evaluateGates,
+  dropDispositioned,
+  dispositionsInEffect,
+  dispositionKinds,
+  copilotThreadId,
+  classifyThreads,
+  checkDispositionAuthor,
   targetStage,
 } from './pipeline-lib.mjs';
 
@@ -2044,6 +2062,7 @@ function scanCommandEffects(src, libSrc) {
       /api\(\s*`pulls\/\$\{\w+\}\/reviews`,\s*\{\s*method:\s*'POST'/.test(body)
     )
       fx.emits.push('pull_request_review');
+    if (/\brenderDispositionNote\(/.test(body)) fx.emits.push('issue_comment');
     if (/\bdecideFix\(/.test(body)) fx.loops = [FIX_LOOP_1, FIX_LOOP_2];
     out[name] = normaliseEffects(fx);
   });
@@ -2458,4 +2477,958 @@ test('workflows: closed items cannot leave Done, and the router skips them', () 
       'github.event.pull_request.head.repo.full_name == github.repository',
     ),
   );
+});
+
+// ---------------------------------------------------------------- gates
+
+const HEAD_A = 'a'.repeat(40);
+const HEAD_B = 'b'.repeat(40);
+const OWNER_LOGIN = 'menashsoffer';
+
+const finding = (extra = {}) => ({
+  severity: 'high',
+  category: 'security',
+  file: 'src/a.ts',
+  line: 10,
+  title: 'Unsafe href',
+  detail: 'A user-controlled URL reaches href without validation.',
+  suggestion: 'Validate the protocol.',
+  ...extra,
+});
+const withId = (f) => ({ id: findingId(f), ...f });
+
+test('findingId is stable across line, severity and wording noise, and ids differ by file or text', () => {
+  const base = finding();
+  assert.match(findingId(base), /^S-[0-9a-f]{8}$/);
+  assert.equal(findingId(base), findingId({ ...base }));
+  // Not part of the id: line, severity, category, suggestion.
+  assert.equal(findingId({ ...base, line: 99 }), findingId(base));
+  assert.equal(findingId({ ...base, severity: 'critical' }), findingId(base));
+  assert.equal(
+    findingId({ ...base, category: 'correctness' }),
+    findingId(base),
+  );
+  assert.equal(
+    findingId({ ...base, suggestion: 'Other fix.' }),
+    findingId(base),
+  );
+  // Case, whitespace and punctuation are normalised.
+  assert.equal(
+    findingId({
+      ...base,
+      title: '  UNSAFE   href!! ',
+      detail: 'a user-controlled URL reaches href, without validation',
+    }),
+    findingId(base),
+  );
+  // File, title and text are.
+  assert.notEqual(findingId({ ...base, file: 'src/b.ts' }), findingId(base));
+  assert.notEqual(findingId({ ...base, title: 'Unsafe src' }), findingId(base));
+  assert.notEqual(
+    findingId({ ...base, detail: 'Something else entirely.' }),
+    findingId(base),
+  );
+  // Hebrew text still hashes, and differs.
+  assert.notEqual(
+    findingId({ ...base, detail: 'כתובת לא מאומתת' }),
+    findingId({ ...base, detail: 'כתובת אחרת' }),
+  );
+});
+
+test('parseSecurityReport gives every finding an id and merges duplicates', () => {
+  const dup = finding({ severity: 'low' });
+  const text =
+    '```json\n' +
+    JSON.stringify({
+      summary: 's',
+      findings: [
+        dup,
+        finding({ severity: 'critical', line: 55 }),
+        finding({ file: 'src/c.ts' }),
+      ],
+    }) +
+    '\n```';
+  const r = parseSecurityReport(text);
+  assert.equal(r.findings.length, 2);
+  assert.equal(r.findings[0].id, findingId(dup));
+  assert.equal(r.findings[0].severity, 'critical', 'the more severe copy wins');
+  assert.notEqual(r.findings[0].id, r.findings[1].id);
+});
+
+test('buildSecurityReview shows ids, tags inline threads and skips dispositioned findings', () => {
+  const inline = withId(finding());
+  const body = withId(
+    finding({ file: 'src/b.ts', line: 500, title: 'Off by one' }),
+  );
+  const carried = withId(
+    finding({ file: 'src/c.ts', line: 11, title: 'Old risk' }),
+  );
+  const files = [
+    { filename: 'src/a.ts', patch: '@@ -1,1 +10,2 @@\n+x\n+y' },
+    { filename: 'src/c.ts', patch: '@@ -1,1 +11,2 @@\n+x\n+y' },
+  ];
+  const r = buildSecurityReview({
+    report: { summary: '', findings: [inline, body, carried] },
+    sha: HEAD_A,
+    files,
+    promptVer: '2',
+    dispositioned: new Map([[carried.id, 'accepted-risk']]),
+  });
+  assert.equal(
+    r.clean,
+    false,
+    'a dispositioned finding is still a blocking finding',
+  );
+  assert.equal(r.blockingCount, 3);
+  assert.equal(r.dispositionedCount, 1);
+  // The inline thread carries the id in a marker the bot can read back.
+  assert.equal(r.comments.length, 1);
+  assert.equal(inlineFindingId(r.comments[0].body), inline.id);
+  assert.ok(r.comments[0].body.includes(`\`${inline.id}\``));
+  assert.deepEqual(r.inlineFindings, [inline]);
+  // The body-only finding is a list item led by its id; the carried one opens nothing.
+  assert.ok(r.body.includes(`- \`${body.id}\` src/b.ts:500:`));
+  assert.ok(r.body.includes(MARKERS.actionable));
+  assert.ok(
+    r.body.includes(
+      `\`${carried.id}\` [high] src/c.ts:11 Old risk (accepted-risk)`,
+    ),
+  );
+  assert.ok(!r.body.includes(`- \`${carried.id}\` src/c.ts:11: **`));
+  // The fallback puts the inline finding in the body too.
+  assert.ok(r.fallbackBody.includes(`- \`${inline.id}\` src/a.ts:10:`));
+  assert.equal(r.fallbackBody.split(MARKERS.actionable).length - 1, 1);
+});
+
+test('security outcome details round-trip through securityIdsForHead, bot notes only', () => {
+  const f1 = withId(finding());
+  const f2 = withId(finding({ title: 'Second', file: 'src/b.ts' }));
+  const note = (sha, findings, user = bot) => ({
+    user,
+    body: renderOutcome({
+      stage: 'security',
+      result: 'success',
+      summary: 'Security review.',
+      details: securityOutcomeDetails({ sha, findings }),
+    }),
+  });
+  const comments = [note(HEAD_A, [f1]), note(HEAD_B, [f1, f2])];
+  const b = securityIdsForHead({ comments, botLogin: BOT, sha: HEAD_B });
+  assert.deepEqual(b.ids, [f1.id, f2.id]);
+  assert.equal(b.blocking, 2);
+  assert.equal(b.complete, true);
+  assert.match(b.findings[1].text, /src\/b\.ts:10 Second/);
+  assert.deepEqual(
+    securityIdsForHead({ comments, botLogin: BOT, sha: HEAD_A }).ids,
+    [f1.id],
+  );
+  // No note for this head, or a forged one from another author: null.
+  assert.equal(
+    securityIdsForHead({ comments, botLogin: BOT, sha: 'c'.repeat(40) }),
+    null,
+  );
+  assert.equal(
+    securityIdsForHead({
+      comments: [note(HEAD_B, [f1], alice)],
+      botLogin: BOT,
+      sha: HEAD_B,
+    }),
+    null,
+  );
+  // The latest note for a head wins (a re-run).
+  const rerun = [...comments, note(HEAD_B, [f2])];
+  assert.deepEqual(
+    securityIdsForHead({ comments: rerun, botLogin: BOT, sha: HEAD_B }).ids,
+    [f2.id],
+  );
+  // A list cut short by the outcome's size cap is incomplete.
+  const many = Array.from({ length: 25 }, (_, i) =>
+    withId(finding({ title: `t${i}` })),
+  );
+  const big = securityIdsForHead({
+    comments: [note(HEAD_A, many)],
+    botLogin: BOT,
+    sha: HEAD_A,
+  });
+  assert.equal(big.blocking, 25);
+  assert.equal(big.complete, false);
+});
+
+test('parseDispositionComment accepts one or more exact lines', () => {
+  const ok = parseDispositionComment(
+    '/disposition S-1a2b3c4d accepted-risk   The href is built from a constant.\n/disposition C-123456 false-positive The comment is about generated code\n',
+  );
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.commands, [
+    {
+      id: 'S-1a2b3c4d',
+      kind: 'accepted-risk',
+      reason: 'The href is built from a constant.',
+    },
+    {
+      id: 'C-123456',
+      kind: 'false-positive',
+      reason: 'The comment is about generated code',
+    },
+  ]);
+  for (const kind of DISPOSITION_KINDS)
+    assert.equal(
+      parseDispositionComment(`/disposition S-1a2b3c4d ${kind} ten chars!!`).ok,
+      true,
+    );
+  assert.equal(
+    parseDispositionComment(
+      '/disposition S-1a2b3c4d out-of-scope Tracked in issue 12.\r\n',
+    ).ok,
+    true,
+  );
+});
+
+test('parseDispositionComment rejects anything off, as a whole', () => {
+  const bad = (text) => {
+    const r = parseDispositionComment(text);
+    assert.equal(r.ok, false, text);
+    assert.ok(!r.ignore, `${text} is a command, not chat`);
+    return r.error;
+  };
+  assert.match(
+    bad('/disposition S-1a2b3c4d wontfix This is a long enough reason'),
+    /kind must be one of/,
+  );
+  assert.match(
+    bad('/disposition S-1a2b3c4d accepted-risk short'),
+    /at least 10 characters/,
+  );
+  assert.match(
+    bad('/disposition S-1a2b3c4d accepted-risk 123456789'),
+    /at least 10 characters/,
+  );
+  assert.match(bad('/disposition S-1a2b3c4d accepted-risk'), /expected/);
+  assert.match(bad('/disposition'), /expected/);
+  assert.match(
+    bad('/disposition S-XYZ accepted-risk a long enough reason'),
+    /finding id/,
+  );
+  assert.match(
+    bad('/disposition s-1a2b3c4d accepted-risk a long enough reason'),
+    /finding id/,
+  );
+  assert.match(
+    bad('/disposition S-1a2b3c4d accepted-risk ' + 'x'.repeat(501)),
+    /at most 500/,
+  );
+  // One bad line among several rejects them all, and says which.
+  assert.match(
+    bad(
+      '/disposition S-1a2b3c4d accepted-risk a long enough reason\n/disposition S-2b3c4d5e nope a long enough reason',
+    ),
+    /^line 2: the kind/,
+  );
+  // Prose around a command, an empty line, a duplicate id, too many lines.
+  assert.match(
+    bad('/disposition S-1a2b3c4d accepted-risk a long enough reason\nthanks!'),
+    /^line 2: expected/,
+  );
+  assert.match(
+    bad(
+      '/disposition S-1a2b3c4d accepted-risk a long enough reason\n\n/disposition S-2b3c4d5e accepted-risk a long enough reason',
+    ),
+    /^line 2: expected/,
+  );
+  assert.match(
+    bad(
+      '/disposition S-1a2b3c4d accepted-risk a long enough reason\n/disposition S-1a2b3c4d false-positive another long reason',
+    ),
+    /appears twice/,
+  );
+  assert.match(
+    bad(
+      Array(21)
+        .fill('/disposition S-1a2b3c4d accepted-risk a long enough reason')
+        .join('\n'),
+    ),
+    /at most 20/,
+  );
+  // The error never repeats untrusted text.
+  assert.ok(
+    !bad(
+      '/disposition <script>alert(1)</script> accepted-risk a long enough reason',
+    ).includes('script'),
+  );
+});
+
+test('parseDispositionComment leaves ordinary comments alone', () => {
+  for (const text of [
+    'looks good',
+    '',
+    null,
+    'please /disposition S-1a2b3c4d accepted-risk a long enough reason',
+    '> /disposition S-1a2b3c4d accepted-risk a long enough reason',
+    '/dispositions S-1a2b3c4d accepted-risk a long enough reason',
+  ])
+    assert.deepEqual(
+      parseDispositionComment(text),
+      { ok: false, ignore: true },
+      String(text),
+    );
+});
+
+test('checkDispositionAuthor: the configured owner as a user, nobody else, closed when unset', () => {
+  const check = (extra) =>
+    checkDispositionAuthor({
+      login: OWNER_LOGIN,
+      type: 'User',
+      ownerLogin: OWNER_LOGIN,
+      ...extra,
+    });
+  assert.equal(check({}).ok, true);
+  assert.equal(
+    check({ login: 'MenashSoffer' }).ok,
+    true,
+    'logins are case-insensitive',
+  );
+  assert.equal(check({ login: 'alice' }).ok, false);
+  assert.equal(check({ type: 'Bot' }).ok, false);
+  assert.equal(check({ login: `${OWNER_LOGIN}[bot]`, type: 'Bot' }).ok, false);
+  assert.equal(check({ ownerLogin: '' }).ok, false);
+  assert.equal(check({ ownerLogin: undefined }).ok, false);
+  assert.equal(
+    checkDispositionAuthor({ login: '', type: 'User', ownerLogin: '' }).ok,
+    false,
+  );
+  // The commenter's association or authorship is not consulted.
+  assert.equal(
+    checkDispositionAuthor({
+      login: 'alice',
+      type: 'User',
+      ownerLogin: OWNER_LOGIN,
+      author_association: 'OWNER',
+    }).ok,
+    false,
+  );
+});
+
+test('validateDispositions: ids must exist for this head or be an open Copilot thread', () => {
+  const geminiIds = new Set(['S-1a2b3c4d']);
+  const copilotIds = new Set(['C-42']);
+  const cmd = (id) => ({
+    id,
+    kind: 'accepted-risk',
+    reason: 'a long enough reason',
+  });
+  assert.equal(
+    validateDispositions({
+      commands: [cmd('S-1a2b3c4d'), cmd('C-42')],
+      geminiIds,
+      copilotIds,
+    }).ok,
+    true,
+  );
+  const unknown = validateDispositions({
+    commands: [cmd('S-1a2b3c4d'), cmd('S-deadbeef')],
+    geminiIds,
+    copilotIds,
+  });
+  assert.equal(unknown.ok, false);
+  assert.match(unknown.error, /S-deadbeef is not a blocking finding/);
+  assert.match(
+    validateDispositions({ commands: [cmd('C-43')], geminiIds, copilotIds })
+      .error,
+    /not an open Copilot review thread/,
+  );
+  // A Gemini id is not a Copilot id and the other way round.
+  assert.equal(
+    validateDispositions({
+      commands: [cmd('C-42')],
+      geminiIds: new Set(['C-42']),
+      copilotIds: new Set(),
+    }).ok,
+    false,
+  );
+  assert.equal(
+    validateDispositions({
+      commands: [cmd('S-1a2b3c4d')],
+      geminiIds: new Set(),
+      copilotIds: new Set(['S-1a2b3c4d']),
+    }).ok,
+    false,
+  );
+  // No security review for the head at all.
+  assert.equal(
+    validateDispositions({ commands: [cmd('S-1a2b3c4d')] }).ok,
+    false,
+  );
+});
+
+test('disposition record notes round-trip, are inert, and count only from the bot', () => {
+  const rec = {
+    id: 'S-1a2b3c4d',
+    kind: 'accepted-risk',
+    head: HEAD_A,
+    by: OWNER_LOGIN,
+    commentId: 987,
+    reason: 'Uses ``` fences and <!-- pipeline-state --> markers.',
+  };
+  const note = renderDispositionNote(rec);
+  assert.ok(
+    note.startsWith(
+      `<!-- pipeline:disposition id=S-1a2b3c4d kind=accepted-risk head=${HEAD_A} by=${OWNER_LOGIN} comment=987 -->\n`,
+    ),
+  );
+  assert.ok(
+    !note.includes('<!-- pipeline-state'),
+    'markers in the reason are neutralised',
+  );
+  const [parsed] = parseDispositionNotes([{ user: bot, body: note }], BOT);
+  assert.deepEqual(
+    { ...parsed, reason: undefined },
+    { ...rec, reason: undefined },
+  );
+  assert.ok(parsed.reason.includes('Uses ``` fences'));
+  // A copy of the note from anyone else is ignored.
+  assert.deepEqual(
+    parseDispositionNotes([{ user: alice, body: note }], BOT),
+    [],
+  );
+  assert.deepEqual(
+    parseDispositionNotes(
+      [{ user: bot, body: note.replace('S-1a2b3c4d', 'S-nothex!!') }],
+      BOT,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    parseDispositionNotes([{ user: bot, body: `text\n${note}` }], BOT),
+    [],
+  );
+});
+
+test('a disposition covers the same finding id on later heads, and only the owner counts', () => {
+  const f1 = withId(finding());
+  const f2 = withId(finding({ title: 'Different problem' }));
+  const record = (id, head, by = OWNER_LOGIN, kind = 'accepted-risk') => ({
+    user: bot,
+    body: renderDispositionNote({
+      id,
+      kind,
+      head,
+      by,
+      commentId: 1,
+      reason: 'a long enough reason',
+    }),
+  });
+  const records = parseDispositionNotes(
+    [
+      record(f1.id, HEAD_A),
+      record(f2.id, HEAD_A, 'mallory'),
+      record('C-7', HEAD_A, OWNER_LOGIN, 'out-of-scope'),
+    ],
+    BOT,
+  );
+  const kinds = dispositionKinds({ records, ownerLogin: OWNER_LOGIN });
+  assert.deepEqual(
+    [...kinds],
+    [
+      [f1.id, 'accepted-risk'],
+      ['C-7', 'out-of-scope'],
+    ],
+  );
+  const covered = dispositionsInEffect({ records, ownerLogin: OWNER_LOGIN });
+  // Recorded at HEAD_A; the same finding on HEAD_B has the same id.
+  const gatesAt = (headFindings) =>
+    evaluateGates({
+      ciConclusion: 'success',
+      securityState: 'failure',
+      securityFindings: {
+        ids: headFindings.map((f) => f.id),
+        complete: true,
+        blocking: headFindings.length,
+      },
+      dispositioned: covered,
+      copilotReviewedHead: true,
+    });
+  assert.equal(gatesAt([f1]).state, 'success');
+  assert.equal(gatesAt([f1]).state, 'success', 'and again on the next head');
+  // A different finding on the new head is not covered.
+  assert.equal(gatesAt([f1, f2]).state, 'pending');
+  // No owner configured: no record counts.
+  assert.equal(dispositionsInEffect({ records, ownerLogin: '' }).size, 0);
+  // Re-worded (new id) means a new finding.
+  assert.notEqual(
+    findingId({ ...finding(), title: 'Unsafe href in Link' }),
+    f1.id,
+  );
+  // The same finding rebuilt on the next head opens no thread.
+  const next = buildSecurityReview({
+    report: { summary: '', findings: [f1] },
+    sha: HEAD_B,
+    files: [{ filename: 'src/a.ts', patch: '@@ -1,1 +10,2 @@\n+x\n+y' }],
+    promptVer: '2',
+    dispositioned: kinds,
+  });
+  assert.equal(next.comments.length, 0);
+  assert.ok(!next.body.includes(MARKERS.actionable));
+});
+
+const passing = {
+  ciConclusion: 'success',
+  securityState: 'success',
+  unresolvedThreads: 0,
+  copilotReviewedHead: true,
+};
+const failedSecurity = (ids, extra = {}) => ({
+  ...passing,
+  securityState: 'failure',
+  securityFindings: { ids, blocking: ids.length, complete: true, findings: [] },
+  ...extra,
+});
+
+test('evaluateGates truth table', () => {
+  const g = (input) => evaluateGates(input);
+  // Everything holds; the protected-file status may be absent.
+  const ok = g(passing);
+  assert.equal(ok.state, 'success');
+  assert.equal(ok.blockedBy, null);
+  assert.deepEqual(
+    ok.checks.map((c) => c.key),
+    ['ci', 'security', 'threads', 'copilot', 'protected-approval'],
+  );
+  assert.equal(
+    g({ ...passing, securityJobConclusion: 'success' }).state,
+    'success',
+  );
+
+  // Gemini: failure fully dispositioned, partly dispositioned, unrecorded.
+  assert.equal(
+    g(
+      failedSecurity(['S-00000001', 'S-00000002'], {
+        dispositioned: new Set(['S-00000001', 'S-00000002', 'C-9']),
+      }),
+    ).state,
+    'success',
+  );
+  const partly = g(
+    failedSecurity(['S-00000001', 'S-00000002'], {
+      dispositioned: new Set(['S-00000001']),
+    }),
+  );
+  assert.equal(partly.state, 'pending');
+  assert.equal(partly.blockedBy, 'security');
+  assert.match(
+    partly.description,
+    /^Gemini security review: 1 of 2 finding\(s\) need a fix or a \/disposition/,
+  );
+  assert.equal(g(failedSecurity(['S-00000001'])).state, 'pending');
+  assert.equal(
+    g({ ...passing, securityState: 'failure' }).blockedBy,
+    'security',
+    'no recorded findings',
+  );
+  assert.equal(
+    g(
+      failedSecurity(['S-00000001'], {
+        securityFindings: { ids: [], blocking: 2, complete: false },
+        dispositioned: new Set(['S-00000001']),
+      }),
+    ).state,
+    'pending',
+    'incomplete list',
+  );
+  assert.equal(g({ ...passing, securityState: undefined }).state, 'pending');
+  assert.equal(g({ ...passing, securityState: 'pending' }).state, 'pending');
+  assert.equal(g({ ...passing, securityState: 'error' }).state, 'failure');
+
+  // Copilot and threads.
+  const noCopilot = g({ ...passing, copilotReviewedHead: false });
+  assert.equal(noCopilot.state, 'pending');
+  assert.equal(noCopilot.blockedBy, 'copilot');
+  const threads = g({ ...passing, unresolvedThreads: 2 });
+  assert.equal(threads.state, 'pending');
+  assert.equal(threads.blockedBy, 'threads');
+  assert.match(threads.description, /2 unresolved review thread/);
+
+  // CI.
+  const ciFailed = g({ ...passing, ciConclusion: 'failure' });
+  assert.equal(ciFailed.state, 'failure');
+  assert.equal(ciFailed.blockedBy, 'ci');
+  assert.equal(g({ ...passing, ciConclusion: 'timed_out' }).state, 'failure');
+  assert.equal(g({ ...passing, ciConclusion: null }).state, 'pending');
+  assert.equal(g({ ...passing, ciConclusion: 'cancelled' }).state, 'pending');
+  assert.equal(
+    g({ ...passing, securityJobConclusion: 'failure' }).state,
+    'failure',
+  );
+  assert.equal(g({ ...passing, securityJobConclusion: null }).state, 'pending');
+  // A real blocker wins over things that are merely missing.
+  const both = g({
+    ...passing,
+    ciConclusion: 'failure',
+    copilotReviewedHead: false,
+  });
+  assert.equal(both.state, 'failure');
+  assert.equal(both.blockedBy, 'ci');
+
+  // pipeline/protected-approval: absent is fine, success is fine, pending waits.
+  assert.equal(
+    g({ ...passing, protectedApprovalState: null }).state,
+    'success',
+  );
+  assert.equal(
+    g({ ...passing, protectedApprovalState: undefined }).state,
+    'success',
+  );
+  assert.equal(
+    g({ ...passing, protectedApprovalState: 'success' }).state,
+    'success',
+  );
+  const prot = g({ ...passing, protectedApprovalState: 'pending' });
+  assert.equal(prot.state, 'pending');
+  assert.equal(prot.blockedBy, 'protected-approval');
+  assert.equal(
+    g({ ...passing, protectedApprovalState: 'failure' }).state,
+    'failure',
+  );
+  assert.equal(
+    g({ ...passing, protectedApprovalState: 'error' }).state,
+    'failure',
+  );
+
+  // The description fits a commit status (140 characters).
+  for (const input of [
+    passing,
+    failedSecurity(['S-00000001']),
+    { ...passing, unresolvedThreads: 12 },
+  ])
+    assert.ok(`${g(input).description}`.length <= 140);
+  assert.equal(GATES_CONTEXT, 'pipeline/gates');
+});
+
+test('evaluateApproval reports the gates and hands off only when they all hold', () => {
+  const base = {
+    prState: 'open',
+    draft: true,
+    labels: ['stage:reviewing'],
+    headSha: 'h1',
+    unresolvedThreads: 0,
+    state: emptyState(),
+    ...passing,
+    copilotReviewedHead: false,
+  };
+  const partly = evaluateApproval({
+    ...base,
+    ...failedSecurity(['S-00000001', 'S-00000002'], {
+      copilotReviewedHead: false,
+    }),
+    dispositioned: new Set(['S-00000001']),
+  });
+  assert.equal(partly.action, 'wait');
+  assert.equal(partly.gates.state, 'pending');
+  // Fully dispositioned findings let the flow go on to Copilot, then hand off.
+  const covered = failedSecurity(['S-00000001'], {
+    copilotReviewedHead: false,
+    dispositioned: new Set(['S-00000001']),
+  });
+  assert.equal(
+    evaluateApproval({ ...base, ...covered }).action,
+    'request-copilot',
+  );
+  const reviewed = { ...base, ...covered, copilotReviewedHead: true };
+  const done = evaluateApproval(reviewed);
+  assert.equal(done.action, 'human-approval');
+  assert.equal(done.gates.state, 'success');
+  // A pending protected-file approval holds the hand-off, not the Copilot request.
+  assert.equal(
+    evaluateApproval({ ...base, protectedApprovalState: 'pending' }).action,
+    'request-copilot',
+  );
+  const held = evaluateApproval({
+    ...reviewed,
+    protectedApprovalState: 'pending',
+  });
+  assert.equal(held.action, 'wait');
+  assert.equal(held.gates.blockedBy, 'protected-approval');
+  // Parked PRs are left alone, but still get a status; closed ones get none.
+  const parked = evaluateApproval({
+    ...reviewed,
+    labels: ['stage:needs-attention'],
+  });
+  assert.equal(parked.action, 'noop');
+  assert.equal(parked.gates.state, 'success');
+  const closed = evaluateApproval({ ...reviewed, prState: 'closed' });
+  assert.equal(closed.action, 'noop');
+  assert.equal(closed.gates, null);
+  // Already handed off for this head: nothing to do.
+  assert.equal(
+    evaluateApproval({
+      ...reviewed,
+      draft: false,
+      labels: ['stage:human-approval'],
+      state: { ...emptyState(), humanApprovalFor: 'h1' },
+    }).action,
+    'noop',
+  );
+});
+
+// ---------------------------------------------------------------- fix loop skip
+
+const finderBody = (id) =>
+  `<!-- pipeline:finding id=${id} -->\n**[high] security: t** · \`${id}\``;
+const copilot = { login: COPILOT_REVIEWER, type: 'Bot' };
+
+test('selectActionable skips inline findings that have a disposition', () => {
+  const at = '2026-01-03T00:00:00Z';
+  const input = {
+    botLogin: BOT,
+    reviewComments: [
+      comment(1, at, { user: bot, body: finderBody('S-00000001') }),
+      comment(2, at, { user: bot, body: finderBody('S-00000002') }),
+      // The owner's own comment quoting the marker is not a pipeline finding.
+      comment(3, at, { body: finderBody('S-00000001') }),
+      comment(4, at, { user: copilot, body: 'Copilot top comment' }),
+      comment(5, at, {
+        user: copilot,
+        body: 'Copilot follow-up',
+        in_reply_to_id: 4,
+      }),
+      comment(6, at, { user: copilot, body: 'A different Copilot thread' }),
+    ],
+  };
+  const keys = (dispositioned) =>
+    selectActionable({ ...input, dispositioned }).actionable.map((a) => a.key);
+  assert.deepEqual(keys(new Set()), ['c1', 'c2', 'c3', 'c4', 'c5', 'c6']);
+  assert.deepEqual(keys(new Set(['S-00000001'])), [
+    'c2',
+    'c3',
+    'c4',
+    'c5',
+    'c6',
+  ]);
+  assert.deepEqual(keys(new Set(['S-00000001', copilotThreadId(4)])), [
+    'c2',
+    'c3',
+    'c6',
+  ]);
+  // A skipped item is a final decision: the watermark moves past it.
+  const all = selectActionable({
+    ...input,
+    dispositioned: new Set(['S-00000001', 'S-00000002', 'C-4', 'C-6']),
+  });
+  assert.deepEqual(
+    all.actionable.map((a) => a.key),
+    ['c3'],
+  );
+});
+
+test('selectActionable cuts dispositioned findings out of an actionable review body', () => {
+  const at = '2026-01-03T00:00:00Z';
+  const built = buildSecurityReview({
+    report: {
+      summary: 'Two problems.',
+      findings: [
+        withId(
+          finding({
+            file: 'a.ts',
+            line: 500,
+            title: 'One',
+            detail: 'First\n\nwith a gap',
+          }),
+        ),
+        withId(
+          finding({ file: 'b.ts', line: 500, title: 'Two', detail: 'Second' }),
+        ),
+      ],
+    },
+    sha: HEAD_A,
+    files: [],
+    promptVer: '2',
+  });
+  const [one, two] = built.blockingFindings;
+  const run = (ids) =>
+    selectActionable({
+      botLogin: BOT,
+      reviews: [review(10, at, { user: bot, body: built.body })],
+      dispositioned: new Set(ids),
+    }).actionable;
+  assert.equal(run([]).length, 1);
+  assert.ok(run([])[0].body.includes('First'));
+  // One of two: the item stays, without the dispositioned finding.
+  const partly = run([one.id]);
+  assert.equal(partly.length, 1);
+  assert.ok(!partly[0].body.includes('First'));
+  assert.ok(!partly[0].body.includes('with a gap'));
+  assert.ok(partly[0].body.includes(`\`${two.id}\``));
+  assert.ok(partly[0].body.includes('Second'));
+  // Both: nothing left to fix.
+  assert.deepEqual(run([one.id, two.id]), []);
+  // An old-format body without ids is untouched.
+  const legacy = selectActionable({
+    botLogin: BOT,
+    reviews: [
+      review(11, at, {
+        user: bot,
+        body: `${MARKERS.actionable}\n- a.ts:1: old finding`,
+      }),
+    ],
+    dispositioned: new Set(['S-00000001']),
+  });
+  assert.equal(legacy.actionable.length, 1);
+});
+
+test('dropDispositioned only cuts whole id-led list items', () => {
+  const body = [
+    'intro',
+    '- `S-00000001` a.ts:1: **[high] x**',
+    '  detail one',
+    '',
+    '  more detail',
+    '- `S-00000002` b.ts:2: **[high] y**',
+    '  detail two',
+    '',
+    '- [low] `S-00000001` not a blocking item',
+    'tail',
+  ].join('\n');
+  const cut = dropDispositioned(body, new Set(['S-00000001']));
+  assert.equal(cut.total, 2);
+  assert.equal(cut.remaining, 1);
+  assert.ok(!cut.body.includes('detail one'));
+  assert.ok(!cut.body.includes('more detail'));
+  assert.ok(cut.body.includes('detail two'));
+  assert.ok(cut.body.includes('- [low] `S-00000001` not a blocking item'));
+  assert.ok(cut.body.includes('intro') && cut.body.includes('tail'));
+  assert.deepEqual(dropDispositioned('no ids here', new Set(['S-00000001'])), {
+    body: 'no ids here',
+    total: 0,
+    remaining: 0,
+  });
+});
+
+test('classifyThreads names Gemini and Copilot threads and leaves the rest', () => {
+  const thread = (id, first, extra = {}) => ({
+    id,
+    isResolved: false,
+    first,
+    ...extra,
+  });
+  const out = classifyThreads(
+    [
+      thread('T1', { id: 11, author: BOT, body: finderBody('S-00000001') }),
+      thread('T2', { id: 22, author: COPILOT_REVIEWER, body: 'nit' }),
+      thread('T3', { id: 33, author: 'alice', body: 'a human thread' }),
+      // A human quoting the marker does not make a Gemini thread.
+      thread('T4', { id: 44, author: 'alice', body: finderBody('S-00000002') }),
+      thread('T5', { id: 55, author: BOT, body: 'plain bot comment' }),
+      thread('T6', null),
+    ],
+    BOT,
+  );
+  assert.deepEqual(
+    out.map((t) => [t.thread.id, t.source, t.id]),
+    [
+      ['T1', 'gemini', 'S-00000001'],
+      ['T2', 'copilot', 'C-22'],
+      ['T3', 'other', null],
+      ['T4', 'other', null],
+      ['T5', 'other', null],
+      ['T6', 'other', null],
+    ],
+  );
+});
+
+test('renderGatesComment lists gates, open findings and dispositions, and escapes their text', () => {
+  const gates = evaluateGates(
+    failedSecurity(['S-00000001'], { copilotReviewedHead: false }),
+  );
+  const body = renderGatesComment({
+    head: HEAD_A,
+    gates,
+    open: [
+      {
+        id: 'S-00000001',
+        source: 'Gemini',
+        text: 'a.ts:1 <img src=x> | @octocat <!-- pipeline-state -->',
+      },
+      { id: 'C-22', source: 'Copilot', text: 'b.ts:2 rename' },
+    ],
+    dispositions: [
+      {
+        id: 'S-00000009',
+        kind: 'accepted-risk',
+        by: OWNER_LOGIN,
+        reason: 'x | y @z',
+      },
+    ],
+  });
+  assert.ok(body.startsWith(`${MARKERS.gates}\n`));
+  assert.ok(body.includes('`pipeline/gates` commit status is **pending**'));
+  assert.ok(body.includes('| `S-00000001` | Gemini |'));
+  assert.ok(body.includes('| `C-22` | Copilot |'));
+  assert.ok(
+    body.includes(
+      '/disposition <id> <accepted-risk|false-positive|out-of-scope>',
+    ),
+  );
+  assert.ok(!body.includes('<img'));
+  assert.ok(!body.includes('<!-- pipeline-state'));
+  assert.ok(!body.includes('@octocat') && !body.includes('@z'));
+  assert.ok(
+    !/[^\\]\|[^ \n]/.test(
+      body.split('S-00000001` | Gemini')[1].split('\n')[0].slice(3),
+    ),
+    'pipes in text are escaped',
+  );
+  const clean = renderGatesComment({
+    head: HEAD_A,
+    gates: evaluateGates(passing),
+  });
+  assert.ok(clean.includes('✅') && !clean.includes('Open findings'));
+});
+
+test('workflows: /disposition counts only new comments from the owner account', () => {
+  const read = (f) =>
+    readFileSync(new URL(`../workflows/${f}`, import.meta.url), 'utf8');
+  const disposition = read('disposition.yml');
+  // Created comments only: an edit never re-runs (or re-authorises) a command.
+  assert.match(
+    disposition,
+    /on:\n {2}issue_comment:\n {4}types: \[created\]\n/,
+  );
+  assert.ok(
+    !/edited|deleted/.test(
+      disposition.split('permissions:')[0].replace(/#.*$/gm, ''),
+    ),
+  );
+  // Owner login and a human account, checked against the variable; unset fails closed.
+  assert.ok(
+    disposition.includes(
+      'github.event.comment.user.login == vars.PIPELINE_OWNER_LOGIN',
+    ),
+  );
+  assert.ok(disposition.includes("github.event.comment.user.type == 'User'"));
+  assert.ok(disposition.includes("vars.PIPELINE_OWNER_LOGIN != ''"));
+  assert.ok(disposition.includes('github.event.issue.pull_request'));
+  // Not author_association, not the PR/issue author.
+  assert.ok(
+    !/author_association|issue\.user|pull_request\.user/.test(disposition),
+  );
+  // The body reaches the script through the environment, from the event.
+  assert.ok(
+    disposition.includes('COMMENT_BODY: ${{ github.event.comment.body }}'),
+  );
+  const run = /run: (node .*)$/m.exec(disposition)[1];
+  assert.ok(!run.includes('${{'));
+  // The re-evaluation is triggered by the bot's record note only.
+  const approval = read('approval.yml');
+  assert.match(approval, /issue_comment:\n {4}types: \[created\]/);
+  assert.ok(
+    approval.includes(
+      'github.event.comment.user.login == vars.PIPELINE_BOT_LOGIN',
+    ),
+  );
+  assert.ok(
+    approval.includes(
+      "startsWith(github.event.comment.body, '<!-- pipeline:disposition')",
+    ),
+  );
+  assert.ok(approval.includes('workflow_run:'));
+  assert.ok(approval.includes('permission-statuses: write'));
 });
