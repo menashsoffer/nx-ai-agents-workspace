@@ -50,6 +50,8 @@ jobs:
           private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
           permission-pull-requests: write
           permission-issues: write
+          # resolveReviewThread needs contents: write on an App token.
+          permission-contents: write
 
       - name: Record the disposition
         env:
