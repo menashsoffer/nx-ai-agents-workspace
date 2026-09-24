@@ -43,6 +43,57 @@ export const MARKERS = {
   actionable: '<!-- pipeline:actionable -->',
 };
 
+/**
+ * What each `pipeline.mjs` command writes, for tools/pipeline-map. Only
+ * commands with an effect are listed. pipeline-lib.test.mjs scans the
+ * command bodies and fails when this table disagrees with them.
+ * - stages: stage labels the command may set;
+ * - problems: the subset set together with a `notice` comment (escalations);
+ * - markers: MARKERS keys of the comments/reviews it writes;
+ * - emits: GitHub events it causes that can trigger workflows
+ *   (`pull_request_review` = review posted or Copilot requested,
+ *   `status` = commit status);
+ * - loops: fix-loop labels it manages;
+ * - args: effects taken from the command line, as positional index or flag
+ *   (`stage`: stage label, `marker`: MARKERS key).
+ */
+export const COMMAND_EFFECTS = {
+  'set-stage': { stages: [], markers: [], emits: [], args: { stage: 1 } },
+  'edit-labels': {
+    stages: [],
+    markers: [],
+    emits: [],
+    args: { stage: '--add' },
+  },
+  'upsert-comment': {
+    stages: [],
+    markers: [],
+    emits: [],
+    args: { marker: 1 },
+  },
+  'init-state': { stages: [], markers: ['state'], emits: [] },
+  'fix-adapter': {
+    stages: ['stage:fixing', 'stage:needs-attention'],
+    problems: ['stage:needs-attention'],
+    markers: ['notice', 'state'],
+    emits: [],
+    loops: [FIX_LOOP_1, FIX_LOOP_2],
+  },
+  'fix-reply': { stages: [], markers: ['fixReply'], emits: [] },
+  'security-publish': {
+    stages: ['stage:needs-attention', 'stage:reviewing'],
+    problems: ['stage:needs-attention'],
+    markers: ['actionable', 'notice', 'securityReview'],
+    emits: ['pull_request_review', 'status'],
+  },
+  approval: {
+    stages: ['stage:human-approval', 'stage:needs-attention'],
+    problems: ['stage:needs-attention'],
+    markers: ['humanApproval', 'notice', 'state'],
+    emits: ['pull_request_review'],
+  },
+};
+
 export const COPILOT_REVIEWER = 'copilot-pull-request-reviewer[bot]';
 export const COPILOT_LOGINS = [COPILOT_REVIEWER, 'Copilot'];
 

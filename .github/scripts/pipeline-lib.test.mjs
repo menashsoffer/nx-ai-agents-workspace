@@ -1,7 +1,11 @@
 // Run with: pnpm test:pipeline
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
+  COMMAND_EFFECTS,
+  FIX_LOOP_1,
+  FIX_LOOP_2,
   MARKERS,
   branchName,
   buildSecurityReview,
@@ -346,4 +350,102 @@ test('evaluateApproval gates in order and is idempotent', () => {
     evaluateApproval({ ...base, labels: ['stage:needs-attention'] }).action,
     'noop',
   );
+});
+
+// ---------------------------------------------------------------- effects
+
+/**
+ * Derives each command's effects from the source of pipeline.mjs, so
+ * COMMAND_EFFECTS (read by tools/pipeline-map) cannot drift from the code.
+ */
+function scanCommandEffects(src) {
+  // Top-level helpers that upsert a marker comment, e.g. writeState -> state.
+  const helperMarkers = {};
+  for (const m of src.matchAll(
+    /^function (\w+)\([^)]*\) \{\n([\s\S]*?)^\}/gm,
+  )) {
+    const w = /upsertComment\(\s*\w+,\s*MARKERS\.(\w+)/.exec(m[2]);
+    if (w) helperMarkers[m[1]] = w[1];
+  }
+  const block = src.slice(
+    src.indexOf('const commands = {'),
+    src.indexOf('\n};\n', src.indexOf('const commands = {')),
+  );
+  const heads = [
+    ...block.matchAll(/^ {2}(?:'([a-z-]+)'|([a-z][a-zA-Z]*))\(([^)]*)\) \{$/gm),
+  ];
+  const out = {};
+  heads.forEach((h, i) => {
+    const name = h[1] ?? h[2];
+    const body = block.slice(h.index, heads[i + 1]?.index ?? block.length);
+    const params = /^\[(.*)\]$/.exec(h[3].trim())?.[1].split(/\s*,\s*/) ?? [];
+    const fx = { stages: [], problems: [], markers: [], emits: [] };
+    const writes = [
+      ...body.matchAll(/(?:setStage|stageTransition)\(\s*[^,]+,\s*([^)]+)\)/g),
+    ];
+    writes.forEach((w, j) => {
+      const lit = /^'(stage:[^']+)'$/.exec(w[1].trim());
+      if (!lit) {
+        fx.args = { ...fx.args, stage: params.indexOf(w[1].trim()) };
+        return;
+      }
+      fx.stages.push(lit[1]);
+      // Escalation: the next comment written after the stage is the notice.
+      const rest = body.slice(w.index, writes[j + 1]?.index ?? body.length);
+      const next = /upsertComment\(\s*\w+,\s*MARKERS\.(\w+)/.exec(rest);
+      if (next?.[1] === 'notice') fx.problems.push(lit[1]);
+    });
+    const flagAdd = /editLabels\([^{]*\{\s*add:\s*many\(f\.(\w+)\)/.exec(body);
+    if (flagAdd) fx.args = { ...fx.args, stage: `--${flagAdd[1]}` };
+    for (const m of body.matchAll(/MARKERS\.(\w+)/g)) fx.markers.push(m[1]);
+    for (const [fn, key] of Object.entries(helperMarkers))
+      if (new RegExp(`\\b${fn}\\(`).test(body)) fx.markers.push(key);
+    const dyn = /MARKERS\[(\w+)\]/.exec(body);
+    if (dyn) fx.args = { ...fx.args, marker: params.indexOf(dyn[1]) };
+    if (/api\(\s*`statuses\//.test(body)) fx.emits.push('status');
+    if (
+      /requested_reviewers/.test(body) ||
+      /api\(\s*`pulls\/\$\{\w+\}\/reviews`,\s*\{\s*method:\s*'POST'/.test(body)
+    )
+      fx.emits.push('pull_request_review');
+    if (/\bdecideFix\(/.test(body)) fx.loops = [FIX_LOOP_1, FIX_LOOP_2];
+    out[name] = normaliseEffects(fx);
+  });
+  return out;
+}
+
+function normaliseEffects(fx) {
+  const uniq = (a = []) => [...new Set(a)].sort();
+  const n = {
+    stages: uniq(fx.stages),
+    problems: uniq(fx.problems),
+    markers: uniq(fx.markers),
+    emits: uniq(fx.emits),
+  };
+  if (fx.loops) n.loops = fx.loops;
+  if (fx.args) n.args = fx.args;
+  return n;
+}
+
+test('COMMAND_EFFECTS matches what each pipeline.mjs command does', () => {
+  const src = readFileSync(new URL('./pipeline.mjs', import.meta.url), 'utf8');
+  const scanned = scanCommandEffects(src);
+  assert.ok(Object.keys(scanned).length >= 10, 'scanner found the commands');
+  const hasEffect = (fx) =>
+    fx.stages.length ||
+    fx.markers.length ||
+    fx.emits.length ||
+    fx.loops ||
+    fx.args;
+  const expected = Object.fromEntries(
+    Object.entries(scanned).filter(([, fx]) => hasEffect(fx)),
+  );
+  const table = Object.fromEntries(
+    Object.entries(COMMAND_EFFECTS).map(([k, v]) => [k, normaliseEffects(v)]),
+  );
+  assert.deepEqual(table, expected);
+  for (const fx of Object.values(COMMAND_EFFECTS)) {
+    for (const key of fx.markers) assert.ok(MARKERS[key], `marker ${key}`);
+    for (const p of fx.problems ?? []) assert.ok(fx.stages.includes(p));
+  }
 });
