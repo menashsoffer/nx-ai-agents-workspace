@@ -1,6 +1,6 @@
 # D7 (docs/security.md): keep npm packages and pinned Action SHAs current.
 # 7-day cooldown: longer than pnpm's 3-day minimumReleaseAge (D6), so update PRs only propose well-aged releases.
-# Few PRs on purpose: each PR runs CI, the Gemini security review and a Copilot review.
+# Few PRs on purpose: each PR runs CI and the review gates.
 # Groups are first-match in file order: the catch-all comes first so every minor/patch lands in one PR,
 # and only majors fall through to the family groups below.
 version: 2
@@ -57,7 +57,10 @@ updates:
           ]
 
   - package-ecosystem: github-actions
-    directory: /
+    # `/` covers .github/workflows; the local composite action needs its own entry.
+    directories:
+      - /
+      - /.github/actions/setup
     schedule:
       interval: monthly
     cooldown:

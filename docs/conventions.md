@@ -62,6 +62,18 @@ clear "No sandbox app" message.
   `rounded-l/r`, `border-l/r`, `float-left/right`.
 - Storybook defaults to RTL; flip the **Direction** toolbar to check LTR.
 
+## Dependencies
+
+- Dependabot opens the update PRs (see `.github/dependabot.yml`). It bumps
+  `nx` / `@nx/*` versions but never runs `nx migrate`. Nx minors ride in the
+  `npm-minor-patch` group; majors get their own `nx` group PR.
+- For any Nx bump that has migrations (always check majors), don't merge the
+  Dependabot PR as is. Locally run `pnpm nx migrate <version>`, `pnpm install`
+  and `pnpm nx migrate --run-migrations`, then `pnpm verify`. Delete
+  `migrations.json` and open one PR with the result; close the Dependabot PR.
+- Use the exact syntax from the Nx docs for the installed Nx major; check
+  `pnpm nx migrate --help` and don't guess flags.
+
 ## Git
 
 - Small commits with an imperative subject line in English ("Add booking form").
