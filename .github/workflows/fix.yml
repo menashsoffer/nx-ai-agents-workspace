@@ -4,9 +4,13 @@ name: Pipeline · Fix
 #   adapter (deterministic): collect actionable review comments newer than
 #     the <!-- pipeline-state --> comment, dedupe by comment id, then
 #     no fix-loop label -> fix-loop:1 + fix; fix-loop:1 -> fix-loop:2 + fix;
-#     fix-loop:2 -> stage:needs-attention, stop. No new comments -> no-op.
+#     fix-loop:2 -> outcome note (budget_exhausted) + stage:routing, stop.
+#     No new comments -> no-op. With `retry` (dispatched by router.yml
+#     after a failed fixer), replays the last round's items under the
+#     current fix-loop label instead of starting a new round.
 #   fix (agent, Gemini, read-only token): edit the working tree only.
 #   push (deterministic): check the patch, commit, push, reply to threads.
+#   report: on a failure, an outcome note + stage:routing for the router.
 on:
   pull_request_review:
     types: [submitted]
@@ -16,6 +20,11 @@ on:
         description: Pull request number
         required: true
         type: number
+      retry:
+        description: Replay the last fix round (set by router.yml)
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -70,7 +79,8 @@ jobs:
         if: ${{ steps.pr.outputs.skip != 'true' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: node .github/scripts/pipeline.mjs fix-adapter "${{ steps.pr.outputs.pr }}" "$RUNNER_TEMP/items.json"
+          MODE: ${{ inputs.retry && 'retry' || 'normal' }}
+        run: node .github/scripts/pipeline.mjs fix-adapter "${{ steps.pr.outputs.pr }}" "$RUNNER_TEMP/items.json" "$MODE"
 
       - if: ${{ steps.adapter.outputs.action == 'fix' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -93,6 +103,7 @@ jobs:
     outputs:
       summary: ${{ steps.gemini.outputs.summary }}
       prompt_version: ${{ steps.prompt.outputs.version }}
+      patch_rejected: ${{ steps.guard.outputs.rejected }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -163,7 +174,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/out"
           git diff --cached --binary > "$RUNNER_TEMP/out/fix.patch"
           test -s "$RUNNER_TEMP/out/fix.patch" || { echo "::error::The fixer made no changes"; exit 1; }
-          node "$RUNNER_TEMP/trusted/.github/scripts/pipeline.mjs" check-patch "$RUNNER_TEMP/out/fix.patch"
+
+      # A rejected patch is the forbidden_path hard gate, not an agent error.
+      - id: guard
+        run: |
+          if ! node "$RUNNER_TEMP/trusted/.github/scripts/pipeline.mjs" check-patch "$RUNNER_TEMP/out/fix.patch"; then
+            echo "rejected=true" >> "$GITHUB_OUTPUT"; exit 1
+          fi
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -238,7 +255,19 @@ jobs:
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
         run: node .pipeline/trusted/.github/scripts/pipeline.mjs fix-reply "${{ needs.adapter.outputs.pr }}" "${{ steps.push.outputs.sha }}" .pipeline/in/items.json
 
-  needs-attention:
+      - name: Outcome note
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.adapter.outputs.pr }}
+          LOOP: ${{ needs.adapter.outputs.loop }}
+          SHA: ${{ steps.push.outputs.sha }}
+          VERSION: ${{ needs.fix.outputs.prompt_version }}
+        run: |
+          jq -n --arg s "Fix round $LOOP pushed as ${SHA:0:7}." --arg v "fix.md@$VERSION" \
+            '{stage: "fix", result: "success", summary: $s, prompt_version: $v}' > "$RUNNER_TEMP/outcome.json"
+          node .pipeline/trusted/.github/scripts/pipeline.mjs outcome "$N" "$RUNNER_TEMP/outcome.json"
+
+  report:
     needs: [adapter, fix, push]
     if: ${{ always() && needs.adapter.outputs.action == 'fix' && (needs.fix.result != 'success' || needs.push.result != 'success') }}
     runs-on: ubuntu-latest
@@ -260,11 +289,15 @@ jobs:
           permission-pull-requests: write
           permission-issues: write
 
-      - env:
+      - name: Report the problem to the router (stage:routing)
+        env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.adapter.outputs.pr }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FIX: ${{ needs.fix.result }}
+          PUSH: ${{ needs.push.result }}
+          REJECTED: ${{ needs.fix.outputs.patch_rejected }}
+          VERSION: ${{ needs.fix.outputs.prompt_version }}
         run: |
-          printf '**Automated fix failed; needs attention.** The fixer made no usable change, its patch was rejected, or the branch moved. Run: %s\n' "$RUN_URL" > body.md
-          node .github/scripts/pipeline.mjs upsert-comment "$N" notice body.md
-          node .github/scripts/pipeline.mjs set-stage "$N" stage:needs-attention
+          node .github/scripts/pipeline.mjs classify fix --job-result "$FIX" --push-result "$PUSH" \
+            --patch-rejected "${REJECTED:-false}" --prompt-version "fix.md@${VERSION:-unknown}" --out outcome.json
+          node .github/scripts/pipeline.mjs outcome "$N" outcome.json
