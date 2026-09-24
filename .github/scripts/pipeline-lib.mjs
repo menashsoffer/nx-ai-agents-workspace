@@ -460,11 +460,18 @@ export function feedbackSource({ user, author_association }, botLogin) {
 
 /**
  * Review feedback the fixer should act on: inline comments and review
- * bodies that are (a) from a trusted source (feedbackSource), (b) newer than
- * the state watermark, (c) not already handled (deduped by id), (d) not in
- * a resolved thread, (e) not pipeline bookkeeping. Returns
- * `{ actionable, watermark }`, where `watermark` is the newest timestamp seen
- * in this scan.
+ * bodies that are (a) from a trusted source (feedbackSource), (b) not
+ * already handled (deduped by key in `state.handled`), (c) at or after the
+ * state watermark, (d) not in a resolved thread, (e) not pipeline
+ * bookkeeping.
+ *
+ * Each item ends as actionable, dropped for good, or deferred (resolved
+ * thread that may be reopened, empty comment or review body that may be
+ * edited). The returned
+ * `watermark` only moves past items with a final decision: it stops at the
+ * oldest deferred one, so deferred items are scanned again next time.
+ * Inline comments count from their review's submission, since comments
+ * drafted in a pending review are older than the review that publishes them.
  */
 export function selectActionable({
   reviews = [],
@@ -476,54 +483,78 @@ export function selectActionable({
 }) {
   const handled = new Set(state.handled);
   const since = state.watermark ? Date.parse(state.watermark) : -Infinity;
-  const isNew = (key, at) => !handled.has(key) && Date.parse(at) >= since;
   const ignored = (item) =>
     ignoreLogins.includes(item.user?.login) || !feedbackSource(item, botLogin);
-  let watermark = state.watermark;
-  const bump = (at) => {
-    if (at && (!watermark || Date.parse(at) > Date.parse(watermark)))
-      watermark = at;
-  };
+  const submitted = new Map(reviews.map((r) => [r.id, r.submitted_at]));
+  const withInline = new Set(
+    reviewComments.map((c) => c.pull_request_review_id),
+  );
+  const final = [];
+  const deferred = [];
 
   const actionable = [];
+  const scan = (key, at, decide) => {
+    const t = Date.parse(at);
+    if (Number.isNaN(t)) return; // not submitted yet
+    if (handled.has(key)) return final.push({ t, at });
+    if (t < since) return;
+    const item = decide();
+    if (item === DEFER) return deferred.push(t);
+    final.push({ t, at });
+    if (item) actionable.push({ key, ...item });
+  };
+
   for (const c of reviewComments) {
-    bump(c.created_at);
-    const key = `c${c.id}`;
-    if (!isNew(key, c.created_at) || ignored(c)) continue;
-    if (resolvedCommentIds.has(c.id)) continue;
-    const body = (c.body ?? '').trim();
-    if (!body || body.includes(MARKERS.fixReply)) continue;
-    actionable.push({
-      key,
-      kind: 'inline',
-      id: c.id,
-      author: c.user?.login,
-      path: c.path,
-      line: c.line ?? c.original_line ?? null,
-      diffHunk: c.diff_hunk,
-      body,
+    const reviewAt = submitted.get(c.pull_request_review_id);
+    const at =
+      reviewAt && Date.parse(reviewAt) > Date.parse(c.created_at)
+        ? reviewAt
+        : c.created_at;
+    scan(`c${c.id}`, at, () => {
+      if (ignored(c)) return null;
+      const body = (c.body ?? '').trim();
+      if (body.includes(MARKERS.fixReply)) return null;
+      if (!body || resolvedCommentIds.has(c.id)) return DEFER;
+      return {
+        kind: 'inline',
+        id: c.id,
+        author: c.user?.login,
+        path: c.path,
+        line: c.line ?? c.original_line ?? null,
+        diffHunk: c.diff_hunk,
+        body,
+      };
     });
   }
   for (const r of reviews) {
-    bump(r.submitted_at);
-    const key = `r${r.id}`;
-    if (!r.submitted_at || !isNew(key, r.submitted_at)) continue;
-    if (ignored(r) || r.state === 'APPROVED') continue;
-    if (COPILOT_LOGINS.includes(r.user?.login)) continue; // summary only
-    const body = (r.body ?? '').trim();
-    if (!body) continue;
-    if (hasPipelineMarker(body) && !body.includes(MARKERS.actionable)) continue;
-    actionable.push({
-      key,
-      kind: 'review',
-      id: r.id,
-      author: r.user?.login,
-      state: r.state,
-      body,
+    scan(`r${r.id}`, r.submitted_at, () => {
+      if (ignored(r) || r.state === 'APPROVED') return null;
+      if (COPILOT_LOGINS.includes(r.user?.login)) return null; // summary only
+      const body = (r.body ?? '').trim();
+      if (hasPipelineMarker(body) && !body.includes(MARKERS.actionable))
+        return null;
+      // An empty body may be edited later, unless the review's content is
+      // in its inline comments (the usual case), which are scanned above.
+      if (!body) return withInline.has(r.id) ? null : DEFER;
+      return {
+        kind: 'review',
+        id: r.id,
+        author: r.user?.login,
+        state: r.state,
+        body,
+      };
     });
   }
+
+  const limit = Math.min(...deferred); // Infinity when nothing is deferred
+  let watermark = state.watermark;
+  let best = since;
+  for (const f of final)
+    if (f.t <= limit && f.t > best) [best, watermark] = [f.t, f.at];
   return { actionable, watermark };
 }
+
+const DEFER = Symbol('defer');
 
 /**
  * The fix-loop state machine. No new feedback -> noop (idempotent reruns).

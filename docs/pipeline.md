@@ -128,7 +128,11 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
    watermark**, skips ones already handled (**deduped by comment id**),
    resolved threads, approvals, Copilot's summary body, and pipeline
    bookkeeping. Pipeline review bodies count only if marked
-   `<!-- pipeline:actionable -->`;
+   `<!-- pipeline:actionable -->`. Dedupe is by id; the watermark only moves
+   past items with a final decision. Resolved threads and empty bodies are
+   deferred (the watermark stops before them), so a thread reopened later
+   is still picked up. Inline comments count from their review's
+   submission time;
 4. decides:
 
    | Labels on the PR | New actionable comments | Action                              |

@@ -407,7 +407,102 @@ test('selectActionable filters by watermark, dedupes, skips resolved and bookkee
     actionable.map((a) => a.key),
     ['c2', 'r12', 'r14'],
   );
-  assert.equal(watermark, '2026-01-05T00:00:00Z');
+  // c4 (resolved) and r11 (empty) are deferred: the watermark stops at the
+  // oldest of them so they are scanned again.
+  assert.equal(watermark, '2026-01-03T00:00:00Z');
+});
+
+test('selectActionable: a resolved thread that is reopened is picked up later', () => {
+  const input = {
+    botLogin: BOT,
+    reviewComments: [
+      comment(1, '2026-01-02T00:00:00Z'), // resolved, reopened later
+      comment(2, '2026-01-03T00:00:00Z'),
+    ],
+    reviews: [],
+  };
+  const first = selectActionable({
+    ...input,
+    state: { ...emptyState(), watermark: '2026-01-01T00:00:00Z' },
+    resolvedCommentIds: new Set([1]),
+  });
+  assert.deepEqual(
+    first.actionable.map((a) => a.key),
+    ['c2'],
+  );
+  assert.equal(first.watermark, '2026-01-01T00:00:00Z');
+  const state = {
+    ...emptyState(),
+    watermark: first.watermark,
+    handled: first.actionable.map((a) => a.key),
+  };
+  // Still resolved: nothing new, nothing lost.
+  assert.equal(
+    selectActionable({ ...input, state, resolvedCommentIds: new Set([1]) })
+      .actionable.length,
+    0,
+  );
+  // Reopened: now actionable, and the watermark can move past everything.
+  const second = selectActionable({ ...input, state });
+  assert.deepEqual(
+    second.actionable.map((a) => a.key),
+    ['c1'],
+  );
+  assert.equal(second.watermark, '2026-01-03T00:00:00Z');
+});
+
+test('selectActionable: dropped items do not hold the watermark back', () => {
+  const r = selectActionable({
+    botLogin: BOT,
+    reviewComments: [
+      comment(1, '2026-01-02T00:00:00Z', { author_association: 'NONE' }),
+      comment(2, '2026-01-03T00:00:00Z', {
+        user: { login: 'github-actions[bot]', type: 'Bot' },
+      }),
+    ],
+    reviews: [review(3, '2026-01-04T00:00:00Z', { state: 'APPROVED' })],
+  });
+  assert.equal(r.actionable.length, 0);
+  assert.equal(r.watermark, '2026-01-04T00:00:00Z');
+});
+
+test('selectActionable: an edited empty review body is picked up later', () => {
+  const state = { ...emptyState(), watermark: '2026-01-01T00:00:00Z' };
+  const first = selectActionable({
+    botLogin: BOT,
+    state,
+    reviews: [review(1, '2026-01-02T00:00:00Z', { body: '' })],
+  });
+  assert.equal(first.actionable.length, 0);
+  assert.equal(first.watermark, '2026-01-01T00:00:00Z');
+  const second = selectActionable({
+    botLogin: BOT,
+    state: { ...state, watermark: first.watermark },
+    reviews: [review(1, '2026-01-02T00:00:00Z', { body: 'now with text' })],
+  });
+  assert.deepEqual(
+    second.actionable.map((a) => a.key),
+    ['r1'],
+  );
+});
+
+test('selectActionable: inline comments count from their review submission', () => {
+  // Drafted before the last scan, published by a review submitted after it.
+  const r = selectActionable({
+    botLogin: BOT,
+    state: { ...emptyState(), watermark: '2026-01-05T00:00:00Z' },
+    reviewComments: [
+      comment(1, '2026-01-02T00:00:00Z', { pull_request_review_id: 9 }),
+    ],
+    reviews: [review(9, '2026-01-06T00:00:00Z', { body: '' })],
+  });
+  assert.deepEqual(
+    r.actionable.map((a) => a.key),
+    ['c1'],
+  );
+  // The empty-bodied review carries inline comments, so it is final and
+  // does not hold the watermark back.
+  assert.equal(r.watermark, '2026-01-06T00:00:00Z');
 });
 
 test('fix loop: none -> 1 -> 2 -> needs-attention, and noop without new comments', () => {
