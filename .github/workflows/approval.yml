@@ -2,14 +2,25 @@ name: Pipeline · Approval
 
 # Review gates and the hand-off to humans. For a PR's head commit this
 # evaluates the gates (CI, the Gemini security review clean or every finding
-# dispositioned, review threads resolved, Copilot reviewed, and for a pipeline
-# PR with protected paths the owner's approval of this head) and sets the
-# `pipeline/gates` commit status, which the main ruleset requires. When CI is
-# green, the security review passes and no review thread is open:
-#   1. request a Copilot review (REST, once per head commit);
-#   2. once Copilot has reviewed that commit cleanly and every gate holds,
-#      label stage:human-approval, mark the PR ready (this requests
-#      CODEOWNERS) and comment the preview URL.
+# dispositioned, review threads resolved, the Copilot review when it is
+# required, and for a pipeline PR with protected paths the owner's approval
+# of this head) and sets the `pipeline/gates` commit status, which the main
+# ruleset requires. When CI is green, the security review passes and no
+# review thread is open, and once every gate holds: label
+# stage:human-approval, mark the PR ready (this requests CODEOWNERS) and
+# comment the preview URL.
+#
+# The Copilot review is OPTIONAL and off by default (the repo needs a
+# Copilot licence). It is on only when the repo variable REQUIRE_COPILOT is
+# exactly `true`; unset, empty or anything else (`TRUE`, `1`, `false`) is
+# off. Off: the Copilot gate reads "not required", no review is requested
+# and the PR goes straight to human approval. On: the review is requested
+# (REST, once per head commit) after CI, security and threads hold, and the
+# hand-off waits for Copilot to review that commit. To turn it on, set
+# REQUIRE_COPILOT to `true` and either give COPILOT_REVIEW_TOKEN a
+# Copilot-licensed user's token or enable automatic Copilot review on the
+# repo. Copilot threads that appear while it is off still count as review
+# threads.
 # Merging stays with a human: the main ruleset requires a code-owner
 # approval, and no agent or bot is a code owner or bypass actor.
 # docs/pipeline.md, "Review gates and dispositions".
@@ -114,7 +125,10 @@ jobs:
           COPILOT_GH_TOKEN: ${{ secrets.COPILOT_REVIEW_TOKEN }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
           PIPELINE_OWNER_LOGIN: ${{ vars.PIPELINE_OWNER_LOGIN }}
-        run: node .github/scripts/pipeline.mjs approval "${{ needs.resolve.outputs.pr }}"
+          # Only the exact string `true` turns the Copilot gate on.
+          REQUIRE_COPILOT: ${{ vars.REQUIRE_COPILOT }}
+          PR: ${{ needs.resolve.outputs.pr }}
+        run: node .github/scripts/pipeline.mjs approval "$PR"
 
   # `pipeline/gates` is a required check, so a head without it cannot merge.
   # This posts it as pending the moment CI is requested for a same-repo PR,
@@ -151,6 +165,7 @@ jobs:
       - name: Post pipeline/gates as pending
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          REQUIRE_COPILOT: ${{ vars.REQUIRE_COPILOT }}
           N: ${{ github.event.workflow_run.pull_requests[0].number }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: node .github/scripts/pipeline.mjs gates-pending "$N" "$SHA"

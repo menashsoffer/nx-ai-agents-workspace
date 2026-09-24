@@ -27,16 +27,16 @@ decides what happens next.
 | Stage label               | Set by                                 | Meaning / next step                                                                                                                                                     |
 | ------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `stage:inbox`             | `inbox.yml`                            | New issue. A maintainer triages it.                                                                                                                                     |
-| `stage:qualified`         | **a human**                            | Starts the planning agent (`plan.yml`): one Claude run writes the spec **and** the plan.                                                                                |
+| `stage:qualified`         | **a human**, `restart.yml`             | Starts the planning agent (`plan.yml`): one Claude run writes the spec **and** the plan. (Also the owner's `/restart qualified`.)                                       |
 | `stage:spec`              | _nothing_                              | **Deprecated.** No workflow sets it or starts a stage on it. It stays so old items keep their board column.                                                             |
-| `stage:planned`           | `plan.yml`                             | Spec and plan comments posted and auto-approved. Starts the develop agent.                                                                                              |
+| `stage:planned`           | `plan.yml`, `restart.yml`              | Spec and plan comments posted and auto-approved (or the owner's `/restart planned`). Starts the develop agent.                                                          |
 | `stage:awaiting-approval` | `develop.yml`, `protected-approve.yml` | Protected changes are pushed to a branch with **no PR**; the owner reads the diff and approves or rejects. See [Protected-change approval](#protected-change-approval). |
 | `stage:building`          | `develop.yml`                          | Draft PR open (on the issue and the PR). CI runs.                                                                                                                       |
 | `stage:reviewing`         | `security.yml`                         | Security review posted on the PR.                                                                                                                                       |
-| `stage:fixing`            | `fix.yml`                              | Fixer is applying review feedback.                                                                                                                                      |
+| `stage:fixing`            | `fix.yml`, `restart.yml`               | Fixer is applying review feedback (or the owner's `/restart fixing` gave the PR a fresh fix budget).                                                                    |
 | `stage:human-approval`    | `approval.yml`                         | Everything green. A human reviews the PR and the preview, then approves and merges.                                                                                     |
 | `stage:routing`           | any step                               | A stage reported a problem in an outcome note. `router.yml` decides the next step.                                                                                      |
-| `stage:needs-attention`   | `router.yml`                           | The router handed off. Read its latest `pipeline:route` note and act.                                                                                                   |
+| `stage:needs-attention`   | `router.yml`                           | The router handed off. Read its latest `pipeline:route` note and act; only the owner's `/restart` restarts it (3 per issue, lifetime).                                  |
 | `stage:done`              | `done.yml`                             | The PR merged. Set on the PR and its issues; terminal. See [When a PR closes](#when-a-pr-closes).                                                                       |
 | `fix-loop:1` / `:2`       | `fix.yml`                              | Automated fix rounds used. At most two. Cleared on escalation and at `stage:human-approval`.                                                                            |
 
@@ -75,24 +75,25 @@ and manual runs); an open issue whose PR was closed still routes.
 
 ## Workflows
 
-| Workflow                | Trigger                                                                | Agent                          | Output                                                                                                                                                              |
-| ----------------------- | ---------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `inbox.yml`             | issue opened                                                           | none                           | `stage:inbox`, Project item in Inbox                                                                                                                                |
-| `plan.yml`              | `stage:qualified` added                                                | Claude (`plan.md`)             | spec + plan comments, `stage:planned` (or an outcome note + `stage:routing`)                                                                                        |
-| `develop.yml`           | `stage:planned` added                                                  | Claude (`develop.md`)          | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`; approvable protected changes: branch only, `stage:awaiting-approval`                             |
-| `protected-approve.yml` | owner comment on an issue; CI requested on a same-repo PR              | none                           | `/approve-protected` opens the PR and sets `pipeline/protected-approval`; a new PR head recomputes it (see [Protected-change approval](#protected-change-approval)) |
-| `router.yml`            | `stage:routing` added (open issue or PR), or manual                    | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)                                                                                                 |
-| `ci.yml`                | every PR                                                               | none                           | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site)                                                                                           |
-| `security.yml`          | CI succeeded on a PR                                                   | Gemini (`security-review.md`)  | PR review, `pipeline/security` status, `stage:reviewing`                                                                                                            |
-| `security.yml`          | CI failed on a pipeline PR's head                                      | none                           | outcome note `ci_failed` + `stage:routing` (router → human)                                                                                                         |
-| `fix.yml`               | review submitted, manual, or router retry                              | Gemini (`fix.md`)              | one fix commit per round, replies on threads                                                                                                                        |
-| `approval.yml`          | `pipeline/security` status, review submitted, disposition note, manual | none                           | `pipeline/gates` status; Copilot review request, then `stage:human-approval` + preview comment                                                                      |
-| `approval.yml`          | CI requested on a same-repo PR                                         | none                           | `pipeline/gates` = pending on the new head                                                                                                                          |
-| `disposition.yml`       | comment created on a PR                                                | none                           | owner's `/disposition` → resolved threads + record notes (see [Review gates](#review-gates-and-dispositions))                                                       |
-| `preview.yml`           | PR opened/updated/closed                                               | none                           | `https://<owner>.github.io/<repo>/pr-<n>/`, removed on close                                                                                                        |
-| `done.yml`              | PR closed                                                              | none                           | merged: `stage:done` + Project **Done**; unmerged: `pr_closed` note + `stage:routing` on the issue                                                                  |
-| `project-sync.yml`      | any `stage:*` label added (closed items: `stage:done` only)            | none                           | Project **Status** follows the label                                                                                                                                |
-| `deploy.yml`            | push to `main`                                                         | none                           | site at `/`, Storybook at `/storybook/`, keeps `pr-*/` previews                                                                                                     |
+| Workflow                | Trigger                                                                                | Agent                          | Output                                                                                                                                                              |
+| ----------------------- | -------------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inbox.yml`             | issue opened                                                                           | none                           | `stage:inbox`, Project item in Inbox                                                                                                                                |
+| `plan.yml`              | `stage:qualified` added                                                                | Claude (`plan.md`)             | spec + plan comments, `stage:planned` (or an outcome note + `stage:routing`)                                                                                        |
+| `develop.yml`           | `stage:planned` added                                                                  | Claude (`develop.md`)          | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`; approvable protected changes: branch only, `stage:awaiting-approval`                             |
+| `protected-approve.yml` | owner comment on an issue; CI requested on a same-repo PR                              | none                           | `/approve-protected` opens the PR and sets `pipeline/protected-approval`; a new PR head recomputes it (see [Protected-change approval](#protected-change-approval)) |
+| `router.yml`            | `stage:routing` added (open issue or PR), or manual                                    | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)                                                                                                 |
+| `restart.yml`           | owner `/restart` comment on an issue; a person changes `stage:needs-attention` by hand | none                           | lifetime counter + restart route note + stage label (`fixing`: on the PR, then Pipeline · Fix); or one pointer note to `/restart`                                   |
+| `ci.yml`                | every PR                                                                               | none                           | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site)                                                                                           |
+| `security.yml`          | CI succeeded on a PR                                                                   | Gemini (`security-review.md`)  | PR review, `pipeline/security` status, `stage:reviewing`                                                                                                            |
+| `security.yml`          | CI failed on a pipeline PR's head                                                      | none                           | outcome note `ci_failed` + `stage:routing` (router → human)                                                                                                         |
+| `fix.yml`               | review submitted, manual, or router retry                                              | Gemini (`fix.md`)              | one fix commit per round, replies on threads                                                                                                                        |
+| `approval.yml`          | `pipeline/security` status, review submitted, disposition note, manual                 | none                           | `pipeline/gates` status; optional Copilot review request (`REQUIRE_COPILOT`), then `stage:human-approval` + preview comment                                         |
+| `approval.yml`          | CI requested on a same-repo PR                                                         | none                           | `pipeline/gates` = pending on the new head                                                                                                                          |
+| `disposition.yml`       | comment created on a PR                                                                | none                           | owner's `/disposition` → resolved threads + record notes (see [Review gates](#review-gates-and-dispositions))                                                       |
+| `preview.yml`           | PR opened/updated/closed                                                               | none                           | `https://<owner>.github.io/<repo>/pr-<n>/`, removed on close                                                                                                        |
+| `done.yml`              | PR closed                                                                              | none                           | merged: `stage:done` + Project **Done**; unmerged: `pr_closed` note + `stage:routing` on the issue                                                                  |
+| `project-sync.yml`      | any `stage:*` label added (closed items: `stage:done` only)                            | none                           | Project **Status** follows the label                                                                                                                                |
+| `deploy.yml`            | push to `main`                                                                         | none                           | site at `/`, Storybook at `/storybook/`, keeps `pr-*/` previews                                                                                                     |
 
 Deterministic logic lives in `.github/scripts/pipeline-lib.mjs` (pure,
 unit-tested by `pnpm test:pipeline`, which CI runs) and
@@ -207,9 +208,11 @@ It does nothing while the PR is in `stage:routing` or
 replays `lastBatch` under the current `fix-loop:*` label. A retry never
 consumes a new fix round.
 
-The budget resets whenever `fix-loop:*` is cleared: on escalation (so a
-human restart gives the PR two fresh rounds) and when the PR reaches
-`stage:human-approval` (so later human feedback starts at round 1).
+The budget resets only when `fix-loop:*` is cleared: by the owner's
+`/restart fixing` (two fresh rounds, counted against the issue's lifetime
+restarts) and when the PR reaches `stage:human-approval` (so later human
+feedback starts at round 1). Escalating keeps `fix-loop:2`, so moving the PR
+out of `stage:needs-attention` by hand does not refill it.
 
 After a successful fix, the push job replies on each inline thread and
 resolves a thread only if **every** comment in it is from the pipeline bot
@@ -224,7 +227,9 @@ pending run per group and cancels the rest, so one shared
 `pipeline-pr-<n>` group would silently drop CI, preview or review runs.
 `fix.yml`'s adapter and `approval.yml` share `pipeline-pr-<n>-state`,
 because both update the state comment. `router.yml` uses
-`pipeline-item-<n>-router` (issues and PRs share one number space).
+`pipeline-item-<n>-router` (issues and PRs share one number space);
+`restart.yml` uses `pipeline-issue-<n>-restart` so two `/restart` comments
+cannot read the same counter.
 
 ## One-time setup
 
@@ -241,20 +246,21 @@ Nothing happens until these files are on `main`.
    (label, push, PR, review, status) is made with this App's token.
 3. **Secrets and variables** (Settings → Secrets and variables → Actions):
 
-   | Kind     | Name                       | Value                                                                                                                                                                                          |
-   | -------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | variable | `PIPELINE_APP_CLIENT_ID`   | the App's client ID                                                                                                                                                                            |
-   | secret   | `PIPELINE_APP_PRIVATE_KEY` | the App's private key (PEM)                                                                                                                                                                    |
-   | variable | `PIPELINE_BOT_LOGIN`       | **required**: the App's bot login, e.g. `my-pipeline[bot]`; the only author whose marker comments and notes are trusted                                                                        |
-   | variable | `PIPELINE_OWNER_LOGIN`     | **required for dispositions and protected-change approvals**: your GitHub login; the only account whose `/disposition`, `/approve-protected` or `/reject-protected` counts. Unset = nobody can |
-   | secret   | `CLAUDE_CODE_OAUTH_TOKEN`  | Claude subscription token from `claude setup-token` (Pro/Max); no API billing                                                                                                                  |
-   | secret   | `GEMINI_API_KEY`           | Gemini API key                                                                                                                                                                                 |
-   | variable | `GEMINI_MODEL`             | optional, e.g. a specific Gemini model                                                                                                                                                         |
-   | variable | `PROJECT_URL`              | set by `setup-project.sh`; leave unset to run without a Project                                                                                                                                |
-   | secret   | `PROJECT_TOKEN`            | classic PAT, `project` scope (App tokens cannot reach user-owned Projects)                                                                                                                     |
-   | secret   | `COPILOT_REVIEW_TOKEN`     | PAT of a user with Copilot code review (Pull requests: write); App token if unset                                                                                                              |
-   | variable | `ROUTER_MODE`              | optional: `rules` (default when unset) or `external` ([Router](#router))                                                                                                                       |
-   | variable | `ROUTER_SHADOW`            | optional: `true` records the external brain's pick without using it                                                                                                                            |
+   | Kind     | Name                       | Value                                                                                                                                                                                                                |
+   | -------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | variable | `PIPELINE_APP_CLIENT_ID`   | the App's client ID                                                                                                                                                                                                  |
+   | secret   | `PIPELINE_APP_PRIVATE_KEY` | the App's private key (PEM)                                                                                                                                                                                          |
+   | variable | `PIPELINE_BOT_LOGIN`       | **required**: the App's bot login, e.g. `my-pipeline[bot]`; the only author whose marker comments and notes are trusted                                                                                              |
+   | variable | `PIPELINE_OWNER_LOGIN`     | **required for dispositions, protected-change approvals and restarts**: your GitHub login; the only account whose `/disposition`, `/approve-protected`, `/reject-protected` or `/restart` counts. Unset = nobody can |
+   | secret   | `CLAUDE_CODE_OAUTH_TOKEN`  | Claude subscription token from `claude setup-token` (Pro/Max); no API billing                                                                                                                                        |
+   | secret   | `GEMINI_API_KEY`           | Gemini API key                                                                                                                                                                                                       |
+   | variable | `GEMINI_MODEL`             | optional, e.g. a specific Gemini model                                                                                                                                                                               |
+   | variable | `PROJECT_URL`              | set by `setup-project.sh`; leave unset to run without a Project                                                                                                                                                      |
+   | secret   | `PROJECT_TOKEN`            | classic PAT, `project` scope (App tokens cannot reach user-owned Projects)                                                                                                                                           |
+   | variable | `REQUIRE_COPILOT`          | optional: exactly `true` makes a Copilot review a required gate ([Copilot review is optional](#copilot-review-is-optional)); unset or anything else = off                                                            |
+   | secret   | `COPILOT_REVIEW_TOKEN`     | only with `REQUIRE_COPILOT=true`: PAT of a user with Copilot code review (Pull requests: write); App token if unset                                                                                                  |
+   | variable | `ROUTER_MODE`              | optional: `rules` (default when unset) or `external` ([Router](#router))                                                                                                                                             |
+   | variable | `ROUTER_SHADOW`            | optional: `true` records the external brain's pick without using it                                                                                                                                                  |
 
 4. **Labels:** `tools/scripts/pipeline/setup-labels.sh` (re-run it after
    upgrading to add new labels such as `stage:done` or
@@ -270,7 +276,8 @@ Nothing happens until these files are on `main`.
 6. **Pages:** Settings → Pages → Source: **Deploy from a branch**, branch
    `gh-pages`, folder `/ (root)`. Production and previews share that branch
    (see [ADR 0004](decisions/0004-gh-pages-branch-for-previews.md)).
-7. **Copilot code review** enabled for the repo (Settings → Copilot → Code review).
+7. **Copilot code review** (optional; needs a Copilot licence): enable it for the repo
+   (Settings → Copilot → Code review) only if you turn on `REQUIRE_COPILOT`.
 8. **Ruleset** (after everything above is merged): `tools/scripts/pipeline/setup-ruleset.sh`.
    It pins `pipeline/security` to the App's ID, found from
    `PIPELINE_BOT_LOGIN` (or pass `PIPELINE_APP_ID=<App ID>`). Re-run it if
@@ -292,9 +299,10 @@ Nothing happens until these files are on `main`.
 5. **CI, preview, review.** `ci` must pass. The preview comment links
    `https://<owner>.github.io/<repo>/pr-<n>/`. Gemini's security review
    follows. Blocking findings become threads and trigger up to two fix rounds.
-6. **Copilot.** With CI green, the security status clean and no open
-   threads, the pipeline requests Copilot. Its comments go through the same
-   fix loop.
+6. **Copilot (optional).** Only with `REQUIRE_COPILOT=true`: with CI green,
+   the security status clean and no open threads, the pipeline requests
+   Copilot, and its comments go through the same fix loop. Off (the default),
+   this step is skipped and the PR goes straight to step 7.
 7. **You.** On `stage:human-approval` the PR is marked ready and you are
    requested as code owner. Check the diff and the preview, approve, merge.
    The branch must be up to date with `main` (the ruleset enforces it).
@@ -310,30 +318,82 @@ Only the router sets this label. Read the router's latest
 lists what was tried in each round (with run links) and every open
 question in one place. The outcome notes above it have the details. Then
 either finish the PR by hand (you are the reviewer anyway), or answer the
-questions / fix the cause and restart a stage:
+questions / fix the cause and restart it. **The only way to restart is the
+owner's `/restart` command.** Removing the label or adding a stage label by
+hand does not restart anything (see below).
 
-- spec + plan / develop: add the stage's trigger label (`stage:qualified`,
-  `stage:planned`; an old item stuck in the deprecated `stage:spec` restarts
-  with `stage:qualified`). The stage's own label change then clears
-  `stage:needs-attention`;
-- fix loop: remove `stage:needs-attention` (escalation already cleared
-  `fix-loop:*`, so the PR gets two fresh rounds), then run **Pipeline ·
-  Fix** manually with the PR number;
-- approval: remove `stage:needs-attention`, then run **Pipeline · Approval**
-  manually with the PR number;
-- failed CI (`ci_failed`): push a fix to the PR branch. The next green CI
-  run starts the security review, which moves the PR to `stage:reviewing`;
-- closed PR (`pr_closed`, on the issue): reopen the PR, open a replacement
-  PR, restart the issue from a stage label (re-develop force-pushes its
-  `issue-<n>-` branch), or close the issue;
+**`/restart`.** On the **issue**, the owner (`PIPELINE_OWNER_LOGIN`, a human
+account) posts one comment whose whole body is one line:
+
+```
+/restart <qualified|planned|fixing> <reason, 10+ characters>
+```
+
+| Stage       | What it does                                                                                                                                                           | Must be in `stage:needs-attention` |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `qualified` | spec + plan again: sets `stage:qualified` on the issue (also for an old item stuck in the deprecated `stage:spec`)                                                     | the issue                          |
+| `planned`   | develop again from the plan already on the issue: sets `stage:planned`                                                                                                 | the issue                          |
+| `fixing`    | the fix loop of the issue's linked open PR: sets `stage:fixing`, clears its `fix-loop:*` labels (`resetFixLoop`, a fresh budget of two rounds) and runs Pipeline · Fix | the PR (the issue is not parked)   |
+
+`restart.yml` checks the command in full: the commenter is the owner and a
+human, the comment was not edited (only new comments count), the issue is
+open, the item to restart is in `stage:needs-attention`, and the issue has
+fewer than **3** restarts so far. With an open PR on the issue, `qualified`
+and `planned` are refused (they would publish nothing): restart the PR with
+`fixing`, or close it. Any failed check gets one short bot reply and changes
+nothing. An accepted restart, in this order:
+
+1. adds one to the issue's **lifetime counter** and appends the attempt
+   `{id, at, by, reason, stage}` (`id` = `a<count>-<comment id>`) in the
+   issue's `pipeline-state` comment. Only the bot writes it, labels never
+   touch it, and it is never decremented or cleared. The state table shows
+   `lifetime resets: n/3` and the latest attempt id;
+2. appends the route note
+   `<!-- pipeline:route restart attempt=<id> count=<n>/3 -->` with the reason
+   in a fenced block, on the item that restarts (the issue, or the PR for
+   `fixing`);
+3. applies the stage label.
+
+**The limit.** After 3 restarts an issue is parked for good: a 4th
+`/restart` gets the reply "Lifetime restart limit (3) reached; close the issue
+or fix it in a local session." and changes nothing; the item stays in
+`stage:needs-attention`. `/restart fixing` counts against the same 3.
+(This is a two-week trial: the constant is `MAX_LIFETIME_RESETS` in
+`pipeline-lib.mjs`.)
+
+**Label edits by hand do not restart anything.** Loop budgets (the router's
+caps and the fix rounds) are only ever refreshed by `/restart`. If a person
+removes `stage:needs-attention`, or adds a stage label while it is set, the
+item continues with the budget it already used and its next problem goes
+straight back to a human. `restart.yml` posts one note per parking that says
+so and points to `/restart`; it does not undo the label edit.
+
+Which stage for which stop:
+
+- spec + plan / develop (`plan`, `develop` problems): `/restart qualified` or
+  `/restart planned`;
+- fix loop (`budget_exhausted`, `agent_error` that used the retry): `/restart
+fixing`. Feedback that arrived while the PR was parked is picked up by the
+  Pipeline · Fix run it starts;
+- approval or CI problems on the PR (`copilot_request_failed`, `ci_failed`): fix
+  the cause. A pushed fix starts CI again, and the next green run starts the
+  security review, which moves the PR on by itself. If it stays parked,
+  `/restart fixing`, then run **Pipeline · Approval** manually with the PR
+  number;
+- closed PR (`pr_closed`, on the issue): reopen the PR, or `/restart
+qualified` / `/restart planned` (re-develop force-pushes its `issue-<n>-`
+  branch), or close the issue;
 - router: run **Pipeline · Router** manually with the item number to route
   the latest outcome note again (it goes to a human if that note was
   already routed).
 
-**Resetting loops.** Router caps count only the route notes after the
-latest route to a human, so a restart after a hand-off always starts with
-the full budget. There is nothing else to reset: escalation clears the
-fix-loop label, which resets the fix rounds.
+**How the budgets follow restarts.** Router caps count the route notes after
+the latest `restart` note (`routeWindow`), or every route note when the item
+was never restarted. A route to a human neither opens a window nor counts as a
+round. `decideFix` keeps `fix-loop:2` when it escalates, so the fix budget
+also stays spent until `/restart fixing` clears it; the other place the fix
+budget resets is a PR reaching `stage:human-approval` (later human feedback
+starts at round 1).
 
 ## Spec and plan (auto-approval)
 
@@ -428,7 +488,7 @@ forge a marker.
 | `verify_failed`             | develop, fix   | `pnpm verify` could not be made green (fix: the secret-free verify job failed on the patch)                                                                                                                          |
 | `plan_gap`                  | develop        | The plan is wrong or incomplete                                                                                                                                                                                      |
 | `budget_exhausted`          | fix            | Both fix rounds used                                                                                                                                                                                                 |
-| `copilot_request_failed`    | approval       | The Copilot review could not be requested                                                                                                                                                                            |
+| `copilot_request_failed`    | approval       | The Copilot review could not be requested (`REQUIRE_COPILOT` on)                                                                                                                                                     |
 | `ci_failed`                 | ci             | CI failed on a pipeline PR's current head (`security.yml`'s `ci-failed` job)                                                                                                                                         |
 | `pr_closed`                 | pr             | The issue's PR was closed without merging and no other open PR is linked (`done.yml`)                                                                                                                                |
 | `protected_surface`         | plan, develop  | **Gate.** The work touches a never-approvable path (`tools/security/`, `.github/`, `CODEOWNERS`, ...) or supply-chain settings                                                                                       |
@@ -474,8 +534,9 @@ After any brain decides, `clampDecision` applies, and nothing bypasses it:
   target, or human).
 - **Caps** (`ROUTER_CAPS`): re-plan 2 (shared by every row that re-plans),
   re-develop 1, retry 1, and 5 routed rounds in total per item.
-  Rounds are counted from the bot's route notes after the latest route to
-  a human.
+  Rounds are counted from the bot's route notes after the latest `restart`
+  note (the owner's `/restart`, see [When it stops](#when-it-stops-at-stageneeds-attention));
+  routes to a human do not reset them.
 - **Re-develop safety:** `develop.yml` publishes nothing when an open PR
   already exists for the issue's branch, so the router sends that case to
   a human instead.
@@ -529,7 +590,8 @@ key or secret exists for it yet.
 
 ## Review gates and dispositions
 
-The Gemini security review and the Copilot review are **required gates on the
+The Gemini security review (and the Copilot review, when
+[`REQUIRE_COPILOT`](#copilot-review-is-optional) is on) are **required gates on the
 PR's head commit**. Every finding is either fixed or explicitly dispositioned
 by the repo owner, and one commit status, **`pipeline/gates`**, sums it all up
 for that exact SHA. The main ruleset requires it (see the follow-up command in
@@ -546,7 +608,9 @@ must hold, checked in this order:
    `failure` and every blocking finding id in the security outcome note for
    this head has a valid disposition.
 3. **Review threads**: no unresolved thread.
-4. **Copilot**: it reviewed this head.
+4. **Copilot**: it reviewed this head. Only when `REQUIRE_COPILOT` is `true`;
+   otherwise this gate is `success` with the detail "not required
+   (REQUIRE_COPILOT off)".
 5. **`pipeline/protected-approval`**: a pipeline PR that touches protected
    paths needs the owner's approval of this exact head (status `success`,
    recomputed by the `approval` command, not just read back). A PR with no
@@ -560,6 +624,25 @@ status, which blocks the merge; `approval.yml` posts a `pending` one as soon
 as CI is requested so the PR says why it waits. When the gates hold, the
 existing hand-off happens: `stage:human-approval`, PR marked ready, code
 owners requested. Merging stays with a human.
+
+### Copilot review is optional
+
+The Copilot review needs a Copilot licence, so it is **off by default**. The
+repo variable `REQUIRE_COPILOT` turns it on, and only the exact string `true`
+does: unset, empty, `false`, `TRUE`, `1` or anything else is off (a typo can
+never leave `pipeline/gates` pending forever for a review nobody licensed).
+
+- **Off:** the `copilot` gate is `success` ("not required (REQUIRE_COPILOT
+  off)"), no review is requested (so `copilot_request_failed` cannot happen)
+  and the PR goes to `stage:human-approval` as soon as the other gates hold.
+  The state table shows "not required". If Copilot reviews anyway, its threads
+  still count as review threads.
+- **On:** the review is requested once per head commit after CI, security and
+  threads hold, and the hand-off waits until Copilot reviewed that commit.
+- **To turn it on:** set the variable `REQUIRE_COPILOT` to `true`, and either
+  give the secret `COPILOT_REVIEW_TOKEN` the token of a Copilot-licensed user
+  or enable automatic Copilot review for the repo, and enable Copilot code
+  review (Settings → Copilot → Code review).
 
 **Why one status:** the ruleset can only require named checks. Requiring
 `pipeline/security`, Copilot and thread resolution separately would need a
@@ -702,7 +785,7 @@ the head>` and `/reject-protected <reason>`, and the proposed PR title
 issue=<n> pr=<m> head=<sha> paths=<hash> by=<login> comment=<id> -->` on the
    PR, sets the commit status `pipeline/protected-approval` = `success` on the
    head and `stage:building` on the issue. From here it is the normal path:
-   CI → security → Copilot → gates.
+   CI → security → (Copilot, if required) → gates.
 5. **Reject.** An outcome note (`develop` / `protected_rejected`) and
    `stage:routing`; the rules table sends it to a human. The branch is kept.
 6. **A push invalidates the approval.** The approval names one head and one

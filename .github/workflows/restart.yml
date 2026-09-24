@@ -1,0 +1,147 @@
+name: Pipeline · Restart
+
+# The only way to restart an item that stopped at stage:needs-attention.
+#   restart: the owner comments on the ISSUE, body exactly one line
+#     /restart <qualified|planned|fixing> <reason, 10+ characters>
+#   The command is checked in full (owner only, a human account, an unedited
+#   comment, an open issue, the item in stage:needs-attention: the issue, or
+#   for `fixing` its linked open PR, and fewer than 3 restarts so far). Any
+#   failed check: one short reply, no state change. Accepted: the issue's
+#   lifetime counter and attempt list are recorded in its pipeline-state
+#   comment (never decremented), a restart route note opens a new loop budget
+#   for that item and its stage label is applied. `fixing` clears the PR's
+#   fix-loop labels and runs Pipeline · Fix. After 3 restarts the item stays
+#   parked for good. Only newly created comments count: an edit never re-runs
+#   this.
+#   hint: a person removed stage:needs-attention (or added another stage
+#   label while it is set) by hand. That opens no budget; the bot says so
+#   once and points to /restart.
+# docs/pipeline.md, "When it stops at stage:needs-attention". The comment is
+# data: it reaches the script through the environment and is never executed.
+on:
+  issue_comment:
+    types: [created]
+  # A label event by a person, on an issue or a PR. Labels on PRs arrive as
+  # pull_request events, not issues events.
+  issues:
+    types: [labeled, unlabeled]
+  pull_request:
+    types: [labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  restart:
+    # Comments on issues only, from a human, that start with the command.
+    # Fails closed: with PIPELINE_OWNER_LOGIN unset the job never runs. Anyone
+    # can comment on a public repo, so a non-owner's command gets a reply from
+    # the script (which checks the owner again); nothing else.
+    if: >-
+      github.event_name == 'issue_comment' &&
+      vars.PIPELINE_APP_CLIENT_ID != '' && vars.PIPELINE_BOT_LOGIN != '' &&
+      vars.PIPELINE_OWNER_LOGIN != '' &&
+      !github.event.issue.pull_request &&
+      github.event.comment.user.type == 'User' &&
+      startsWith(github.event.comment.body, '/restart')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pipeline-issue-${{ github.event.issue.number }}-restart
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    outputs:
+      fix_pr: ${{ steps.restart.outputs.fix_pr }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      # App token: the stage label it sets must trigger the next stage.
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-issues: write
+          permission-pull-requests: write
+
+      - id: restart
+        name: Restart the item
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          PIPELINE_OWNER_LOGIN: ${{ vars.PIPELINE_OWNER_LOGIN }}
+          # Only shapes the state table.
+          REQUIRE_COPILOT: ${{ vars.REQUIRE_COPILOT }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
+          COMMENT_USER_TYPE: ${{ github.event.comment.user.type }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          N: ${{ github.event.issue.number }}
+        run: node .github/scripts/pipeline.mjs restart "$N" "$COMMENT_ID"
+
+  # `/restart fixing`: run the fix round for the PR's fresh budget. A
+  # workflow_dispatch made with GITHUB_TOKEN does trigger the workflow, so
+  # the App needs no Actions permission.
+  dispatch-fix:
+    needs: restart
+    if: ${{ needs.restart.outputs.fix_pr != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.restart.outputs.fix_pr }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: gh workflow run fix.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" -f pr="$PR"
+
+  hint:
+    # A person (not the pipeline's own bot) removed stage:needs-attention, or
+    # added another stage label while it is still set. The script decides
+    # again from the item's labels and comments.
+    if: >-
+      vars.PIPELINE_APP_CLIENT_ID != '' && vars.PIPELINE_BOT_LOGIN != '' &&
+      (github.event_name == 'issues' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) &&
+      github.event.sender.type == 'User' &&
+      (github.event.issue.state || github.event.pull_request.state) == 'open' &&
+      ((github.event.action == 'unlabeled' && github.event.label.name == 'stage:needs-attention') ||
+      (github.event.action == 'labeled' && startsWith(github.event.label.name, 'stage:') &&
+      github.event.label.name != 'stage:needs-attention' &&
+      (contains(github.event.issue.labels.*.name, 'stage:needs-attention') ||
+      contains(github.event.pull_request.labels.*.name, 'stage:needs-attention'))))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pipeline-item-${{ github.event.issue.number || github.event.pull_request.number }}-restart-hint
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Point to /restart
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          EVENT_ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+          N: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: node .github/scripts/pipeline.mjs restart-hint "$N"

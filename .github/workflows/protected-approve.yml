@@ -79,6 +79,8 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
           PIPELINE_OWNER_LOGIN: ${{ vars.PIPELINE_OWNER_LOGIN }}
+          # Only shapes the state table.
+          REQUIRE_COPILOT: ${{ vars.REQUIRE_COPILOT }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           COMMENT_USER: ${{ github.event.comment.user.login }}

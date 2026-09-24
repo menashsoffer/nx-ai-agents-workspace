@@ -196,6 +196,8 @@ jobs:
           VERSION: ${{ needs.implement.outputs.prompt_version }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          # Only shapes the state table (init-state).
+          REQUIRE_COPILOT: ${{ vars.REQUIRE_COPILOT }}
           PROTECTED: ${{ steps.guard.outputs.protected }}
         run: |
           if [[ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[].number')" ]]; then
@@ -218,7 +220,7 @@ jobs:
 
           title=$(jq -r '.pr_title' <<<"$RESULT")
           { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;
-            echo "<sub>Implemented by Claude with prompt develop.md@$VERSION. Draft until CI, the security review and Copilot are clean. Only a human can approve and merge.</sub>"; } > body.md
+            echo "<sub>Implemented by Claude with prompt develop.md@$VERSION. Draft until the review gates pass. Only a human can approve and merge.</sub>"; } > body.md
           url=$(gh pr create --repo "$GITHUB_REPOSITORY" --draft --base "$DEFAULT_BRANCH" \
             --head "$BRANCH" --title "$title" --body-file body.md)
           pr=${url##*/}

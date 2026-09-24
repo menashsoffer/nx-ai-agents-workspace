@@ -20,6 +20,10 @@ import {
   RETRY_STAGE,
   TARGET_STAGE,
   OUTCOME_STAGES,
+  MAX_LIFETIME_RESETS,
+  RESTART_MAX_REASON,
+  RESTART_MIN_REASON,
+  RESTART_STAGES,
   ROUTER_CAPS,
   ROUTE_TARGETS,
   STAGES,
@@ -57,6 +61,7 @@ import {
   parseOutcome,
   parseRoute,
   parseSecurityReport,
+  parseRequireCopilot,
   parseState,
   patchPaths,
   planRoute,
@@ -101,7 +106,13 @@ import {
   classifyProtectedPaths,
   comparePaths,
   decideProtectedCommand,
+  decideRestart,
+  decideRestartHint,
   evaluateProtectedApproval,
+  parseRestartComment,
+  parseRestartNote,
+  renderRestartHint,
+  routeWindow,
   isPipelineBranch,
   latestProtectedRequest,
   needsProtectedRequest,
@@ -706,23 +717,31 @@ test('fix retry replays the last batch without consuming a round', () => {
   );
 });
 
-test('fix loop: escalating clears fix-loop labels, so a human restart resets the budget', () => {
+test('fix loop: escalating keeps fix-loop:2, so only /restart fixing resets the budget', () => {
   const some = [{ key: 'c1' }];
   const labels = ['stage:reviewing', 'fix-loop:2', 'bug'];
   const esc = decideFix({ labels, actionable: some });
   assert.equal(esc.action, 'escalate');
   // The stage comes from the budget_exhausted outcome (stage:routing, then
-  // the router's stage:needs-attention); the edit only clears the budget.
+  // the router's stage:needs-attention); the edit leaves the budget alone.
   assert.deepEqual(esc.add, []);
-  assert.deepEqual(esc.remove, ['fix-loop:2']);
+  assert.deepEqual(esc.remove, []);
   const parked = [
     ...applyLabels(labels, esc).filter((l) => l !== 'stage:reviewing'),
     'stage:needs-attention',
   ];
-  assert.deepEqual(parked, ['bug', 'stage:needs-attention']);
-  // A human removes stage:needs-attention: the next feedback is round 1.
+  assert.deepEqual(parked, ['fix-loop:2', 'bug', 'stage:needs-attention']);
+  // A person removes stage:needs-attention by hand: the budget is still
+  // used up, so the next feedback escalates again.
   const unparked = parked.filter((l) => l !== 'stage:needs-attention');
-  assert.equal(decideFix({ labels: unparked, actionable: some }).loop, 1);
+  assert.equal(
+    decideFix({ labels: unparked, actionable: some }).action,
+    'escalate',
+  );
+  // /restart fixing (resetFixLoop) is what gives round 1 back.
+  const restarted = applyLabels(parked, resetFixLoop(parked, 'stage:fixing'));
+  assert.deepEqual(restarted, ['bug', 'stage:fixing']);
+  assert.equal(decideFix({ labels: restarted, actionable: some }).loop, 1);
 });
 
 test('resetFixLoop: reaching human approval clears the fix budget', () => {
@@ -885,6 +904,7 @@ test('evaluateApproval gates in order and is idempotent', () => {
     securityState: 'success',
     unresolvedThreads: 0,
     copilotReviewedHead: false,
+    requireCopilot: true,
     state: emptyState(),
   };
   assert.equal(
@@ -1141,11 +1161,19 @@ test('caps: each target and the global cap send work to a human', () => {
   });
   assert.equal(global.target, 'human');
   assert.match(global.reason, /global cap/);
-  // a route to a human opens a fresh window
+  // a route to a human does NOT open a fresh window (only a restart does)
+  const routes = [route('replan'), route('replan'), route('human')];
+  const spent = clampDecision({
+    decision: { target: 'replan', reason: 'r' },
+    outcome: problem('plan', 'agent_error'),
+    history: { routes },
+  });
+  assert.equal(spent.target, 'human');
+  assert.match(spent.reason, /cap is reached \(2\/2\)/);
   const fresh = clampDecision({
     decision: { target: 'replan', reason: 'r' },
     outcome: problem('plan', 'agent_error'),
-    history: { routes: [route('replan'), route('replan'), route('human')] },
+    history: { routes: [...routes, { target: 'restart' }] },
   });
   assert.equal(fresh.target, 'replan');
   assert.equal(fresh.round, 1);
@@ -2080,6 +2108,9 @@ function scanCommandEffects(src, libSrc) {
         fx.problems.push(TARGET_STAGE.human);
       } else assert.fail(`${name}: cannot resolve setStage(${expr})`);
     }
+    // The restart command sets whatever stage its /restart argument maps to.
+    if (/\bdecideRestart\(/.test(body))
+      fx.stages.push(...Object.values(RESTART_STAGES));
     const flagAdd = /editLabels\([^{]*\{\s*add:\s*many\(f\.(\w+)\)/.exec(body);
     if (flagAdd) fx.args = { ...fx.args, stage: `--${flagAdd[1]}` };
     const dyn = /MARKERS\[(\w+)\]/.exec(body);
@@ -3002,11 +3033,14 @@ test('a disposition covers the same finding id on later heads, and only the owne
   assert.ok(!next.body.includes(MARKERS.actionable));
 });
 
+// The Copilot gate is on for the existing gate tests; the `gate off` tests
+// below use `off` (REQUIRE_COPILOT unset).
 const passing = {
   ciConclusion: 'success',
   securityState: 'success',
   unresolvedThreads: 0,
   copilotReviewedHead: true,
+  requireCopilot: true,
 };
 const failedSecurity = (ids, extra = {}) => ({
   ...passing,
@@ -3207,6 +3241,149 @@ test('evaluateApproval reports the gates and hands off only when they all hold',
     }).action,
     'noop',
   );
+});
+
+// ------------------------------------------------ optional Copilot gate
+
+test('parseRequireCopilot: only the exact string `true` turns the gate on', () => {
+  assert.equal(parseRequireCopilot('true'), true);
+  for (const v of [
+    undefined,
+    null,
+    '',
+    'false',
+    'TRUE',
+    'True',
+    '1',
+    'yes',
+    ' true',
+  ])
+    assert.equal(parseRequireCopilot(v), false, JSON.stringify(v));
+});
+
+test('evaluateGates with the Copilot gate off', () => {
+  const off = { ...passing, requireCopilot: false, copilotReviewedHead: false };
+  const r = evaluateGates(off);
+  assert.equal(r.state, 'success');
+  const copilotCheck = r.checks.find((c) => c.key === 'copilot');
+  assert.equal(copilotCheck.state, 'success');
+  assert.equal(copilotCheck.detail, 'not required (REQUIRE_COPILOT off)');
+  // The default is off.
+  const { requireCopilot: _drop, ...noFlag } = off;
+  assert.equal(evaluateGates(noFlag).state, 'success');
+  // The description names only the checks that ran.
+  assert.equal(r.description, 'CI, Gemini review and threads all satisfied');
+  assert.ok(!/copilot/i.test(r.description));
+  assert.match(
+    evaluateGates(passing).description,
+    /^CI, Gemini review, Copilot review and threads all satisfied$/,
+  );
+  // Copilot having reviewed anyway changes nothing while it is off.
+  assert.equal(
+    evaluateGates({ ...off, copilotReviewedHead: true }).state,
+    'success',
+  );
+  // Every other gate still holds.
+  const ci = evaluateGates({ ...off, ciConclusion: 'failure' });
+  assert.equal(ci.state, 'failure');
+  assert.equal(ci.blockedBy, 'ci');
+  assert.equal(evaluateGates({ ...off, ciConclusion: null }).state, 'pending');
+  assert.equal(
+    evaluateGates({ ...off, securityState: 'error' }).state,
+    'failure',
+  );
+  const sec = evaluateGates({ ...off, securityState: 'failure' });
+  assert.equal(sec.state, 'pending');
+  assert.equal(sec.blockedBy, 'security');
+  const threads = evaluateGates({ ...off, unresolvedThreads: 1 });
+  assert.equal(threads.state, 'pending');
+  assert.equal(threads.blockedBy, 'threads');
+});
+
+test('evaluateApproval with the Copilot gate off goes straight to human approval', () => {
+  const base = {
+    prState: 'open',
+    draft: true,
+    labels: ['stage:reviewing'],
+    headSha: 'h1',
+    ciConclusion: 'success',
+    securityState: 'success',
+    unresolvedThreads: 0,
+    copilotReviewedHead: false,
+    requireCopilot: false,
+    state: emptyState(),
+  };
+  const done = evaluateApproval(base);
+  assert.equal(done.action, 'human-approval');
+  assert.equal(done.gates.state, 'success');
+  // Never asks for Copilot, however the request state looks.
+  assert.notEqual(
+    evaluateApproval({
+      ...base,
+      state: { ...emptyState(), copilotRequestedFor: 'h0' },
+    }).action,
+    'request-copilot',
+  );
+  // A missing CI / security / threads gate still waits or fails as before.
+  for (const missing of [
+    { ciConclusion: 'failure' },
+    { ciConclusion: null },
+    { securityState: 'failure' },
+    { securityState: undefined },
+    { unresolvedThreads: 1 },
+  ]) {
+    const r = evaluateApproval({ ...base, ...missing });
+    assert.equal(r.action, 'wait', JSON.stringify(missing));
+    assert.notEqual(r.gates.state, 'success');
+  }
+  assert.equal(
+    evaluateApproval({ ...base, ciConclusion: 'failure' }).gates.state,
+    'failure',
+  );
+  // A protected change still needs the owner's approval of this head.
+  const held = evaluateApproval({
+    ...base,
+    protectedRequired: true,
+    protectedApprovalState: 'pending',
+  });
+  assert.equal(held.action, 'wait');
+  assert.equal(held.gates.blockedBy, 'protected-approval');
+  assert.equal(held.gates.state, 'pending');
+  assert.equal(
+    evaluateApproval({
+      ...base,
+      protectedRequired: true,
+      protectedApprovalState: 'success',
+    }).action,
+    'human-approval',
+  );
+  // Idempotent once handed off; parked PRs are left alone.
+  assert.equal(
+    evaluateApproval({
+      ...base,
+      draft: false,
+      labels: ['stage:human-approval'],
+      state: { ...emptyState(), humanApprovalFor: 'h1' },
+    }).action,
+    'noop',
+  );
+  assert.equal(
+    evaluateApproval({ ...base, labels: ['stage:needs-attention'] }).action,
+    'noop',
+  );
+});
+
+test('the state table says "not required" while the Copilot gate is off', () => {
+  const s = { ...emptyState(), copilotRequestedFor: 'abcdef1234' };
+  assert.match(renderState(s, [], { requireCopilot: false }), /not required/);
+  assert.doesNotMatch(
+    renderState(s, [], { requireCopilot: true }),
+    /not required/,
+  );
+  assert.match(renderState(s), /`abcdef1`/);
+  // The field stays in the data, so old state still parses.
+  const back = parseState(renderState(s, [], { requireCopilot: false }));
+  assert.equal(back.copilotRequestedFor, 'abcdef1234');
 });
 
 // ---------------------------------------------------------------- fix loop skip
@@ -4492,4 +4669,667 @@ test('push guard: no workflow runs on a push of an issue-<n>-<slug> branch', () 
   // deploy.yml is the only push trigger, and it is limited to the default branch
   const deploy = parseYaml(readFileSync(new URL('deploy.yml', dir), 'utf8'));
   assert.deepEqual((deploy.on ?? deploy[true]).push.branches, ['main']);
+});
+
+// ---------------------------------------------------------------- restart
+
+const RESTART_OWNER = 'menashsoffer';
+const parkedIssue = (labels = ['stage:needs-attention']) => ({
+  number: 7,
+  state: 'open',
+  isPullRequest: false,
+  labels,
+});
+const restartComment = (body, extra = {}) => ({
+  id: 555,
+  body,
+  login: RESTART_OWNER,
+  type: 'User',
+  createdAt: '2026-02-01T10:00:00Z',
+  ...extra,
+});
+const restart = (body, input = {}) =>
+  decideRestart({
+    comment: restartComment(body, input.comment),
+    ownerLogin: RESTART_OWNER,
+    issue: parkedIssue(),
+    ...input,
+    // a plain override of `comment` would drop the defaults above
+    ...(input.comment ? { comment: restartComment(body, input.comment) } : {}),
+  });
+
+test('parseState reads old state and falls back on bad restart fields', () => {
+  // Old state (no restart fields) still parses, with the defaults.
+  const old = renderState(emptyState()).replace(
+    /"resetCount":0,"attempts":\[\]/,
+    '"x":1',
+  );
+  assert.equal(parseState(old).resetCount, 0);
+  assert.deepEqual(parseState(old).attempts, []);
+  const legacy = `${MARKERS.state}\n<!-- pipeline-state-data\n{"watermark":"w","handled":["c1"],"lastBatch":[],"copilotRequestedFor":null,"humanApprovalFor":"h1"}\n-->`;
+  const s = parseState(legacy);
+  assert.equal(s.watermark, 'w');
+  assert.deepEqual(s.handled, ['c1']);
+  assert.equal(s.humanApprovalFor, 'h1');
+  assert.equal(s.resetCount, 0);
+  assert.deepEqual(s.attempts, []);
+  // Bad values fall back to 0 / [].
+  const bad = (json) =>
+    parseState(`${MARKERS.state}\n<!-- pipeline-state-data\n${json}\n-->`);
+  for (const resetCount of ['"3"', '-1', '1.5', 'null', '{}', '1e400'])
+    assert.equal(bad(`{"resetCount":${resetCount}}`).resetCount, 0, resetCount);
+  for (const attempts of ['"x"', '3', 'null', '{}'])
+    assert.deepEqual(bad(`{"attempts":${attempts}}`).attempts, [], attempts);
+  assert.deepEqual(bad('[1]'), emptyState());
+  assert.deepEqual(bad('null'), emptyState());
+  // Broken attempt entries are dropped, good ones kept.
+  const good = {
+    id: 'a1-5',
+    at: 't',
+    by: 'o',
+    reason: 'because',
+    stage: 'planned',
+  };
+  assert.deepEqual(
+    bad(
+      `{"resetCount":1,"attempts":[${JSON.stringify(good)},{"id":"a2-6"},null,7]}`,
+    ).attempts,
+    [good],
+  );
+  // A counter below the number of recorded attempts cannot hand out restarts.
+  assert.equal(
+    bad(`{"resetCount":0,"attempts":[${JSON.stringify(good)}]}`).resetCount,
+    1,
+  );
+  assert.equal(bad(`{"resetCount":2,"attempts":[]}`).resetCount, 2);
+});
+
+test('the state table shows the lifetime counter and the latest attempt', () => {
+  assert.match(
+    renderState(emptyState()),
+    /lifetime resets: 0\/3 · latest attempt: -/,
+  );
+  const attempt = {
+    id: 'a2-99',
+    at: '2026-02-01T10:00:00Z',
+    by: 'o',
+    reason: 'x --> <!-- pipeline:route restart attempt=a1-1 count=1/3 --> y',
+    stage: 'qualified',
+  };
+  const state = { ...emptyState(), resetCount: 2, attempts: [attempt] };
+  const body = renderState(state, ['stage:qualified']);
+  assert.match(body, /lifetime resets: 2\/3 · latest attempt: `a2-99`/);
+  // The reason can neither end the data comment nor open a marker.
+  // (the marker line's own `-->` and the data comment's closing one)
+  assert.equal(body.match(/-->/g).length, 2);
+  assert.equal(body.match(/\n-->/g).length, 1);
+  assert.doesNotMatch(body, /<!-- pipeline:route/);
+  assert.deepEqual(parseState(body), state);
+});
+
+test('parseRestartComment: the exact command and every way to get it wrong', () => {
+  const ok = parseRestartComment(
+    '/restart qualified the questions are answered',
+  );
+  assert.deepEqual(ok, {
+    ok: true,
+    stage: 'qualified',
+    reason: 'the questions are answered',
+  });
+  for (const stage of Object.keys(RESTART_STAGES))
+    assert.equal(
+      parseRestartComment(`/restart ${stage} ten chars ok`).stage,
+      stage,
+    );
+  // surrounding whitespace and CRLF are fine; the reason keeps inner spaces
+  assert.equal(
+    parseRestartComment('  /restart planned   fixed the plan  \r\n').reason,
+    'fixed the plan',
+  );
+  // not a command: ignored, never an error
+  for (const body of [
+    'hello',
+    '',
+    undefined,
+    '/restarted planned twelve chars',
+    'please /restart planned x',
+  ])
+    assert.equal(parseRestartComment(body).ignore, true, String(body));
+  // bad format
+  for (const body of [
+    '/restart',
+    '/restart planned',
+    '/restart   ',
+    '/restart planned too short',
+    '/restart planned         ',
+    '/restart spec because the old stage is gone',
+    '/restart human because a person should take it',
+    '/restart PLANNED because case matters here',
+    '/restart planned first line\nsecond line of the reason',
+    `/restart planned ${'x'.repeat(RESTART_MAX_REASON + 1)}`,
+  ]) {
+    const r = parseRestartComment(body);
+    assert.equal(r.ok, false, body);
+    assert.ok(!r.ignore, body);
+    assert.equal(typeof r.error, 'string');
+    assert.ok(!r.error.includes('x'.repeat(20)), 'errors do not echo the body');
+  }
+  assert.equal(
+    parseRestartComment(`/restart planned ${'x'.repeat(RESTART_MAX_REASON)}`)
+      .ok,
+    true,
+  );
+  assert.equal(RESTART_MIN_REASON, 10);
+});
+
+test('decideRestart: accepts the owner on a parked issue', () => {
+  const r = restart('/restart qualified the questions are answered');
+  assert.equal(r.action, 'restart');
+  assert.equal(r.stage, 'qualified');
+  assert.equal(r.count, 1);
+  assert.deepEqual(r.attempt, {
+    id: 'a1-555',
+    at: '2026-02-01T10:00:00Z',
+    by: RESTART_OWNER,
+    reason: 'the questions are answered',
+    stage: 'qualified',
+  });
+  assert.equal(r.state.resetCount, 1);
+  assert.deepEqual(r.state.attempts, [r.attempt]);
+  assert.deepEqual(r.target, {
+    kind: 'issue',
+    number: 7,
+    edit: { add: ['stage:qualified'], remove: ['stage:needs-attention'] },
+  });
+  // the route note: readable by the router, reason in a fenced block
+  assert.ok(
+    r.note.startsWith(
+      '<!-- pipeline:route restart attempt=a1-555 count=1/3 -->\n',
+    ),
+  );
+  assert.match(r.note, /```text\nthe questions are answered\n```/);
+  assert.deepEqual(parseRestartNote(r.note), {
+    ok: true,
+    route: { target: 'restart', attempt: 'a1-555', count: 1 },
+  });
+  const planned = restart('/restart planned the plan was fixed by hand');
+  assert.deepEqual(planned.target.edit, {
+    add: ['stage:planned'],
+    remove: ['stage:needs-attention'],
+  });
+});
+
+test('decideRestart: every rejection is one reply and no state change', () => {
+  const body = '/restart planned the plan was fixed by hand';
+  const reply = (input, fragment) => {
+    const r = restart(body, input);
+    assert.equal(r.action, 'reply', JSON.stringify(input));
+    assert.match(r.reason, fragment);
+    assert.equal(r.state, undefined, 'no state to write');
+    assert.equal(r.target, undefined, 'no label edit');
+    return r;
+  };
+  // not the owner: a human gets one reply, a bot none
+  reply({ comment: { login: 'mallory' } }, /not the pipeline owner/);
+  reply({ comment: { login: 'MenashSoffer2' } }, /not the pipeline owner/);
+  assert.equal(
+    restart(body, { comment: { login: 'mallory', type: 'Bot' } }).action,
+    'ignore',
+  );
+  assert.equal(restart(body, { ownerLogin: '' }).action, 'ignore');
+  assert.equal(restart(body, { ownerLogin: undefined }).action, 'ignore');
+  // a comment that is not a command
+  assert.equal(restart('thanks!').action, 'ignore');
+  // the owner's login is case-insensitive
+  assert.equal(
+    restart(body, { comment: { login: 'MenashSoffer' } }).action,
+    'restart',
+  );
+  // bad format
+  const badFormat = restart('/restart planned short');
+  assert.equal(badFormat.action, 'reply');
+  assert.match(badFormat.reason, /at least 10 characters/);
+  assert.match(restart('/restart').reason, /expected `\/restart/);
+  assert.match(restart('/restart nope twelve chars ok').reason, /one of/);
+  // edited comment, pull request, closed issue
+  reply({ edited: true }, /edited/);
+  reply({ issue: { ...parkedIssue(), isPullRequest: true } }, /pull request/);
+  reply({ issue: { ...parkedIssue(), state: 'closed' } }, /closed/);
+  // wrong stage
+  for (const labels of [
+    [],
+    ['stage:inbox'],
+    ['stage:building'],
+    ['stage:routing'],
+    ['stage:human-approval'],
+    ['stage:done'],
+  ])
+    reply({ issue: parkedIssue(labels) }, /not in stage:needs-attention/);
+  // an open PR: restart its fix loop instead, do not waste a restart
+  const openPr = [{ number: 12, labels: ['stage:needs-attention'] }];
+  reply({ pullRequests: openPr }, /#12 is still open/);
+});
+
+test('decideRestart: /restart fixing acts on the linked PR', () => {
+  const body = '/restart fixing the reviewer comments were addressed';
+  const pr = {
+    number: 12,
+    labels: ['stage:needs-attention', 'fix-loop:2', 'bug'],
+  };
+  const r = restart(body, {
+    issue: parkedIssue(['stage:building']),
+    pullRequests: [pr],
+  });
+  assert.equal(r.action, 'restart');
+  assert.equal(r.stage, 'fixing');
+  assert.equal(r.target.kind, 'pr');
+  assert.equal(r.target.number, 12);
+  // the fix budget is cleared and the PR gets the stage
+  assert.deepEqual(r.target.edit, {
+    add: ['stage:fixing'],
+    remove: ['stage:needs-attention', 'fix-loop:2'],
+  });
+  assert.deepEqual(applyLabels(pr.labels, r.target.edit), [
+    'bug',
+    'stage:fixing',
+  ]);
+  assert.equal(
+    decideFix({ labels: ['bug', 'stage:fixing'], actionable: [{ key: 'c1' }] })
+      .loop,
+    1,
+  );
+  // ...but the lifetime counter still counts it
+  assert.equal(r.state.resetCount, 1);
+  assert.equal(r.attempt.stage, 'fixing');
+  // the issue's own stage does not matter, the PR's does
+  assert.equal(
+    restart(body, { issue: parkedIssue(), pullRequests: [pr] }).action,
+    'restart',
+  );
+  const notParked = restart(body, {
+    pullRequests: [{ number: 12, labels: ['stage:fixing'] }],
+  });
+  assert.equal(notParked.action, 'reply');
+  assert.match(notParked.reason, /#12 is not in stage:needs-attention/);
+  assert.match(restart(body).reason, /no open pull request/);
+  assert.match(
+    restart(body, { pullRequests: [pr, { ...pr, number: 13 }] }).reason,
+    /more than one/,
+  );
+});
+
+test('decideRestart: the lifetime counter counts to 3 and then refuses, for good', () => {
+  let state = emptyState();
+  const ids = [];
+  for (const [i, stage] of ['qualified', 'planned', 'qualified'].entries()) {
+    const r = restart(`/restart ${stage} restart number ${i + 1} please`, {
+      comment: { id: 100 + i },
+      state,
+    });
+    assert.equal(r.action, 'restart', `restart ${i + 1}`);
+    assert.equal(r.count, i + 1);
+    assert.equal(r.state.resetCount, i + 1);
+    assert.equal(r.state.attempts.length, i + 1);
+    ids.push(r.attempt.id);
+    // what the command writes is what the next comment reads
+    state = parseState(renderState(r.state, ['stage:needs-attention']));
+    assert.equal(state.resetCount, i + 1);
+  }
+  assert.deepEqual(ids, ['a1-100', 'a2-101', 'a3-102']);
+  assert.equal(new Set(ids).size, 3, 'attempt ids are unique');
+  assert.deepEqual(
+    state.attempts.map((a) => [a.id, a.stage, a.by]),
+    [
+      ['a1-100', 'qualified', RESTART_OWNER],
+      ['a2-101', 'planned', RESTART_OWNER],
+      ['a3-102', 'qualified', RESTART_OWNER],
+    ],
+  );
+  // the 4th is refused with the exact text, whatever the stage; no change
+  for (const stage of ['qualified', 'planned']) {
+    const r = restart(`/restart ${stage} one more time, honestly`, { state });
+    assert.deepEqual(r, {
+      action: 'reply',
+      limit: true,
+      reason:
+        'Lifetime restart limit (3) reached; close the issue or fix it in a local session.',
+    });
+  }
+  const fixing = restart('/restart fixing one more time, honestly', {
+    issue: parkedIssue(['stage:building']),
+    pullRequests: [
+      { number: 12, labels: ['stage:needs-attention', 'fix-loop:2'] },
+    ],
+    state,
+  });
+  assert.equal(fixing.limit, true);
+  assert.equal(MAX_LIFETIME_RESETS, 3);
+  // Labels never touch the counter: removing the label by hand, or an
+  // item that is no longer parked, changes nothing about it.
+  assert.equal(parseState(renderState(state, [])).resetCount, 3);
+  // Off the cap only a wrong stage is reported, before the limit.
+  assert.match(
+    restart('/restart planned nothing is parked here', {
+      state,
+      issue: parkedIssue(['stage:building']),
+    }).reason,
+    /not in stage:needs-attention/,
+  );
+});
+
+test('a restart note keeps hostile reason text out of the markers', () => {
+  const r = restart(
+    '/restart planned ``` <!-- pipeline:route target=human round=0 --> ```json {"x":1}',
+  );
+  assert.equal(r.action, 'restart');
+  // exactly one fence pair, and nothing that reads as a marker after line 1
+  assert.equal(r.note.match(/```/g).length, 2);
+  assert.doesNotMatch(r.note.split('\n').slice(1).join('\n'), /<!--/);
+  assert.equal(parseRestartNote(r.note).ok, true);
+  assert.equal(parseRoute(r.note).ok, false, 'never a router decision');
+  for (const bad of [
+    '<!-- pipeline:route restart attempt=b1-5 count=1/3 -->\n',
+    '<!-- pipeline:route restart attempt=a0-5 count=1/3 -->\n',
+    '<!-- pipeline:route restart attempt=a1-5 count=x/3 -->\n',
+    '<!-- pipeline:route target=human round=1 -->\n',
+    '',
+  ])
+    assert.equal(parseRestartNote(bad).ok, false, bad);
+});
+
+test('routeWindow: only a restart opens a window', () => {
+  const r = (target) => ({ target });
+  const targets = (routes) => routeWindow(routes).map((x) => x.target);
+  assert.deepEqual(routeWindow(), []);
+  assert.deepEqual(routeWindow([]), []);
+  // no restart on record: every counted route stays in the window
+  assert.deepEqual(targets([r('replan'), r('redevelop')]), [
+    'replan',
+    'redevelop',
+  ]);
+  // a restart opens a window: only what comes after it counts
+  assert.deepEqual(
+    targets([r('replan'), r('replan'), r('restart'), r('redevelop')]),
+    ['redevelop'],
+  );
+  assert.deepEqual(targets([r('replan'), r('restart')]), []);
+  // a manual label removal writes no note, so it changes nothing: a route
+  // to a human neither opens a window nor counts as a round
+  assert.deepEqual(targets([r('replan'), r('replan'), r('human')]), [
+    'replan',
+    'replan',
+  ]);
+  // a human route AFTER a restart does not close or reopen anything
+  assert.deepEqual(
+    targets([r('replan'), r('restart'), r('redevelop'), r('human')]),
+    ['redevelop'],
+  );
+  assert.deepEqual(targets([r('replan'), r('restart'), r('human')]), []);
+  // several restarts: the latest one counts
+  assert.deepEqual(
+    targets([
+      r('replan'),
+      r('restart'),
+      r('replan'),
+      r('human'),
+      r('restart'),
+      r('redevelop'),
+      r('restart'),
+      r('replan'),
+      r('retry'),
+    ]),
+    ['replan', 'retry'],
+  );
+});
+
+test('scenario: a hand move keeps the used budget, /restart gives a fresh one', () => {
+  const comments = [];
+  const bad = ['plan', 'invalid_output'];
+  const step = () => {
+    comments.push(outcomeNote(...bad));
+    const r = planRoute({ comments, botLogin: BOT });
+    comments.push(note(r.body));
+    return r;
+  };
+  assert.equal(step().final.target, 'replan'); // round 1
+  assert.equal(step().final.target, 'replan'); // round 2 (cap)
+  const parked = step();
+  assert.equal(parked.final.target, 'human');
+  assert.match(parked.final.reason, /cap is reached \(2\/2\)/);
+  // A person removes the label or re-adds a stage by hand: no note, so the
+  // next problem still meets the spent budget and goes straight back.
+  const again = step();
+  assert.equal(again.final.target, 'human');
+  assert.match(again.final.reason, /cap is reached \(2\/2\)/);
+  assert.equal(again.stage, 'stage:needs-attention');
+  // The owner's /restart: the note is not a route (it does not make the
+  // outcome look routed) and the window starts after it.
+  const restartNote = restart(
+    '/restart qualified answered every question',
+  ).note;
+  comments.push(note(restartNote));
+  const fresh = step();
+  assert.equal(fresh.final.target, 'replan');
+  assert.equal(fresh.final.round, 1);
+  // the human hand-off after the restart lists only rounds since it
+  assert.equal(step().final.target, 'replan');
+  const parkedAgain = step();
+  assert.equal(parkedAgain.final.target, 'human');
+  assert.match(parkedAgain.body, /Round 1:/);
+  assert.match(parkedAgain.body, /Round 2:/);
+  assert.doesNotMatch(parkedAgain.body, /Round 3:/);
+  assert.match(parkedAgain.body, /Only \/restart opens a fresh loop budget/);
+  // still parked: a person's label edit again changes nothing
+  assert.equal(step().final.target, 'human');
+});
+
+test('collectRouterInput reads restart notes only from the bot', () => {
+  const restartNote = restart(
+    '/restart planned the plan was fixed by hand',
+  ).note;
+  const comments = [
+    outcomeNote('plan', 'invalid_output'),
+    note(restartNote, 'mallory'),
+    routeNote('replan'),
+    note(restartNote),
+    outcomeNote('plan', 'invalid_output'),
+  ];
+  const { history, error } = collectRouterInput({ comments, botLogin: BOT });
+  assert.equal(error, null);
+  assert.deepEqual(
+    history.routes.map((r) => r.target),
+    ['replan', 'restart'],
+  );
+  // a restart note after the latest outcome does not hide it from the router
+  const after = collectRouterInput({
+    comments: [outcomeNote('plan', 'invalid_output'), note(restartNote)],
+    botLogin: BOT,
+  });
+  assert.equal(after.error, null);
+});
+
+test('decideRestartHint: one pointer per parking, humans only reach it by hand', () => {
+  const humanRoute = note(
+    '<!-- pipeline:route target=human round=0 -->\n**Routed to a human**',
+  );
+  const hint = note(`${MARKERS.restartHint}\n\ntext`);
+  const decide = (input) =>
+    decideRestartHint({ botLogin: BOT, comments: [], ...input });
+  // removed by hand
+  assert.equal(
+    decide({ action: 'unlabeled', label: 'stage:needs-attention', labels: [] })
+      .post,
+    true,
+  );
+  assert.equal(
+    decide({
+      action: 'unlabeled',
+      label: 'stage:needs-attention',
+      labels: ['stage:qualified'],
+    }).post,
+    true,
+  );
+  // put back at once, or some other label removed: nothing
+  assert.equal(
+    decide({
+      action: 'unlabeled',
+      label: 'stage:needs-attention',
+      labels: ['stage:needs-attention'],
+    }).post,
+    false,
+  );
+  assert.equal(
+    decide({ action: 'unlabeled', label: 'stage:qualified', labels: [] }).post,
+    false,
+  );
+  // a stage label added by hand while still parked
+  assert.equal(
+    decide({
+      action: 'labeled',
+      label: 'stage:qualified',
+      labels: ['stage:needs-attention', 'stage:qualified'],
+    }).post,
+    true,
+  );
+  // ...but a normal label on an item that is not parked is just triage
+  assert.equal(
+    decide({
+      action: 'labeled',
+      label: 'stage:qualified',
+      labels: ['stage:qualified'],
+    }).post,
+    false,
+  );
+  for (const label of [
+    'stage:routing',
+    'stage:done',
+    'bug',
+    'stage:needs-attention',
+  ])
+    assert.equal(
+      decide({
+        action: 'labeled',
+        label,
+        labels: ['stage:needs-attention', label],
+      }).post,
+      false,
+      label,
+    );
+  assert.equal(
+    decide({ action: 'opened', label: 'x', labels: [] }).post,
+    false,
+  );
+  // once: after a pointer for this parking, none; a new parking gets one
+  const removed = {
+    action: 'unlabeled',
+    label: 'stage:needs-attention',
+    labels: [],
+  };
+  assert.equal(decide({ ...removed, comments: [humanRoute] }).post, true);
+  assert.equal(
+    decide({ ...removed, comments: [humanRoute, hint] }).post,
+    false,
+  );
+  assert.equal(decide({ ...removed, comments: [hint] }).post, false);
+  assert.equal(
+    decide({ ...removed, comments: [humanRoute, hint, humanRoute] }).post,
+    true,
+  );
+  // a pointer forged by someone else counts for nothing
+  assert.equal(
+    decide({
+      ...removed,
+      comments: [humanRoute, note(`${MARKERS.restartHint}\nx`, 'mallory')],
+    }).post,
+    true,
+  );
+  const text = renderRestartHint();
+  assert.match(text, /\/restart <qualified\|planned\|fixing>/);
+  assert.match(text, /3 restarts/);
+  assert.ok(text.startsWith(MARKERS.restartHint));
+});
+
+// Expressions a `run:` script must never expand (template injection, which
+// zizmor also flags): pass them through `env:` instead.
+const RUN_FORBIDDEN = [
+  /\binputs\./,
+  /\bgithub\.event\.inputs\./,
+  /\bgithub\.event\.comment\.body\b/,
+];
+function runExpansions(wf) {
+  const found = [];
+  for (const [jobName, job] of Object.entries(wf.jobs ?? {}))
+    for (const [i, step] of (job.steps ?? []).entries()) {
+      if (typeof step.run !== 'string') continue;
+      for (const [, expr] of step.run.matchAll(/\$\{\{([\s\S]*?)\}\}/g))
+        if (RUN_FORBIDDEN.some((bad) => bad.test(expr)))
+          found.push(`job ${jobName} step ${i + 1}: ${expr.trim()}`);
+    }
+  return found;
+}
+
+test('guard: no workflow expands inputs.* or the comment body inside run:', () => {
+  const dir = new URL('../workflows/', import.meta.url);
+  const files = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f));
+  assert.ok(files.includes('restart.yml'));
+  for (const file of files)
+    assert.deepEqual(
+      runExpansions(parseYaml(readFileSync(new URL(file, dir), 'utf8'))),
+      [],
+      `${file}: pass these through env: instead of expanding them in run:`,
+    );
+  // the guard catches what it is for, and lets env-passed values through
+  const wf = (run, env) =>
+    parseYaml(
+      `jobs:\n  j:\n    steps:\n      - run: ${JSON.stringify(run)}\n        env: ${JSON.stringify(env ?? {})}`,
+    );
+  assert.equal(runExpansions(wf('echo ${{ inputs.pr }}')).length, 1);
+  assert.equal(
+    runExpansions(wf('echo "${{github.event.inputs.pr}}"')).length,
+    1,
+  );
+  assert.equal(
+    runExpansions(wf('echo ${{ github.event.comment.body }}')).length,
+    1,
+  );
+  assert.equal(
+    runExpansions(wf('echo "$PR"', { PR: '${{ inputs.pr }}' })).length,
+    0,
+  );
+  assert.equal(
+    runExpansions(wf('echo ${{ github.event.issue.number }}')).length,
+    0,
+  );
+});
+
+test('restart.yml: owner command, env-only inputs, fail-closed conditions', () => {
+  const wf = parseYaml(
+    readFileSync(new URL('../workflows/restart.yml', import.meta.url), 'utf8'),
+  );
+  const on = wf.on ?? wf[true];
+  assert.deepEqual(on.issue_comment.types, ['created']);
+  assert.equal(
+    wf.permissions !== undefined && Object.keys(wf.permissions).length,
+    0,
+  );
+  const restartIf = wf.jobs.restart.if;
+  // fails closed without an owner, only humans, only issues, only the command
+  for (const part of [
+    "vars.PIPELINE_OWNER_LOGIN != ''",
+    "vars.PIPELINE_BOT_LOGIN != ''",
+    '!github.event.issue.pull_request',
+    "github.event.comment.user.type == 'User'",
+    "startsWith(github.event.comment.body, '/restart')",
+  ])
+    assert.ok(restartIf.includes(part), part);
+  const step = wf.jobs.restart.steps.find((s) => s.id === 'restart');
+  assert.equal(
+    step.run,
+    'node .github/scripts/pipeline.mjs restart "$N" "$COMMENT_ID"',
+  );
+  assert.ok(step.env.COMMENT_BODY.includes('github.event.comment.body'));
+  // the label-event job only reacts to people, never to the pipeline's bot
+  assert.ok(wf.jobs.hint.if.includes("github.event.sender.type == 'User'"));
+  // every downstream label event uses a token that triggers workflows
+  assert.ok(wf.jobs.restart.steps.some((s) => s.id === 'app'));
 });
