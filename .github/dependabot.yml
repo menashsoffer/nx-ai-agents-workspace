@@ -13,7 +13,7 @@ updates:
       default-days: 7
     open-pull-requests-limit: 8
     ignore:
-      # Types must match the Node runtime (engines >=22.18); bump by hand with the runtime.
+      # Types must match the Node runtime (engines >=24); bump by hand with the runtime.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
     groups:

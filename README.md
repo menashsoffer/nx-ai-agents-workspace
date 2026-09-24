@@ -44,8 +44,7 @@ ESLint rule that rejects non-RTL-safe Tailwind classes (`ml-4`, `text-right`,
 5. Optional: set up the multi-agent issue → PR pipeline, see
    [`docs/pipeline.md`](docs/pipeline.md).
 
-Requires Node 22.18+ (Node 24 LTS recommended; see `.nvmrc`). On Windows, use
-WSL2.
+Requires Node 24 (LTS; see `.nvmrc`). On Windows, use WSL2.
 
 ### Initialization contract
 

@@ -3,7 +3,7 @@ name: Template smoke test
 # Template repo only: `pnpm template:init` deletes this workflow, so projects
 # created from the template never inherit it.
 # Proves a fresh copy initializes, verifies and generates cleanly on the
-# declared minimum Node and on the default (.nvmrc) Node.
+# supported Node (24: the declared minimum and the .nvmrc Node are the same).
 
 on:
   pull_request:
@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['22.18.0', '24']
+        node: ['24']
     name: smoke (Node ${{ matrix.node }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

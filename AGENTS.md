@@ -202,7 +202,7 @@ agents even inside an approvable file. See `docs/pipeline.md`,
 - `pnpm verify` runs `nx sync` first to update TS project references. If
   `typecheck` complains that a file "is not listed within the file list of
   project", run `pnpm nx sync`.
-- Node 22.18+ is required: `tools/vite-config` is loaded as TypeScript through
+- Node 24+ is required: `tools/vite-config` is loaded as TypeScript through
   Node's built-in type stripping. Windows: use WSL2.
 - TypeScript 6 doesn't load `@types/*` automatically. Add them to a tsconfig's
   `"types"` when needed, e.g. `"node"`.
