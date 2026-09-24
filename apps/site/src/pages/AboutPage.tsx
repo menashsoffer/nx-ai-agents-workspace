@@ -1,3 +1,9 @@
+const NOTE_HTML = '<b>הערת בדיקה</b>';
+
+function DemoNote() {
+  return <p dangerouslySetInnerHTML={{ __html: NOTE_HTML }} />;
+}
+
 export function AboutPage() {
   return (
     <section className="space-y-4">
@@ -5,6 +11,7 @@ export function AboutPage() {
       <p className="text-muted">
         דף לדוגמה שמראה ניתוב בין דפים. מחליפים אותו בתוכן של הפרויקט.
       </p>
+      <DemoNote />
     </section>
   );
 }
