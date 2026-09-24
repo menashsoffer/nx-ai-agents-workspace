@@ -8,24 +8,11 @@ unlocks the merge button.
 
 ## The flow
 
-```mermaid
-flowchart TD
-  A[Issue opened] -->|inbox.yml| B[stage:inbox]
-  B -->|human adds label| C[stage:qualified]
-  C -->|spec.yml: Gemini| D[stage:spec]
-  D -->|plan.yml: Claude CTO| E{info complete?}
-  E -->|no| X[stage:needs-attention]
-  E -->|yes| F[stage:planned]
-  F -->|develop.yml: Claude| G[draft PR · stage:building]
-  G -->|ci.yml green| H[security.yml: Gemini · stage:reviewing]
-  H -->|blocking findings| I[fix.yml: Gemini · stage:fixing]
-  I -->|push, CI again| H
-  I -->|3rd round needed| X
-  H -->|clean + no open threads| J[approval.yml: Copilot review]
-  J -->|comments| I
-  J -->|clean| K[stage:human-approval · PR ready · preview URL]
-  K -->|human approves + merges| L[done.yml: Project → Done]
-```
+The full map (every stage, workflow, escalation and fix-loop path, plus
+computed findings) is generated from the workflows and `pipeline-lib.mjs`:
+see **[pipeline-map.md](pipeline-map.md)**. Regenerate it with
+`pnpm pipeline:map` after changing a workflow or `pipeline-lib.mjs`;
+`pnpm verify` fails while it is stale.
 
 | Stage label             | Set by         | Meaning / next step                                                                 |
 | ----------------------- | -------------- | ----------------------------------------------------------------------------------- |
