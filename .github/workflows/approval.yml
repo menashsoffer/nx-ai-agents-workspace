@@ -1,18 +1,30 @@
 name: Pipeline · Approval
 
-# Deterministic hand-off to humans. When CI is green on the head commit,
-# the security review status is success and no review thread is open:
+# Review gates and the hand-off to humans. For a PR's head commit this
+# evaluates the gates (CI, the Gemini security review clean or every finding
+# dispositioned, review threads resolved, Copilot reviewed) and sets the
+# `pipeline/gates` commit status, which the main ruleset requires. When CI is
+# green, the security review passes and no review thread is open:
 #   1. request a Copilot review (REST, once per head commit);
-#   2. once Copilot has reviewed that commit cleanly, label
-#      stage:human-approval, mark the PR ready (this requests CODEOWNERS)
-#      and comment the preview URL.
+#   2. once Copilot has reviewed that commit cleanly and every gate holds,
+#      label stage:human-approval, mark the PR ready (this requests
+#      CODEOWNERS) and comment the preview URL.
 # Merging stays with a human: the main ruleset requires a code-owner
 # approval, and no agent or bot is a code owner or bypass actor.
-on:
+# docs/pipeline.md, "Review gates and dispositions".
+on: # zizmor: ignore[dangerous-triggers]
   # Posted by security.yml (App token, so it triggers workflows).
   status:
   pull_request_review:
     types: [submitted]
+  # The bot's disposition record note (disposition.yml, App token).
+  issue_comment:
+    types: [created]
+  # A new head has no gates status yet: give it a pending one at once.
+  # Runs the default branch's workflow, reads nothing from the run.
+  workflow_run:
+    workflows: [CI]
+    types: [requested]
   workflow_dispatch:
     inputs:
       pr:
@@ -29,6 +41,10 @@ jobs:
       vars.PIPELINE_APP_CLIENT_ID != '' &&
       (github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request_review' && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      vars.PIPELINE_BOT_LOGIN != '' &&
+      github.event.comment.user.login == vars.PIPELINE_BOT_LOGIN &&
+      startsWith(github.event.comment.body, '<!-- pipeline:disposition')) ||
       (github.event_name == 'status' && github.event.context == 'pipeline/security'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -40,10 +56,16 @@ jobs:
       - id: pr
         env:
           GH_TOKEN: ${{ github.token }}
-          N: ${{ github.event.pull_request.number || inputs.pr }}
+          N: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
           SHA: ${{ github.event.sha }}
+          EVENT: ${{ github.event_name }}
         run: |
-          if [[ -z "$N" ]]; then
+          if [[ "$EVENT" == "issue_comment" ]]; then
+            # A comment carries no head repo: only open same-repo PRs count.
+            gh api "repos/$GITHUB_REPOSITORY/pulls/$N" \
+              | jq -e --arg repo "$GITHUB_REPOSITORY" '.state == "open" and .head.repo.full_name == $repo' > /dev/null || N=""
+          fi
+          if [[ -z "$N" && "$EVENT" == "status" ]]; then
             # status event: find the open same-repo PR whose head is this commit.
             N=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
               --jq "[.[] | select(.state == \"open\" and .head.sha == \"$SHA\" and .head.repo.full_name == \"$GITHUB_REPOSITORY\")][0].number // empty")
@@ -76,8 +98,9 @@ jobs:
           permission-pull-requests: write
           permission-issues: write
           permission-checks: read
-          permission-statuses: read
+          permission-statuses: write
 
+      # Sets `pipeline/gates` on the head, whatever the gates say.
       - name: Evaluate gates and hand off
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
@@ -85,4 +108,44 @@ jobs:
           # falls back to the App token when unset.
           COPILOT_GH_TOKEN: ${{ secrets.COPILOT_REVIEW_TOKEN }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          PIPELINE_OWNER_LOGIN: ${{ vars.PIPELINE_OWNER_LOGIN }}
         run: node .github/scripts/pipeline.mjs approval "${{ needs.resolve.outputs.pr }}"
+
+  # `pipeline/gates` is a required check, so a head without it cannot merge.
+  # This posts it as pending the moment CI is requested for a same-repo PR,
+  # so the PR shows why it is waiting. Never overwrites an existing status.
+  pending:
+    if: >-
+      vars.PIPELINE_APP_CLIENT_ID != '' &&
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.pull_requests[0].number
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pipeline-pr-${{ github.event.workflow_run.pull_requests[0].number }}-gates-pending
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-pull-requests: read
+          permission-statuses: write
+
+      - name: Post pipeline/gates as pending
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ github.event.workflow_run.pull_requests[0].number }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node .github/scripts/pipeline.mjs gates-pending "$N" "$SHA"

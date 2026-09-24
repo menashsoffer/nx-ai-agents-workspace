@@ -1,0 +1,64 @@
+name: Pipeline · Disposition
+
+# The repo owner's decision on a review finding. A comment whose whole body
+# is one or more lines of
+#   /disposition <finding-id> <accepted-risk|false-positive|out-of-scope> <reason>
+# is checked (owner only, a human account, the finding must exist for the
+# PR's current head), the finding's review threads are resolved and the bot
+# appends a record note per finding. The record notes re-run approval.yml,
+# which sets the `pipeline/gates` commit status. Only newly created
+# comments count: an edit never re-runs this. docs/pipeline.md, "Review
+# gates and dispositions". The comment is data: it reaches the script
+# through the environment and is never executed.
+on:
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  disposition:
+    # Owner comments on PRs only. Fails closed: with PIPELINE_OWNER_LOGIN
+    # unset the job never runs. The script checks all of this again.
+    if: >-
+      vars.PIPELINE_APP_CLIENT_ID != '' && vars.PIPELINE_BOT_LOGIN != '' &&
+      vars.PIPELINE_OWNER_LOGIN != '' &&
+      github.event.issue.pull_request &&
+      github.event.comment.user.login == vars.PIPELINE_OWNER_LOGIN &&
+      github.event.comment.user.type == 'User' &&
+      startsWith(github.event.comment.body, '/disposition')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pipeline-pr-${{ github.event.issue.number }}-disposition
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      # App token: the record notes must trigger approval.yml, and the
+      # bot resolves review threads.
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: Record the disposition
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          PIPELINE_OWNER_LOGIN: ${{ vars.PIPELINE_OWNER_LOGIN }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
+          COMMENT_USER_TYPE: ${{ github.event.comment.user.type }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          N: ${{ github.event.issue.number }}
+        run: node .github/scripts/pipeline.mjs disposition "$N" "$COMMENT_ID"

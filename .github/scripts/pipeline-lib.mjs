@@ -1,6 +1,7 @@
 // Pure, dependency-free decision logic for the multi-agent pipeline.
 // Everything here is deterministic and unit-tested (pipeline-lib.test.mjs);
 // I/O lives in github.mjs and the CLI in pipeline.mjs.
+import { createHash } from 'node:crypto';
 
 export const STAGES = [
   'stage:inbox',
@@ -49,6 +50,13 @@ export const MARKERS = {
   route: '<!-- pipeline:route',
   fixReply: '<!-- pipeline:fix-reply -->',
   securityReview: 'pipeline:security-review',
+  // Prefixes with attributes. `finding` opens a blocking Gemini finding's
+  // inline review comment (maps a review thread to its finding id);
+  // `disposition` is the bot's record of an owner's /disposition command.
+  finding: '<!-- pipeline:finding',
+  disposition: '<!-- pipeline:disposition',
+  // One upserted comment per PR: the review gates and their open findings.
+  gates: '<!-- pipeline:gates -->',
   // A pipeline-authored review body that the fixer must act on.
   actionable: '<!-- pipeline:actionable -->',
 };
@@ -497,7 +505,10 @@ export function feedbackSource({ user, author_association }, botLogin) {
  *
  * Each item ends as actionable, dropped for good, or deferred (resolved
  * thread that may be reopened, empty comment or review body that may be
- * edited). The returned `watermark` only moves past items with a final
+ * edited). Findings with a disposition in effect (`dispositioned`: ids from
+ * dispositionsInEffect) are dropped for good: the pipeline's inline finding
+ * comments, Copilot's threads (named by their top comment) and, in an
+ * actionable review body, the finding items themselves. The returned `watermark` only moves past items with a final
  * decision: it stops at the oldest deferred one, so deferred items are
  * scanned again next time. Inline comments count from their review's
  * submission, since comments drafted in a pending review are older than
@@ -511,6 +522,7 @@ export function selectActionable({
   botLogin = '',
   ignoreLogins = ['github-actions[bot]'],
   onlyKeys = null,
+  dispositioned = new Set(),
 }) {
   const handled = new Set(state.handled);
   const since = state.watermark ? Date.parse(state.watermark) : -Infinity;
@@ -552,6 +564,15 @@ export function selectActionable({
       if (ignored(c) || dismissed.has(c.pull_request_review_id)) return null;
       const body = (c.body ?? '').trim();
       if (body.includes(MARKERS.fixReply)) return null;
+      if (dispositioned.size) {
+        const own = sameLogin(c.user?.login, botLogin)
+          ? inlineFindingId(body)
+          : null;
+        const copilot = COPILOT_LOGINS.some((l) => sameLogin(l, c.user?.login))
+          ? copilotThreadId(c.in_reply_to_id ?? c.id)
+          : null;
+        if (dispositioned.has(own) || dispositioned.has(copilot)) return null;
+      }
       if (!body || resolvedCommentIds.has(c.id)) return DEFER;
       return {
         kind: 'inline',
@@ -576,12 +597,14 @@ export function selectActionable({
       // An empty body may be edited later, unless the review's content is
       // in its inline comments (the usual case), which are scanned above.
       if (!body) return withInline.has(r.id) ? null : DEFER;
+      const cut = dropDispositioned(body, dispositioned);
+      if (cut.total > 0 && cut.remaining === 0) return null;
       return {
         kind: 'review',
         id: r.id,
         author: r.user?.login,
         state: r.state,
-        body,
+        body: cut.body,
       };
     });
   }
@@ -726,22 +749,55 @@ export function parseSecurityReport(text) {
   }
   if (!obj || typeof obj !== 'object' || !Array.isArray(obj.findings))
     return { ok: false, error: 'reviewer output has no findings array' };
-  const findings = obj.findings.map((f) => ({
-    severity: SEVERITIES.includes(String(f.severity).toLowerCase())
-      ? String(f.severity).toLowerCase()
-      : 'medium', // unknown severity: fail safe, treat as blocking
-    category: f.category === 'correctness' ? 'correctness' : 'security',
-    file: typeof f.file === 'string' ? f.file.replace(/^\.?\//, '') : null,
-    line: Number.isInteger(f.line) && f.line > 0 ? f.line : null,
-    title: String(f.title ?? 'Untitled finding').slice(0, 200),
-    detail: String(f.detail ?? '').slice(0, 4000),
-    suggestion: String(f.suggestion ?? '').slice(0, 4000),
-  }));
+  const parsed = obj.findings.map((f) => {
+    const finding = {
+      severity: SEVERITIES.includes(String(f.severity).toLowerCase())
+        ? String(f.severity).toLowerCase()
+        : 'medium', // unknown severity: fail safe, treat as blocking
+      category: f.category === 'correctness' ? 'correctness' : 'security',
+      file: typeof f.file === 'string' ? f.file.replace(/^\.?\//, '') : null,
+      line: Number.isInteger(f.line) && f.line > 0 ? f.line : null,
+      title: String(f.title ?? 'Untitled finding').slice(0, 200),
+      detail: String(f.detail ?? '').slice(0, 4000),
+      suggestion: String(f.suggestion ?? '').slice(0, 4000),
+    };
+    return { id: findingId(finding), ...finding };
+  });
+  // The same finding reported twice is one finding (one id, one thread);
+  // the more severe copy wins.
+  const byId = new Map();
+  for (const f of parsed) {
+    const seen = byId.get(f.id);
+    if (
+      !seen ||
+      SEVERITIES.indexOf(f.severity) < SEVERITIES.indexOf(seen.severity)
+    )
+      byId.set(f.id, f);
+  }
   return {
     ok: true,
     summary: String(obj.summary ?? '').slice(0, 4000),
-    findings,
+    findings: [...byId.values()],
   };
+}
+
+/**
+ * Stable id of a Gemini finding: `S-` + 8 hex of sha256(file, title,
+ * detail). Content-based on purpose: the line, severity, category and
+ * suggested fix are left out, and the text is lower-cased with punctuation
+ * and whitespace collapsed, so a finding that is not fixed keeps its id
+ * when the diff moves or the reviewer re-words a sentence's punctuation.
+ * A finding whose title or detail the reviewer really rewrites gets a new
+ * id; that is a new finding to fix or disposition again.
+ */
+export function findingId({ file, title, detail }) {
+  const norm = (t) =>
+    String(t ?? '')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
+  const key = [String(file ?? ''), norm(title), norm(detail)].join('\n');
+  return `S-${createHash('sha256').update(key).digest('hex').slice(0, 8)}`;
 }
 
 export const isBlocking = (f) => BLOCKING_SEVERITIES.has(f.severity);
@@ -762,9 +818,9 @@ export function commentableLines(patch) {
   return lines;
 }
 
-function findingMarkdown(f) {
+function findingMarkdown(f, idAtEnd = true) {
   return [
-    `**[${f.severity}] ${f.category}: ${f.title}**`,
+    `**[${f.severity}] ${f.category}: ${f.title}**${idAtEnd ? ` · \`${f.id}\`` : ''}`,
     f.detail,
     f.suggestion ? `**Suggested fix:** ${f.suggestion}` : '',
   ]
@@ -772,27 +828,61 @@ function findingMarkdown(f) {
     .join('\n\n');
 }
 
+/** An inline review comment. The marker ties its thread to the finding id. */
+function renderFinding(f) {
+  return `${MARKERS.finding} id=${f.id} -->\n${findingMarkdown(f)}`;
+}
+
+const findingWhere = (f) =>
+  `${f.file ?? '(general)'}${f.line ? `:${f.line}` : ''}`;
+
+/**
+ * A finding as a top-level list item in a review body: the id first, every
+ * other line indented, so dropDispositioned can cut exactly this item.
+ */
+function findingBullet(f) {
+  const [first, ...rest] = findingMarkdown(f, false).split('\n');
+  return [
+    `- \`${f.id}\` ${findingWhere(f)}: ${first}`,
+    ...rest.map((l) => (l ? `  ${l}` : '')),
+  ].join('\n');
+}
+
 /**
  * Turns a parsed report into a PR review. Blocking findings on commentable
  * lines become inline comments (each is a thread that must be resolved);
  * blocking findings elsewhere go in the body, which is then marked
- * actionable. Non-blocking findings are informational.
+ * actionable. Non-blocking findings are informational. `dispositioned`
+ * (finding id -> kind) holds findings the owner already decided on: they
+ * stay blocking findings (the review is not clean) but open no thread and
+ * are not actionable, so a finding that carries over to a new head does not
+ * come back as an open thread.
  */
-export function buildSecurityReview({ report, sha, files, promptVer }) {
+export function buildSecurityReview({
+  report,
+  sha,
+  files,
+  promptVer,
+  dispositioned = new Map(),
+}) {
   const lineMap = new Map(
     files.map((f) => [f.filename, commentableLines(f.patch)]),
   );
   const blocking = report.findings.filter(isBlocking);
+  const carried = blocking.filter((f) => dispositioned.has(f.id));
+  const open = blocking.filter((f) => !dispositioned.has(f.id));
   const inline = [];
+  const inlineFindings = [];
   const inBody = [];
-  for (const f of blocking) {
+  for (const f of open) {
     if (f.file && f.line && lineMap.get(f.file)?.has(f.line)) {
       inline.push({
         path: f.file,
         line: f.line,
         side: 'RIGHT',
-        body: findingMarkdown(f),
+        body: renderFinding(f),
       });
+      inlineFindings.push(f);
     } else inBody.push(f);
   }
   const info = report.findings.filter((f) => !isBlocking(f));
@@ -800,14 +890,17 @@ export function buildSecurityReview({ report, sha, files, promptVer }) {
   const body = [
     `<!-- ${MARKERS.securityReview} sha=${sha} verdict=${clean ? 'clean' : 'changes'} prompt=${promptVer} -->`,
     inBody.length ? MARKERS.actionable : '',
-    `### Security & correctness review: ${clean ? 'clean' : `${blocking.length} blocking finding(s)`}`,
+    `### Security & correctness review: ${clean ? 'clean' : `${blocking.length} blocking finding(s)`}${carried.length ? ` (${carried.length} already dispositioned)` : ''}`,
     `Reviewed commit \`${sha.slice(0, 7)}\`. Automated review; the required human approval still applies.`,
     report.summary,
     inBody.length
-      ? `#### Blocking findings not attached to a diff line\n\n${inBody
+      ? `#### Blocking findings not attached to a diff line\n\n${inBody.map(findingBullet).join('\n')}`
+      : '',
+    carried.length
+      ? `#### Already dispositioned by the owner\n\n${carried
           .map(
             (f) =>
-              `- ${f.file ?? '(general)'}${f.line ? `:${f.line}` : ''}: ${findingMarkdown(f).replace(/\n\n/g, '\n  ')}`,
+              `- \`${f.id}\` [${f.severity}] ${findingWhere(f)} ${f.title} (${dispositioned.get(f.id)})`,
           )
           .join('\n')}`
       : '',
@@ -815,14 +908,527 @@ export function buildSecurityReview({ report, sha, files, promptVer }) {
       ? `<details><summary>${info.length} non-blocking note(s)</summary>\n\n${info
           .map(
             (f) =>
-              `- [${f.severity}] ${f.file ?? ''}${f.line ? `:${f.line}` : ''} ${f.title}: ${f.detail}`,
+              `- [${f.severity}] \`${f.id}\` ${f.file ?? ''}${f.line ? `:${f.line}` : ''} ${f.title}: ${f.detail}`,
           )
           .join('\n')}\n\n</details>`
       : '',
   ]
     .filter(Boolean)
     .join('\n\n');
-  return { clean, body, comments: inline, blockingCount: blocking.length };
+  // Used when GitHub rejects the inline comments: the same findings as
+  // list items in one actionable body.
+  const fallbackBody = inline.length
+    ? [
+        body,
+        inBody.length ? '' : MARKERS.actionable,
+        '#### Findings',
+        ...inlineFindings.map(findingBullet),
+      ]
+        .filter(Boolean)
+        .join('\n\n')
+    : body;
+  return {
+    clean,
+    body,
+    fallbackBody,
+    comments: inline,
+    // The finding behind each entry of `comments`, same order.
+    inlineFindings,
+    blockingFindings: blocking,
+    blockingCount: blocking.length,
+    dispositionedCount: carried.length,
+  };
+}
+
+/**
+ * The `details` of a security outcome note: the reviewed commit, the number
+ * of blocking findings and one line per finding, id first. approval and
+ * /disposition read the ids back with securityIdsForHead.
+ */
+export function securityOutcomeDetails({ sha, findings }) {
+  return [
+    `head=${sha} blocking=${findings.length}`,
+    ...findings.map(
+      (f) => `${f.id} [${f.severity}] ${findingWhere(f)} ${f.title}`,
+    ),
+  ];
+}
+
+// ---------------------------------------------------------------- dispositions
+
+export const DISPOSITION_KINDS = [
+  'accepted-risk',
+  'false-positive',
+  'out-of-scope',
+];
+export const DISPOSITION_MIN_REASON = 10;
+const DISPOSITION_MAX_REASON = 500;
+const DISPOSITION_MAX_LINES = 20;
+
+// `S-` ids are Gemini findings (findingId); `C-<n>` is the Copilot review
+// thread whose top comment has database id n.
+const FINDING_ID = /^(?:S-[0-9a-f]{8}|C-\d{1,15})$/;
+
+/** Id of a Copilot review thread: `C-` + its top comment's database id. */
+export const copilotThreadId = (topCommentId) => `C-${topCommentId}`;
+
+/**
+ * Parses a comment as a /disposition command. The whole body must be one or
+ * more lines of exactly
+ *   /disposition <finding-id> <accepted-risk|false-positive|out-of-scope> <reason, 10+ characters>
+ * and one bad line rejects all of them. A comment that does not start with
+ * /disposition is `{ ok: false, ignore: true }` (ordinary discussion). The
+ * body is data: nothing from it is executed, and error texts never repeat
+ * it, except for ids that already matched the id format.
+ */
+export function parseDispositionComment(body) {
+  const text = String(body ?? '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+  if (!/^\/disposition(?:\s|$)/.test(text)) return { ok: false, ignore: true };
+  const lines = text.split('\n').map((l) => l.trimEnd());
+  if (lines.length > DISPOSITION_MAX_LINES)
+    return {
+      ok: false,
+      error: `at most ${DISPOSITION_MAX_LINES} commands per comment`,
+    };
+  const fail = (i, why) => ({
+    ok: false,
+    error: lines.length > 1 ? `line ${i + 1}: ${why}` : why,
+  });
+  const commands = [];
+  for (const [i, line] of lines.entries()) {
+    const m = /^\/disposition[ \t]+(\S+)[ \t]+(\S+)[ \t]+(\S[\s\S]*)$/.exec(
+      line,
+    );
+    if (!m)
+      return fail(
+        i,
+        'expected `/disposition <finding-id> <accepted-risk|false-positive|out-of-scope> <reason>`',
+      );
+    const [, id, kind, reason] = m;
+    if (!FINDING_ID.test(id))
+      return fail(i, 'the finding id must look like S-1a2b3c4d or C-123456');
+    if (!DISPOSITION_KINDS.includes(kind))
+      return fail(i, `the kind must be one of ${DISPOSITION_KINDS.join(', ')}`);
+    if ([...reason].length < DISPOSITION_MIN_REASON)
+      return fail(
+        i,
+        `the reason must be at least ${DISPOSITION_MIN_REASON} characters`,
+      );
+    if (reason.length > DISPOSITION_MAX_REASON)
+      return fail(
+        i,
+        `the reason must be at most ${DISPOSITION_MAX_REASON} characters`,
+      );
+    if (commands.some((c) => c.id === id))
+      return fail(i, `${id} appears twice`);
+    commands.push({ id, kind, reason });
+  }
+  return { ok: true, commands };
+}
+
+/**
+ * Who may disposition: the repo owner (`vars.PIPELINE_OWNER_LOGIN`) acting
+ * as a human. Not author_association, not the PR or issue author. An unset
+ * variable means nobody can.
+ */
+export function checkDispositionAuthor({ login, type, ownerLogin }) {
+  if (!ownerLogin)
+    return { ok: false, reason: 'PIPELINE_OWNER_LOGIN is not set' };
+  if (type !== 'User')
+    return { ok: false, reason: 'the commenter is not a user' };
+  if (!sameLogin(login, ownerLogin))
+    return { ok: false, reason: 'the commenter is not the pipeline owner' };
+  return { ok: true };
+}
+
+/**
+ * Checks parsed commands against what can be dispositioned right now:
+ * blocking Gemini findings of the current head's review (`geminiIds`) and
+ * open Copilot threads (`copilotIds`). One unknown id rejects all.
+ */
+export function validateDispositions({
+  commands,
+  geminiIds = new Set(),
+  copilotIds = new Set(),
+}) {
+  for (const { id } of commands) {
+    if (id.startsWith('S-') && !geminiIds.has(id))
+      return {
+        ok: false,
+        error: `${id} is not a blocking finding of the security review of the current commit`,
+      };
+    if (id.startsWith('C-') && !copilotIds.has(id))
+      return { ok: false, error: `${id} is not an open Copilot review thread` };
+  }
+  return { ok: true };
+}
+
+/** A backtick fence longer than any run of backticks inside `text`. */
+const fenceFor = (text) =>
+  '`'.repeat(
+    Math.max(
+      3,
+      ...[...String(text).matchAll(/`+/g)].map((m) => m[0].length + 1),
+    ),
+  );
+
+/**
+ * The bot's record of a disposition (appended, never edited). The marker
+ * line carries the binding: finding id, kind, the head the owner saw, who
+ * and which comment. The reason is data in a fenced block.
+ */
+export function renderDispositionNote({
+  id,
+  kind,
+  head,
+  by,
+  commentId,
+  reason,
+}) {
+  const text = neutraliseMarkers(reason);
+  const fence = fenceFor(text);
+  return [
+    `${MARKERS.disposition} id=${id} kind=${kind} head=${head} by=${by} comment=${commentId} -->`,
+    `Disposition recorded: \`${id}\` as **${kind}** by @${by} at \`${String(head).slice(0, 7)}\`.`,
+    '',
+    `${fence}text`,
+    text,
+    fence,
+  ].join('\n');
+}
+
+const DISPOSITION_HEADER =
+  /^<!-- pipeline:disposition id=(S-[0-9a-f]{8}|C-\d{1,15}) kind=(accepted-risk|false-positive|out-of-scope) head=([0-9a-f]{7,40}) by=([\w.[\]-]+) comment=(\d+) -->\n/;
+
+/**
+ * The disposition records written by the pipeline bot. Anyone can paste a
+ * marker into a comment, so only the bot's own comments count.
+ */
+export function parseDispositionNotes(comments, botLogin) {
+  const out = [];
+  for (const c of comments) {
+    if (!sameLogin(c.user?.login, botLogin)) continue;
+    const m = DISPOSITION_HEADER.exec(String(c.body ?? ''));
+    if (!m) continue;
+    const reason = /\n(`{3,})text\n([\s\S]*?)\n\1\s*$/.exec(c.body)?.[2] ?? '';
+    out.push({
+      id: m[1],
+      kind: m[2],
+      head: m[3],
+      by: m[4],
+      commentId: Number(m[5]),
+      reason,
+    });
+  }
+  return out;
+}
+
+/**
+ * Dispositions in effect, as finding id -> kind (the latest record wins). A
+ * record counts only if the owner made it (`by` is the pipeline owner; with
+ * no owner, none count). It is bound to the head it was recorded on, but ids
+ * are content-based (findingId): after a push, the same finding on the new
+ * head has the same id, so the record still covers it. A finding that was
+ * fixed is simply not in the new head's review.
+ */
+export function dispositionKinds({ records, ownerLogin }) {
+  return new Map(
+    records
+      .filter((r) => sameLogin(r.by, ownerLogin))
+      .map((r) => [r.id, r.kind]),
+  );
+}
+
+/** Finding ids whose disposition is in effect (see dispositionKinds). */
+export const dispositionsInEffect = (input) =>
+  new Set(dispositionKinds(input).keys());
+
+// ---------------------------------------------------------------- findings
+
+/**
+ * The blocking findings recorded for `sha` in the latest security outcome
+ * note of the pipeline bot (see securityOutcomeDetails), or null when that
+ * commit has no such note. `complete` is false when the note could not list
+ * every blocking finding (the outcome's detail list is capped).
+ */
+export function securityIdsForHead({ comments, botLogin, sha }) {
+  let found = null;
+  for (const c of comments) {
+    if (!sameLogin(c.user?.login, botLogin)) continue;
+    const parsed = parseOutcome(c.body);
+    if (!parsed.ok) continue;
+    const { outcome } = parsed;
+    if (outcome.stage !== 'security' || outcome.result !== 'success') continue;
+    const head = /^head=([0-9a-f]+) blocking=(\d+)$/.exec(
+      outcome.details[0] ?? '',
+    );
+    if (!head || head[1] !== sha) continue;
+    const findings = outcome.details
+      .slice(1)
+      .map((d) => /^(S-[0-9a-f]{8}) (.*)$/.exec(d))
+      .filter(Boolean)
+      .map((m) => ({ id: m[1], text: m[2] }));
+    found = { findings, blocking: Number(head[2]) };
+  }
+  if (!found) return null;
+  const ids = [...new Set(found.findings.map((f) => f.id))];
+  return {
+    ids,
+    findings: found.findings,
+    blocking: found.blocking,
+    complete: ids.length >= found.blocking,
+  };
+}
+
+const BULLET_ID = /^- `(S-[0-9a-f]{8})` /;
+const FINDING_COMMENT = /^<!-- pipeline:finding id=(S-[0-9a-f]{8}) -->/;
+
+/** Finding id of an inline comment the security publisher wrote, if any. */
+export const inlineFindingId = (body) =>
+  FINDING_COMMENT.exec(String(body ?? ''))?.[1] ?? null;
+
+/**
+ * Cuts the dispositioned findings out of a review body (the list items
+ * findingBullet writes: an id line plus indented lines). Returns the new
+ * body and how many id-bearing items there were and remain.
+ */
+export function dropDispositioned(body, dispositioned) {
+  const kept = [];
+  let total = 0;
+  let remaining = 0;
+  let skipping = false;
+  for (const line of String(body ?? '').split('\n')) {
+    const m = BULLET_ID.exec(line);
+    if (m) {
+      total++;
+      skipping = dispositioned.has(m[1]);
+      if (!skipping) remaining++;
+    } else if (skipping && (line === '' || line.startsWith('  '))) {
+      continue;
+    } else skipping = false;
+    if (!skipping) kept.push(line);
+  }
+  return { body: kept.join('\n'), total, remaining };
+}
+
+/**
+ * Sorts review threads into the findings the owner can disposition.
+ * `threads` come from github.mjs reviewThreads (with `first` = the top
+ * comment). Gemini threads are the bot's inline finding comments, Copilot
+ * threads start with a Copilot comment; other threads (people) are only
+ * counted. Every thread has an id a disposition can name.
+ */
+export function classifyThreads(threads, botLogin) {
+  return threads.map((t) => {
+    const first = t.first ?? {};
+    const gemini = sameLogin(first.author, botLogin)
+      ? inlineFindingId(first.body)
+      : null;
+    if (gemini) return { source: 'gemini', id: gemini, thread: t };
+    if (COPILOT_LOGINS.some((l) => sameLogin(l, first.author)))
+      return { source: 'copilot', id: copilotThreadId(first.id), thread: t };
+    return { source: 'other', id: null, thread: t };
+  });
+}
+
+// ---------------------------------------------------------------- gates
+
+/** Statuses and check runs are `pipeline/gates`' inputs; this is its name. */
+export const GATES_CONTEXT = 'pipeline/gates';
+
+const CI_FAILED = ['failure', 'timed_out'];
+
+/**
+ * The review gates for one head commit, in order: ci, Gemini security
+ * review (clean, or every finding fixed away or dispositioned), review
+ * threads, Copilot review, protected-file approval. Returns the checks
+ * and the value for the `pipeline/gates` commit status:
+ * - `success`: every check holds;
+ * - `failure`: a real blocker (ci failed, the reviewer errored, a required
+ *   approval was refused);
+ * - `pending` otherwise, its description naming the first missing check.
+ *
+ * `securityFindings` is securityIdsForHead for this head (null: none);
+ * `dispositioned` is dispositionsInEffect; `securityJobConclusion` is the
+ * `security` CI job's check run (undefined: no such run).
+ */
+export function evaluateGates({
+  ciConclusion,
+  securityJobConclusion,
+  securityState,
+  securityFindings = null,
+  dispositioned = new Set(),
+  unresolvedThreads = 0,
+  copilotReviewedHead = false,
+  protectedApprovalState = null,
+}) {
+  const ok = (key, label, detail = 'ok') => ({
+    key,
+    label,
+    state: 'success',
+    detail,
+  });
+  const wait = (key, label, detail) => ({
+    key,
+    label,
+    state: 'pending',
+    detail,
+  });
+  const fail = (key, label, detail) => ({
+    key,
+    label,
+    state: 'failure',
+    detail,
+  });
+
+  const ci = (() => {
+    if (CI_FAILED.includes(ciConclusion)) return fail('ci', 'CI', 'ci failed');
+    if (ciConclusion !== 'success')
+      return wait('ci', 'CI', `ci is ${ciConclusion ?? 'missing'}`);
+    if (securityJobConclusion === undefined) return ok('ci', 'CI');
+    if (securityJobConclusion === 'success') return ok('ci', 'CI');
+    if (CI_FAILED.includes(securityJobConclusion))
+      return fail('ci', 'CI', 'the security job failed');
+    return wait(
+      'ci',
+      'CI',
+      `the security job is ${securityJobConclusion ?? 'running'}`,
+    );
+  })();
+
+  const security = (() => {
+    const label = 'Gemini security review';
+    if (securityState === 'success') return ok('security', label, 'clean');
+    if (securityState === 'error')
+      return fail('security', label, 'the review failed to run');
+    if (securityState !== 'failure')
+      return wait('security', label, `review is ${securityState ?? 'missing'}`);
+    if (!securityFindings)
+      return wait(
+        'security',
+        label,
+        'findings are not recorded for this commit',
+      );
+    if (!securityFindings.complete)
+      return wait(
+        'security',
+        label,
+        'the findings list is incomplete: fix findings',
+      );
+    const open = securityFindings.ids.filter((id) => !dispositioned.has(id));
+    if (open.length)
+      return wait(
+        'security',
+        label,
+        `${open.length} of ${securityFindings.ids.length} finding(s) need a fix or a /disposition`,
+      );
+    return ok('security', label, 'all findings dispositioned');
+  })();
+
+  const threads =
+    unresolvedThreads > 0
+      ? wait(
+          'threads',
+          'Review threads',
+          `${unresolvedThreads} unresolved review thread(s)`,
+        )
+      : ok('threads', 'Review threads', 'none open');
+
+  const copilot = copilotReviewedHead
+    ? ok('copilot', 'Copilot review', 'reviewed this commit')
+    : wait('copilot', 'Copilot review', 'Copilot has not reviewed this commit');
+
+  // TODO(session 4): `pipeline/protected-approval` will exist then and be
+  // set on every head. Until it does, an absent status is fine; a status
+  // that exists must be success.
+  const protectedLabel = 'Protected-file approval';
+  const protectedApproval =
+    protectedApprovalState === null || protectedApprovalState === undefined
+      ? ok('protected-approval', protectedLabel, 'not required yet')
+      : protectedApprovalState === 'success'
+        ? ok('protected-approval', protectedLabel, 'approved')
+        : protectedApprovalState === 'pending'
+          ? wait('protected-approval', protectedLabel, 'approval is pending')
+          : fail(
+              'protected-approval',
+              protectedLabel,
+              `approval is ${protectedApprovalState}`,
+            );
+
+  const checks = [ci, security, threads, copilot, protectedApproval];
+  const failed = checks.find((c) => c.state === 'failure');
+  const missing = checks.find((c) => c.state !== 'success');
+  const blocker = failed ?? missing;
+  return {
+    state: failed ? 'failure' : missing ? 'pending' : 'success',
+    description: blocker
+      ? `${blocker.label}: ${blocker.detail}`
+      : 'CI, Gemini review, Copilot review and threads all satisfied',
+    blockedBy: blocker?.key ?? null,
+    checks,
+  };
+}
+
+const gateCell = (text, max = 120) =>
+  String(text ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/<!--/g, '&lt;!--')
+    .replace(/</g, '&lt;')
+    .replace(/\|/g, '\\|')
+    .replace(/@/g, '@​')
+    .trim()
+    .slice(0, max);
+
+const GATE_ICON = { success: '✅', pending: '⏳', failure: '❌' };
+
+/**
+ * The one upserted "Review gates" comment: every gate for the head, the
+ * findings still open (with the ids /disposition takes) and the
+ * dispositions on record. All text from findings and reasons is escaped.
+ */
+export function renderGatesComment({
+  head,
+  gates,
+  open = [],
+  dispositions = [],
+}) {
+  const lines = [
+    MARKERS.gates,
+    `### Review gates for \`${String(head).slice(0, 7)}\` ${GATE_ICON[gates.state]}`,
+    `The \`pipeline/gates\` commit status is **${gates.state}**: ${gateCell(gates.description, 200)}`,
+    '',
+    '| gate | state | detail |',
+    '| --- | --- | --- |',
+    ...gates.checks.map(
+      (c) => `| ${c.label} | ${GATE_ICON[c.state]} | ${gateCell(c.detail)} |`,
+    ),
+  ];
+  if (open.length) {
+    lines.push(
+      '',
+      '**Open findings.** Fix them, or the repo owner records a decision with one comment line per finding: `/disposition <id> <accepted-risk|false-positive|out-of-scope> <reason, 10+ characters>`.',
+      '',
+      '| id | source | where / what |',
+      '| --- | --- | --- |',
+      ...open.map((f) => `| \`${f.id}\` | ${f.source} | ${gateCell(f.text)} |`),
+    );
+  }
+  if (dispositions.length) {
+    lines.push(
+      '',
+      '**Dispositions.**',
+      '',
+      '| id | kind | by | reason |',
+      '| --- | --- | --- | --- |',
+      ...dispositions.map(
+        (d) =>
+          `| \`${d.id}\` | ${d.kind} | ${gateCell(d.by, 40)} | ${gateCell(d.reason, 100)} |`,
+      ),
+    );
+  }
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------- ci
@@ -853,7 +1459,11 @@ export function decideCiFailed({ pr, runHeadSha, botLogin, repo }) {
 
 /**
  * Gate for the Copilot review and the human-approval hand-off. All
- * deterministic: CI green, security review clean, zero unresolved threads.
+ * deterministic (see evaluateGates): CI green, the Gemini review clean or
+ * dispositioned, zero unresolved threads, Copilot reviewed the head.
+ * Whatever the action, `gates` is the value for the `pipeline/gates`
+ * status of this head (null when the PR is not open). A parked PR is left
+ * alone, but its status still says what holds.
  */
 export function evaluateApproval({
   prState,
@@ -861,38 +1471,52 @@ export function evaluateApproval({
   labels,
   headSha,
   ciConclusion,
+  securityJobConclusion,
   securityState,
+  securityFindings,
+  dispositioned,
   unresolvedThreads,
   copilotReviewedHead,
+  protectedApprovalState,
   state,
 }) {
-  if (prState !== 'open') return { action: 'noop', reason: 'PR is not open' };
+  if (prState !== 'open')
+    return { action: 'noop', reason: 'PR is not open', gates: null };
+  const gates = evaluateGates({
+    ciConclusion,
+    securityJobConclusion,
+    securityState,
+    securityFindings,
+    dispositioned,
+    unresolvedThreads,
+    copilotReviewedHead,
+    protectedApprovalState,
+  });
   const parked = parkedIn(labels);
-  if (parked) return { action: 'noop', reason: `PR is in ${parked}` };
-  if (ciConclusion !== 'success')
-    return { action: 'wait', reason: `ci is ${ciConclusion ?? 'missing'}` };
-  if (securityState !== 'success')
-    return {
-      action: 'wait',
-      reason: `security review is ${securityState ?? 'missing'}`,
-    };
-  if (unresolvedThreads > 0)
-    return {
-      action: 'wait',
-      reason: `${unresolvedThreads} unresolved review thread(s)`,
-    };
+  if (parked) return { action: 'noop', reason: `PR is in ${parked}`, gates };
+  // Copilot is asked to review only once everything before it holds.
+  const before = gates.checks
+    .filter((c) => ['ci', 'security', 'threads'].includes(c.key))
+    .find((c) => c.state !== 'success');
+  if (before) return { action: 'wait', reason: before.detail, gates };
   if (!copilotReviewedHead) {
     if (state.copilotRequestedFor === headSha)
-      return { action: 'wait', reason: 'waiting for Copilot review' };
-    return { action: 'request-copilot' };
+      return { action: 'wait', reason: 'waiting for Copilot review', gates };
+    return { action: 'request-copilot', gates };
   }
+  if (gates.state !== 'success')
+    return { action: 'wait', reason: gates.description, gates };
   if (
     state.humanApprovalFor === headSha &&
     labels.includes('stage:human-approval') &&
     !draft
   )
-    return { action: 'noop', reason: 'already handed to human approval' };
-  return { action: 'human-approval' };
+    return {
+      action: 'noop',
+      reason: 'already handed to human approval',
+      gates,
+    };
+  return { action: 'human-approval', gates };
 }
 
 // ---------------------------------------------------------------- done
@@ -2088,7 +2712,7 @@ export function classifyFix({
  * - appends: MARKERS keys of notes, comments or reviews it adds (history);
  * - emits: GitHub events it causes that can trigger workflows
  *   (`pull_request_review` = review posted or Copilot requested,
- *   `status` = commit status);
+ *   `status` = commit status, `issue_comment` = a disposition record note);
  * - loops: fix-loop labels it manages;
  * - args: effects taken from the command line, as positional index or flag
  *   (`stage`: stage label, `marker`: MARKERS key to upsert).
@@ -2148,7 +2772,7 @@ export const COMMAND_EFFECTS = {
     stages: ['stage:reviewing', 'stage:routing'],
     problems: ['stage:routing'],
     markers: [],
-    appends: ['actionable', 'outcome', 'securityReview'],
+    appends: ['actionable', 'finding', 'outcome', 'securityReview'],
     emits: ['pull_request_review', 'status'],
   },
   'ci-failed': {
@@ -2168,8 +2792,16 @@ export const COMMAND_EFFECTS = {
   approval: {
     stages: ['stage:human-approval', 'stage:routing'],
     problems: ['stage:routing'],
-    markers: ['humanApproval', 'state'],
+    markers: ['gates', 'humanApproval', 'state'],
     appends: ['outcome'],
     emits: ['pull_request_review'],
+  },
+  // The record note (an issue_comment by the App) is what approval.yml
+  // re-evaluates the gates on.
+  disposition: {
+    stages: [],
+    markers: [],
+    appends: ['disposition'],
+    emits: ['issue_comment'],
   },
 };

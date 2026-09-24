@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import {
   COPILOT_LOGINS,
   COPILOT_REVIEWER,
+  GATES_CONTEXT,
   MARKERS,
   STAGE_STATUS,
   allowedTargets,
@@ -13,7 +14,9 @@ import {
   branchName,
   buildSecurityReview,
   clearStages,
+  checkDispositionAuthor,
   checkPatch,
+  classifyThreads,
   classifyDevelop,
   classifyFix,
   classifyPlan,
@@ -21,12 +24,16 @@ import {
   decideCiFailed,
   decideFix,
   decideFixRetry,
+  dispositionKinds,
+  dispositionsInEffect,
   emptyState,
   evaluateApproval,
   isPipelinePr,
   issueForAgents,
   issueFromBranch,
   normalizeOutcome,
+  parseDispositionComment,
+  parseDispositionNotes,
   parseSecurityReport,
   parseState,
   planPrClosed,
@@ -34,6 +41,8 @@ import {
   prClosedOutcome,
   previewUrl,
   promptVersion,
+  renderDispositionNote,
+  renderGatesComment,
   renderOutcome,
   renderPlanComment,
   renderPrompt,
@@ -42,9 +51,12 @@ import {
   resetFixLoop,
   routerSkip,
   sameLogin,
+  securityIdsForHead,
+  securityOutcomeDetails,
   selectActionable,
   stageTransition,
   threadsToResolve,
+  validateDispositions,
 } from './pipeline-lib.mjs';
 import { decideExternal } from './router-external.mjs';
 import {
@@ -142,6 +154,38 @@ function writeOutcome(number, input) {
   setOutput('result', outcome.result);
   setOutput('problem', outcome.problem);
   return outcome;
+}
+
+// ------------------------------------------------------------ gates
+
+/**
+ * `vars.PIPELINE_OWNER_LOGIN`: the only person whose /disposition counts.
+ * Empty when unset, and then no disposition is valid.
+ */
+const ownerLogin = () => process.env.PIPELINE_OWNER_LOGIN ?? '';
+
+/** Dispositions the owner made on a PR: finding id -> kind. */
+function dispositionsOf(comments) {
+  return dispositionKinds({
+    records: parseDispositionNotes(comments, botLogin()),
+    ownerLogin: ownerLogin(),
+  });
+}
+
+/**
+ * Sets the `pipeline/gates` commit status on `sha` unless its latest value
+ * is already this one. `statuses` are the commit's statuses, newest first.
+ * approval.yml runs on the `pipeline/security` context only, so this
+ * status does not re-trigger it.
+ */
+function setGatesStatus(sha, { state, description }, statuses) {
+  const current = statuses.find((s) => s.context === GATES_CONTEXT);
+  const text = description.slice(0, 140);
+  if (current?.state === state && current.description === text) return;
+  api(`statuses/${sha}`, {
+    method: 'POST',
+    body: { state, context: GATES_CONTEXT, description: text },
+  });
 }
 
 const readIf = (path) => (path ? readFileSync(path, 'utf8') : '');
@@ -364,6 +408,10 @@ const commands = {
     const resolvedCommentIds = new Set(
       threads.filter((t) => t.isResolved).flatMap((t) => t.commentIds),
     );
+    // Findings the owner accepted are not fixed (see dispositionsInEffect).
+    const dispositioned = new Set(
+      dispositionsOf(list(`issues/${n}/comments`)).keys(),
+    );
     const { actionable, watermark } = selectActionable({
       reviews: list(`pulls/${n}/reviews`),
       reviewComments: list(`pulls/${n}/comments`),
@@ -371,6 +419,7 @@ const commands = {
       state,
       botLogin: bot,
       onlyKeys: retry ? new Set(state.lastBatch) : null,
+      dispositioned,
     });
     const decision = retry
       ? decideFixRetry({ labels, batch: actionable })
@@ -483,79 +532,128 @@ const commands = {
       process.exitCode = 1;
       return;
     }
+    // Findings the owner already decided on carry over by id: they open no
+    // new thread on this head.
+    const dispositioned = dispositionsOf(list(`issues/${n}/comments`));
     const review = buildSecurityReview({
       report,
       sha,
       files: list(`pulls/${n}/files`),
       promptVer,
+      dispositioned,
     });
-    const post = (comments) =>
+    const post = (body, comments) =>
       api(`pulls/${n}/reviews`, {
         method: 'POST',
-        body: { commit_id: sha, event: 'COMMENT', body: review.body, comments },
+        body: { commit_id: sha, event: 'COMMENT', body, comments },
       });
     try {
-      post(review.comments);
+      post(review.body, review.comments);
     } catch {
       // Line mapping rejected: fall back to one actionable body.
-      const extra = review.comments.map(
-        (c) => `- ${c.path}:${c.line}: ${c.body.replace(/\n\n/g, '\n  ')}`,
-      );
-      review.body = [
-        review.body,
-        MARKERS.actionable,
-        '#### Findings',
-        ...extra,
-      ].join('\n\n');
-      post([]);
+      post(review.fallbackBody, []);
     }
-    status(
-      review.clean ? 'success' : 'failure',
-      review.clean
-        ? 'No blocking findings'
-        : `${review.blockingCount} blocking finding(s)`,
-    );
+    const counts = review.clean
+      ? 'No blocking findings'
+      : `${review.blockingCount} blocking finding(s)${review.dispositionedCount ? `, ${review.dispositionedCount} dispositioned` : ''}`;
+    // The details list every blocking finding by id: approval and
+    // /disposition read them back (securityIdsForHead). Everything approval
+    // reads is written before the status, which is what triggers it.
     writeOutcome(n, {
       stage: 'security',
       result: 'success',
-      summary: `Security review of ${sha.slice(0, 7)}: ${review.clean ? 'clean' : `${review.blockingCount} blocking finding(s)`}.`,
+      summary: `Security review of ${sha.slice(0, 7)}: ${review.clean ? 'clean' : counts}.`,
+      details: securityOutcomeDetails({
+        sha,
+        findings: review.blockingFindings,
+      }),
       prompt_version: `security-review.md@${promptVer}`,
     });
     setStage(n, 'stage:reviewing');
+    status(review.clean ? 'success' : 'failure', counts);
     setOutput('clean', String(review.clean));
   },
 
   approval([pr]) {
     const n = num(pr);
+    const bot = botLogin();
     const p = api(`pulls/${n}`);
     const head = p.head.sha;
     const labels = labelsOf(n);
-    const runs = api(
-      `commits/${head}/check-runs?check_name=ci&per_page=100`,
-    ).check_runs;
-    const ci = runs.sort((a, b) => b.id - a.id)[0]?.conclusion ?? null;
-    const sec = api(`commits/${head}/statuses?per_page=100`).find(
-      (s) => s.context === 'pipeline/security',
-    )?.state;
-    const unresolved = reviewThreads(n).filter((t) => !t.isResolved).length;
+    // Latest conclusion of a check run: undefined when there is none, null
+    // while it runs.
+    const conclusionOf = (name) => {
+      const runs = api(
+        `commits/${head}/check-runs?check_name=${name}&per_page=100`,
+      ).check_runs.sort((a, b) => b.id - a.id);
+      return runs.length ? runs[0].conclusion : undefined;
+    };
+    const statuses = api(`commits/${head}/statuses?per_page=100`);
+    const stateOf = (context) =>
+      statuses.find((s) => s.context === context)?.state;
+    const comments = list(`issues/${n}/comments`);
+    const threads = reviewThreads(n);
     const copilotReviewedHead = list(`pulls/${n}/reviews`).some(
       (r) => COPILOT_LOGINS.includes(r.user?.login) && r.commit_id === head,
     );
     const state = readState(n);
+    const records = parseDispositionNotes(comments, bot);
+    const kinds = dispositionKinds({ records, ownerLogin: ownerLogin() });
+    const securityFindings = securityIdsForHead({
+      comments,
+      botLogin: bot,
+      sha: head,
+    });
     const decision = evaluateApproval({
       prState: p.state,
       draft: p.draft,
       labels,
       headSha: head,
-      ciConclusion: ci,
-      securityState: sec,
-      unresolvedThreads: unresolved,
+      ciConclusion: conclusionOf('ci') ?? null,
+      securityJobConclusion: conclusionOf('security'),
+      securityState: stateOf('pipeline/security'),
+      securityFindings,
+      dispositioned: new Set(kinds.keys()),
+      unresolvedThreads: threads.filter((t) => !t.isResolved).length,
       copilotReviewedHead,
+      protectedApprovalState: stateOf('pipeline/protected-approval') ?? null,
       state,
     });
     console.log(
       `approval: ${decision.action}${decision.reason ? ` (${decision.reason})` : ''}`,
     );
+
+    if (decision.gates) {
+      console.log(
+        `gates: ${decision.gates.state} (${decision.gates.description})`,
+      );
+      setGatesStatus(head, decision.gates, statuses);
+      const open = [
+        ...(securityFindings?.findings ?? [])
+          .filter((f) => !kinds.has(f.id))
+          .map((f) => ({ id: f.id, source: 'Gemini', text: f.text })),
+        ...classifyThreads(threads, bot)
+          .filter((t) => t.source === 'copilot' && !t.thread.isResolved)
+          .map((t) => ({
+            id: t.id,
+            source: 'Copilot',
+            text: `${t.thread.path ?? ''}${t.thread.line ? `:${t.thread.line}` : ''} ${t.thread.first?.body ?? ''}`,
+          })),
+      ];
+      const body = renderGatesComment({
+        head,
+        gates: decision.gates,
+        open,
+        dispositions: [...kinds].map(([id, kind]) => ({
+          id,
+          kind,
+          ...records.findLast((r) => r.id === id),
+        })),
+      });
+      // Editing a comment triggers nothing; skip the write when unchanged.
+      if (findBotComment(n, MARKERS.gates)?.body !== body)
+        upsertBotComment(n, MARKERS.gates, body);
+    }
 
     if (decision.action === 'request-copilot') {
       const saved = process.env.GH_TOKEN;
@@ -611,13 +709,113 @@ const commands = {
         MARKERS.humanApproval,
         [
           `### Ready for human approval`,
-          `CI is green, the security review is clean, Copilot has reviewed \`${head.slice(0, 7)}\` and all threads are resolved.`,
+          `CI is green, the Gemini security review is clean or every finding is dispositioned, Copilot has reviewed \`${head.slice(0, 7)}\`, all threads are resolved and \`${GATES_CONTEXT}\` is green.`,
           `**Preview:** ${url}`,
           `Code owners have been requested for review. Merging is a human decision; no agent can merge.`,
         ].join('\n\n'),
       );
       writeState(n, { ...state, humanApprovalFor: head });
     }
+  },
+
+  // A new head has no `pipeline/gates` status, which blocks the merge. This
+  // gives it a pending one right away so the PR says why it is waiting.
+  // approval.yml (workflow_run on CI `requested`); never overwrites.
+  'gates-pending'([pr, sha]) {
+    const n = num(pr);
+    const p = api(`pulls/${n}`);
+    if (
+      p.state !== 'open' ||
+      p.head.sha !== sha ||
+      p.head.repo?.full_name !== `${OWNER}/${NAME}`
+    ) {
+      console.log(
+        `gates-pending: skipped (PR #${n} is closed, moved or a fork)`,
+      );
+      return;
+    }
+    const statuses = api(`commits/${sha}/statuses?per_page=100`);
+    if (statuses.some((s) => s.context === GATES_CONTEXT)) return;
+    setGatesStatus(
+      sha,
+      {
+        state: 'pending',
+        description: 'Waiting for CI, the Gemini review and the Copilot review',
+      },
+      statuses,
+    );
+  },
+
+  // /disposition <finding-id> <kind> <reason> from the pipeline owner
+  // (disposition.yml, issue_comment created). The comment arrives through
+  // the environment, as data: COMMENT_BODY, COMMENT_USER, COMMENT_USER_TYPE.
+  // Invalid commands get one short reply. Valid ones resolve the findings'
+  // review threads first and then append one record note each; the notes
+  // trigger approval.yml, which re-evaluates the gates.
+  disposition([pr, commentId]) {
+    const n = num(pr);
+    const owner = ownerLogin();
+    if (!owner) throw new Error('PIPELINE_OWNER_LOGIN is not set');
+    const author = checkDispositionAuthor({
+      login: process.env.COMMENT_USER,
+      type: process.env.COMMENT_USER_TYPE,
+      ownerLogin: owner,
+    });
+    if (!author.ok) {
+      console.log(`disposition: ignored (${author.reason})`);
+      return;
+    }
+    const parsed = parseDispositionComment(process.env.COMMENT_BODY);
+    if (parsed.ignore) {
+      console.log('disposition: not a command');
+      return;
+    }
+    const reject = (why) => {
+      console.log(`disposition: rejected (${why})`);
+      postComment(n, `Not recorded: ${why}.`);
+    };
+    if (!parsed.ok) return reject(parsed.error);
+    const p = api(`pulls/${n}`);
+    if (p.state !== 'open' || p.head.repo?.full_name !== `${OWNER}/${NAME}`)
+      return reject('the pull request is closed or from a fork');
+    const bot = botLogin();
+    const head = p.head.sha;
+    const security = securityIdsForHead({
+      comments: list(`issues/${n}/comments`),
+      botLogin: bot,
+      sha: head,
+    });
+    const threads = classifyThreads(reviewThreads(n), bot);
+    const checked = validateDispositions({
+      commands: parsed.commands,
+      geminiIds: new Set(security?.ids),
+      copilotIds: new Set(
+        threads
+          .filter((t) => t.source === 'copilot' && !t.thread.isResolved)
+          .map((t) => t.id),
+      ),
+    });
+    if (!checked.ok) return reject(checked.error);
+
+    // Resolve first: the record notes are what re-run the gates.
+    for (const { id } of parsed.commands)
+      for (const t of threads.filter(
+        (t) => t.id === id && !t.thread.isResolved,
+      ))
+        resolveThread(t.thread.id);
+    for (const c of parsed.commands)
+      postComment(
+        n,
+        renderDispositionNote({
+          ...c,
+          head,
+          by: process.env.COMMENT_USER,
+          commentId: num(commentId),
+        }),
+      );
+    console.log(
+      `disposition: recorded ${parsed.commands.map((c) => c.id).join(', ')} at ${head.slice(0, 7)}`,
+    );
   },
 
   // CI failed on a PR (security.yml, workflow_run). Pipeline PRs only:
