@@ -69,6 +69,9 @@ export const MARKERS = {
   gates: '<!-- pipeline:gates -->',
   // A pipeline-authored review body that the fixer must act on.
   actionable: '<!-- pipeline:actionable -->',
+  // The one-time pointer to /restart after a person moved an item out of
+  // stage:needs-attention by hand (see decideRestartHint).
+  restartHint: '<!-- pipeline:restart-hint -->',
 };
 
 export const COPILOT_REVIEWER = 'copilot-pull-request-reviewer[bot]';
@@ -568,6 +571,13 @@ export function branchPushTriggers(on, branch) {
 
 const STATE_DATA = /<!-- pipeline-state-data\n([\s\S]*?)\n-->/;
 
+/**
+ * Restarts one issue may ever get (see decideRestart). A lifetime limit: the
+ * counter is never decremented or cleared, so after this many the item is
+ * parked for good.
+ */
+export const MAX_LIFETIME_RESETS = 3;
+
 export function emptyState() {
   return {
     watermark: null,
@@ -577,20 +587,60 @@ export function emptyState() {
     lastBatch: [],
     copilotRequestedFor: null,
     humanApprovalFor: null,
+    // Lifetime /restart counter of an ISSUE, written only by the bot's
+    // restart command and never decremented or cleared. `attempts` lists
+    // every accepted restart: { id, at, by, reason, stage }.
+    resetCount: 0,
+    attempts: [],
   };
 }
 
+const RESTART_ATTEMPT_KEYS = ['id', 'at', 'by', 'reason', 'stage'];
+
+/** The valid attempt records of a parsed state (bad entries are dropped). */
+const sanitizeAttempts = (value) =>
+  (Array.isArray(value) ? value : [])
+    .filter(
+      (a) =>
+        a &&
+        typeof a === 'object' &&
+        RESTART_ATTEMPT_KEYS.every((k) => typeof a[k] === 'string' && a[k]),
+    )
+    .map((a) => Object.fromEntries(RESTART_ATTEMPT_KEYS.map((k) => [k, a[k]])));
+
+/**
+ * Parses the state comment. Old state has no restart fields, and bad values
+ * fall back to 0 / []. The counter is never below the number of recorded
+ * attempts, so a damaged `resetCount` cannot hand out free restarts.
+ */
 export function parseState(body) {
   const m = STATE_DATA.exec(String(body ?? ''));
   if (!m) return emptyState();
   try {
-    return { ...emptyState(), ...JSON.parse(m[1]) };
+    const raw = JSON.parse(m[1]);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+      return emptyState();
+    const attempts = sanitizeAttempts(raw.attempts);
+    const count =
+      Number.isSafeInteger(raw.resetCount) && raw.resetCount > 0
+        ? raw.resetCount
+        : 0;
+    return {
+      ...emptyState(),
+      ...raw,
+      resetCount: Math.max(count, attempts.length),
+      attempts,
+    };
   } catch {
     return emptyState();
   }
 }
 
-export function renderState(state, labels = []) {
+/**
+ * `requireCopilot: false` shows "not required" for the Copilot cell (the
+ * gate is off, REQUIRE_COPILOT); leave it out to show the requested sha.
+ */
+export function renderState(state, labels = [], { requireCopilot } = {}) {
   const stage = labels.find((l) => l.startsWith('stage:')) ?? '-';
   const loop = labels.find((l) => l.startsWith('fix-loop:')) ?? '-';
   return [
@@ -599,9 +649,13 @@ export function renderState(state, labels = []) {
     '',
     `| stage | fix loop | review items handled | Copilot requested for | human approval for |`,
     `| --- | --- | --- | --- | --- |`,
-    `| \`${stage}\` | \`${loop}\` | ${state.handled.length} | ${short(state.copilotRequestedFor)} | ${short(state.humanApprovalFor)} |`,
+    `| \`${stage}\` | \`${loop}\` | ${state.handled.length} | ${requireCopilot === false ? 'not required' : short(state.copilotRequestedFor)} | ${short(state.humanApprovalFor)} |`,
     '',
-    `<!-- pipeline-state-data\n${JSON.stringify(state)}\n-->`,
+    `lifetime resets: ${state.resetCount ?? 0}/${MAX_LIFETIME_RESETS} · latest attempt: ${state.attempts?.length ? `\`${state.attempts.at(-1).id}\`` : '-'}`,
+    '',
+    // `<`/`>` only occur inside JSON strings: escaped, so text such as a
+    // restart reason can neither end the HTML comment nor start a marker.
+    `<!-- pipeline-state-data\n${JSON.stringify(state).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}\n-->`,
   ].join('\n');
 }
 
@@ -863,8 +917,9 @@ export const applyLabels = (labels, { add = [], remove = [] }) => [
  * The fix-loop state machine. No new feedback -> noop (idempotent reruns).
  * none -> fix-loop:1 -> fix-loop:2 -> escalate (an outcome note with
  * `budget_exhausted`; the router hands it to a human). `add`/`remove` are
- * the complete label edits. Escalating clears the fix-loop labels, so a
- * human restart (removing stage:needs-attention) gets a fresh budget.
+ * the complete label edits. Escalating keeps `fix-loop:2`: moving the PR
+ * out of stage:needs-attention by hand must not give it a fresh budget.
+ * Only the owner's `/restart fixing` (resetFixLoop) clears the labels.
  */
 export function decideFix({ labels, actionable }) {
   const parked = parkedIn(labels);
@@ -876,7 +931,7 @@ export function decideFix({ labels, actionable }) {
       action: 'escalate',
       reason: 'fix loop budget (2) exhausted',
       add: [],
-      remove: FIX_LOOPS.filter((l) => labels.includes(l)),
+      remove: [],
     };
   const loop = labels.includes(FIX_LOOP_1) ? 2 : 1;
   const t = stageTransition(labels, 'stage:fixing');
@@ -1884,7 +1939,7 @@ export function renderApprovedPrBody({
         (p) => `- \`${neutraliseMarkers(p).replace(/`/g, '')}\``,
       ),
     ].join('\n'),
-    `<sub>Implemented by Claude with prompt ${promptVer}. Draft until CI, the security review and Copilot are clean. Only a human can approve and merge.</sub>`,
+    `<sub>Implemented by Claude with prompt ${promptVer}. Draft until the review gates pass. Only a human can approve and merge.</sub>`,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -1900,7 +1955,8 @@ const CI_FAILED = ['failure', 'timed_out'];
 /**
  * The review gates for one head commit, in order: ci, Gemini security
  * review (clean, or every finding fixed away or dispositioned), review
- * threads, Copilot review, protected-file approval. Returns the checks
+ * threads, Copilot review (only when `requireCopilot`), protected-file
+ * approval. Returns the checks
  * and the value for the `pipeline/gates` commit status:
  * - `success`: every check holds;
  * - `failure`: a real blocker (ci failed, the reviewer errored, a required
@@ -1911,7 +1967,9 @@ const CI_FAILED = ['failure', 'timed_out'];
  * `dispositioned` is dispositionsInEffect; `securityJobConclusion` is the
  * `security` CI job's check run (undefined: no such run);
  * `protectedRequired` / `protectedApprovalState` come from
- * evaluateProtectedApproval (`required`, `state`).
+ * evaluateProtectedApproval (`required`, `state`). `requireCopilot`
+ * (parseRequireCopilot, the REQUIRE_COPILOT variable) turns the Copilot
+ * gate on; off, that check is a success saying so, whatever Copilot did.
  */
 export function evaluateGates({
   ciConclusion,
@@ -1921,6 +1979,7 @@ export function evaluateGates({
   dispositioned = new Set(),
   unresolvedThreads = 0,
   copilotReviewedHead = false,
+  requireCopilot = false,
   protectedRequired = false,
   protectedApprovalState = null,
 }) {
@@ -1996,9 +2055,15 @@ export function evaluateGates({
         )
       : ok('threads', 'Review threads', 'none open');
 
-  const copilot = copilotReviewedHead
-    ? ok('copilot', 'Copilot review', 'reviewed this commit')
-    : wait('copilot', 'Copilot review', 'Copilot has not reviewed this commit');
+  const copilot = !requireCopilot
+    ? ok('copilot', 'Copilot review', 'not required (REQUIRE_COPILOT off)')
+    : copilotReviewedHead
+      ? ok('copilot', 'Copilot review', 'reviewed this commit')
+      : wait(
+          'copilot',
+          'Copilot review',
+          'Copilot has not reviewed this commit',
+        );
 
   // `pipeline/protected-approval` (evaluateProtectedApproval): needed only
   // when the PR touches protected paths; then it must be success.
@@ -2030,7 +2095,14 @@ export function evaluateGates({
     state: failed ? 'failure' : missing ? 'pending' : 'success',
     description: blocker
       ? `${blocker.label}: ${blocker.detail}`
-      : 'CI, Gemini review, Copilot review and threads all satisfied',
+      : `${[
+          'CI',
+          'Gemini review',
+          ...(requireCopilot ? ['Copilot review'] : []),
+          'threads',
+        ]
+          .join(', ')
+          .replace(/, ([^,]*)$/, ' and $1')} all satisfied`,
     blockedBy: blocker?.key ?? null,
     checks,
   };
@@ -2123,10 +2195,20 @@ export function decideCiFailed({ pr, runHeadSha, botLogin, repo }) {
 // ---------------------------------------------------------------- approval
 
 /**
- * Gate for the Copilot review and the human-approval hand-off. All
- * deterministic (see evaluateGates): CI green, the Gemini review clean or
- * dispositioned, zero unresolved threads, Copilot reviewed the head.
- * Whatever the action, `gates` is the value for the `pipeline/gates`
+ * Whether the Copilot gate is on: the REQUIRE_COPILOT repo variable is
+ * exactly the string `true`. Unset, empty, `false`, `TRUE`, `1` and
+ * anything else are off, so a typo can never make the gate wait forever
+ * for a review that nobody licensed.
+ */
+export const parseRequireCopilot = (value) => value === 'true';
+
+/**
+ * Gate for the Copilot review (only when `requireCopilot`) and the
+ * human-approval hand-off. All deterministic (see evaluateGates): CI
+ * green, the Gemini review clean or dispositioned, zero unresolved
+ * threads and, with the Copilot gate on, Copilot reviewed the head. With
+ * it off, no Copilot review is requested and the PR goes straight to
+ * human approval once the other gates hold. Whatever the action, `gates` is the value for the `pipeline/gates`
  * status of this head (null when the PR is not open). A parked PR is left
  * alone, but its status still says what holds.
  */
@@ -2142,6 +2224,7 @@ export function evaluateApproval({
   dispositioned,
   unresolvedThreads,
   copilotReviewedHead,
+  requireCopilot = false,
   protectedRequired,
   protectedApprovalState,
   state,
@@ -2156,6 +2239,7 @@ export function evaluateApproval({
     dispositioned,
     unresolvedThreads,
     copilotReviewedHead,
+    requireCopilot,
     protectedRequired,
     protectedApprovalState,
   });
@@ -2166,7 +2250,7 @@ export function evaluateApproval({
     .filter((c) => ['ci', 'security', 'threads'].includes(c.key))
     .find((c) => c.state !== 'success');
   if (before) return { action: 'wait', reason: before.detail, gates };
-  if (!copilotReviewedHead) {
+  if (requireCopilot && !copilotReviewedHead) {
     if (state.copilotRequestedFor === headSha)
       return { action: 'wait', reason: 'waiting for Copilot review', gates };
     return { action: 'request-copilot', gates };
@@ -2688,13 +2772,24 @@ export function decideByRules({ outcome }) {
 }
 
 /**
- * Route notes that count against the caps: those after the latest route to
- * a human. Only a person moves an item out of stage:needs-attention, so a
- * human restart opens a fresh budget.
+ * The route notes that count against the caps: the routes to replan,
+ * redevelop or retry that come AFTER the latest `restart` note (see
+ * parseRestartNote; `routes` is oldest first and may hold restart entries,
+ * `{ target: 'restart' }`). With no restart on record, every route counts.
+ *
+ * Only a restart opens a window. A route to a human never does, and a
+ * human note is not itself a round, so it is not counted either. Nothing a
+ * person does to the labels (removing stage:needs-attention, re-adding a
+ * stage) writes a note, so it cannot open one: the item continues with the
+ * budget it already used and its next problem goes straight back to a
+ * human. Restarts come only from the owner's /restart command
+ * (decideRestart), at most MAX_LIFETIME_RESETS per issue.
  */
 export function routeWindow(routes = []) {
-  const last = routes.findLastIndex((r) => r.target === 'human');
-  return routes.slice(last + 1);
+  const lastRestart = routes.findLastIndex((r) => r.target === 'restart');
+  return routes
+    .slice(lastRestart + 1)
+    .filter((r) => r.target !== 'restart' && r.target !== 'human');
 }
 
 /**
@@ -2855,6 +2950,13 @@ export function collectRouterInput({ comments = [], botLogin }) {
       latest = parsed;
       latestIndex = i;
     } else if (body.startsWith(MARKERS.route)) {
+      // A restart note only moves the budget window; it is not a route, so
+      // it does not make an older outcome look already routed.
+      const restart = parseRestartNote(body);
+      if (restart.ok) {
+        history.routes.push(restart.route);
+        return;
+      }
       const parsed = parseRoute(body);
       if (parsed.ok) {
         history.routes.push(parsed.route);
@@ -2924,7 +3026,7 @@ export function renderRoute({ final, outcome, history = {}, mode, external }) {
       lines.push('', '#### Open questions', ...open.map((q) => `- ${q}`));
     lines.push(
       '',
-      'Answer or fix the cause, then restart the stage (see docs/pipeline.md, "When it stops at stage:needs-attention"). A restart opens a fresh loop budget.',
+      `Answer or fix the cause, then the repo owner restarts it with \`/restart <qualified|planned|fixing> <reason>\` on the issue (docs/pipeline.md, "When it stops at stage:needs-attention"). Only /restart opens a fresh loop budget, and an issue gets ${MAX_LIFETIME_RESETS} restarts in its lifetime.`,
     );
   } else {
     lines.push(
@@ -2988,6 +3090,244 @@ export function planRoute({
       external: chosen.external,
     }),
   };
+}
+
+// ---------------------------------------------------------------- restart
+
+/** `/restart <stage>` -> the stage label it sets. `fixing` acts on the PR. */
+export const RESTART_STAGES = Object.freeze({
+  qualified: 'stage:qualified',
+  planned: 'stage:planned',
+  fixing: 'stage:fixing',
+});
+export const RESTART_MIN_REASON = 10;
+export const RESTART_MAX_REASON = 300;
+
+const RESTART_USAGE =
+  'expected `/restart <qualified|planned|fixing> <reason, 10+ characters>`';
+
+/**
+ * Parses a comment as the /restart command. The whole body must be exactly
+ *   /restart <qualified|planned|fixing> <reason, 10+ characters>
+ * on one line. A comment that does not start with /restart is
+ * `{ ok: false, ignore: true }` (ordinary discussion). The body is data:
+ * nothing from it is executed, and error texts never repeat it.
+ */
+export function parseRestartComment(body) {
+  const text = String(body ?? '')
+    .replace(/\r\n?/g, '\n')
+    .trim();
+  if (!/^\/restart(?:\s|$)/.test(text)) return { ok: false, ignore: true };
+  const m = /^\/restart[ \t]+(\S+)[ \t]+(\S[^\n]*)$/.exec(text);
+  if (!m) return { ok: false, error: RESTART_USAGE };
+  const [, stage, reason] = m;
+  if (!Object.hasOwn(RESTART_STAGES, stage))
+    return {
+      ok: false,
+      error: `the stage must be one of ${Object.keys(RESTART_STAGES).join(', ')}`,
+    };
+  const trimmed = reason.trimEnd();
+  if ([...trimmed].length < RESTART_MIN_REASON)
+    return {
+      ok: false,
+      error: `the reason must be at least ${RESTART_MIN_REASON} characters`,
+    };
+  if (trimmed.length > RESTART_MAX_REASON)
+    return {
+      ok: false,
+      error: `the reason must be at most ${RESTART_MAX_REASON} characters`,
+    };
+  return { ok: true, stage, reason: trimmed };
+}
+
+/**
+ * The route note the bot appends for an accepted restart, on the item whose
+ * loop restarts (the issue, or the PR for `fixing`). collectRouterInput
+ * reads it back: routeWindow counts route notes only after the latest one.
+ */
+export function renderRestartNote({ attempt, count }) {
+  return [
+    `${MARKERS.route} restart attempt=${attempt.id} count=${count}/${MAX_LIFETIME_RESETS} -->`,
+    `**Restarted at \`${RESTART_STAGES[attempt.stage]}\` by ${clean(attempt.by, 60)} (lifetime restart ${count}/${MAX_LIFETIME_RESETS}).** The loop budget of this item starts again here.`,
+    '',
+    'Reason:',
+    '',
+    '```text',
+    clean(attempt.reason, RESTART_MAX_REASON).replace(/`/g, "'"),
+    '```',
+  ].join('\n');
+}
+
+/** Strictly parses a restart route note (see renderRestartNote). */
+export function parseRestartNote(body) {
+  const m =
+    /^<!-- pipeline:route restart attempt=(a[1-9]\d*-[1-9]\d*) count=([1-9]\d*)\/([1-9]\d*) -->(?:\n|$)/.exec(
+      String(body ?? ''),
+    );
+  if (!m) return { ok: false, error: 'not a restart note' };
+  return {
+    ok: true,
+    route: { target: 'restart', attempt: m[1], count: Number(m[2]) },
+  };
+}
+
+/**
+ * What to do with a comment on an issue that might be a /restart command.
+ * Pure. Returns `{ action }`:
+ * - `ignore`: not for us (no owner configured, not a command, a bot);
+ * - `reply` + `reason`: a command that cannot be honoured; nothing changes.
+ *   With `limit: true` the reason is the whole reply text;
+ * - `restart` + `stage`, `attempt`, `state` (the issue's next state), `note`
+ *   (the route note to append) and `target` `{ kind, number, edit }`: the
+ *   item whose label edit applies (the issue, or for `fixing` its linked
+ *   open PR, whose fix-loop labels are cleared by resetFixLoop).
+ * Checks, in order: commenter (the owner, a User), one exact command, the
+ * comment was not edited, an open issue, the item to restart is in
+ * stage:needs-attention (the issue; for `fixing` the linked PR) and finally
+ * the lifetime limit (`state.resetCount` < MAX_LIFETIME_RESETS).
+ *
+ * `comment` is `{ id, body, login, type, createdAt }`; `issue` is `{ number,
+ * state, isPullRequest, labels }`; `state` the issue's parsed state;
+ * `pullRequests` the open pipeline PRs on this issue's branch, `{ number,
+ * labels }` each.
+ */
+export function decideRestart({
+  comment,
+  ownerLogin,
+  edited = false,
+  issue,
+  state = emptyState(),
+  pullRequests = [],
+}) {
+  const reply = (reason) => ({ action: 'reply', reason });
+  if (!ownerLogin) return { action: 'ignore', reason: 'no owner configured' };
+  const parsed = parseRestartComment(comment?.body);
+  if (parsed.ignore)
+    return { action: 'ignore', reason: 'not a restart command' };
+  const author = checkDispositionAuthor({
+    login: comment?.login,
+    type: comment?.type,
+    ownerLogin,
+  });
+  if (!author.ok) {
+    return comment?.type === 'User'
+      ? reply(author.reason)
+      : { action: 'ignore', reason: author.reason };
+  }
+  if (!parsed.ok) return reply(parsed.error);
+  if (edited)
+    return reply('the comment was edited after it was posted; post it again');
+  if (issue?.isPullRequest)
+    return reply('this is a pull request: comment on its issue instead');
+  if (issue?.state !== 'open') return reply('the issue is closed');
+
+  const { stage, reason } = parsed;
+  const parked = 'stage:needs-attention';
+  let target;
+  if (stage === 'fixing') {
+    if (pullRequests.length === 0)
+      return reply('the issue has no open pull request to restart');
+    if (pullRequests.length > 1)
+      return reply('the issue has more than one open pull request');
+    const [pr] = pullRequests;
+    if (!pr.labels?.includes(parked))
+      return reply(`pull request #${pr.number} is not in ${parked}`);
+    target = {
+      kind: 'pr',
+      number: pr.number,
+      edit: resetFixLoop(pr.labels, RESTART_STAGES.fixing),
+    };
+  } else {
+    if (!issue.labels?.includes(parked))
+      return reply(`the issue is not in ${parked}`);
+    if (pullRequests.length)
+      return reply(
+        `pull request #${pullRequests[0].number} is still open for this issue: restart it with \`/restart fixing <reason>\` or close it first`,
+      );
+    target = {
+      kind: 'issue',
+      number: issue.number,
+      edit: stageTransition(issue.labels, RESTART_STAGES[stage]),
+    };
+  }
+  if (state.resetCount >= MAX_LIFETIME_RESETS)
+    return {
+      action: 'reply',
+      limit: true,
+      reason: `Lifetime restart limit (${MAX_LIFETIME_RESETS}) reached; close the issue or fix it in a local session.`,
+    };
+
+  const count = state.resetCount + 1;
+  const attempt = {
+    id: `a${count}-${comment.id}`,
+    at: String(comment.createdAt ?? ''),
+    by: String(comment.login),
+    reason,
+    stage,
+  };
+  return {
+    action: 'restart',
+    stage,
+    attempt,
+    count,
+    state: {
+      ...state,
+      resetCount: count,
+      attempts: [...state.attempts, attempt],
+    },
+    target,
+    note: renderRestartNote({ attempt, count }),
+  };
+}
+
+/**
+ * Whether the bot should point a person to /restart after they moved an
+ * item out of stage:needs-attention by hand (`{ post }`; the text is
+ * renderRestartHint). Pure.
+ * `action` is the label event: `unlabeled` of stage:needs-attention, or
+ * `labeled` with another stage label while the item still carries
+ * stage:needs-attention. `labels` are the item's labels now; `comments` its
+ * comments, oldest first. One note per parking: none if the bot already
+ * posted one after its latest route to a human.
+ */
+export function decideRestartHint({
+  action,
+  label,
+  labels = [],
+  comments = [],
+  botLogin,
+}) {
+  const parked = 'stage:needs-attention';
+  const movedOut =
+    action === 'unlabeled'
+      ? label === parked && !labels.includes(parked)
+      : action === 'labeled'
+        ? STAGES.includes(label) &&
+          ![parked, 'stage:routing', 'stage:done'].includes(label) &&
+          labels.includes(parked)
+        : false;
+  if (!movedOut)
+    return { post: false, reason: 'not a hand move out of a park' };
+  const notes = comments.filter((c) => sameLogin(c.user?.login, botLogin));
+  const lastHuman = notes.findLastIndex(
+    (c) =>
+      String(c.body ?? '').startsWith(MARKERS.route) &&
+      /^<!-- pipeline:route [^\n]*\btarget=human\b/.test(c.body),
+  );
+  const lastHint = notes.findLastIndex((c) =>
+    String(c.body ?? '').startsWith(MARKERS.restartHint),
+  );
+  if (lastHint > lastHuman)
+    return { post: false, reason: 'already pointed to /restart' };
+  return { post: true };
+}
+
+export function renderRestartHint() {
+  return [
+    MARKERS.restartHint,
+    `\`stage:needs-attention\` was changed by hand. That does **not** open a fresh loop budget: this item keeps the budget it already used, so its next problem goes straight back to a human.`,
+    `To restart it on purpose, the repo owner comments on the issue: \`/restart <qualified|planned|fixing> <reason, 10+ characters>\`. An issue gets ${MAX_LIFETIME_RESETS} restarts in its lifetime.`,
+  ].join('\n\n');
 }
 
 // ---------------------------------------------------------------- classify
@@ -3558,6 +3898,23 @@ export const COMMAND_EFFECTS = {
     markers: ['state'],
     appends: ['outcome', 'protectedApproved'],
     emits: ['issue_comment', 'pull_request'],
+  },
+  // The owner's /restart: the issue's lifetime counter (state comment), a
+  // restart route note and the target's stage label (an issue's stage, or
+  // for `fixing` the linked PR's, with its fix-loop labels cleared).
+  restart: {
+    stages: Object.values(RESTART_STAGES).sort(),
+    markers: ['state'],
+    appends: ['route'],
+    emits: [],
+  },
+  // A person moved an item out of stage:needs-attention by hand: one pointer
+  // to /restart.
+  'restart-hint': {
+    stages: [],
+    markers: [],
+    appends: ['restartHint'],
+    emits: [],
   },
   // A new head with protected changes: a new approval request on the issue.
   'protected-status': {

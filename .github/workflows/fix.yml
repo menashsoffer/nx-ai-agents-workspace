@@ -93,8 +93,11 @@ jobs:
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
           # Findings the owner dispositioned are not fixed.
           PIPELINE_OWNER_LOGIN: ${{ vars.PIPELINE_OWNER_LOGIN }}
+          # Only shapes the state table.
+          REQUIRE_COPILOT: ${{ vars.REQUIRE_COPILOT }}
           MODE: ${{ inputs.retry && 'retry' || 'normal' }}
-        run: node .github/scripts/pipeline.mjs fix-adapter "${{ steps.pr.outputs.pr }}" "$RUNNER_TEMP/items.json" "$MODE"
+          PR: ${{ steps.pr.outputs.pr }}
+        run: node .github/scripts/pipeline.mjs fix-adapter "$PR" "$RUNNER_TEMP/items.json" "$MODE"
 
       - if: ${{ steps.adapter.outputs.action == 'fix' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

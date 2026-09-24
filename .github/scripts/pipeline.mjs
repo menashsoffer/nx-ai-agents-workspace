@@ -7,6 +7,7 @@ import {
   COPILOT_REVIEWER,
   GATES_CONTEXT,
   MARKERS,
+  MAX_LIFETIME_RESETS,
   PROTECTED_CONTEXT,
   STAGE_STATUS,
   allowedTargets,
@@ -27,6 +28,8 @@ import {
   decideFix,
   decideFixRetry,
   decideProtectedCommand,
+  decideRestart,
+  decideRestartHint,
   dispositionKinds,
   dispositionsInEffect,
   emptyState,
@@ -42,6 +45,7 @@ import {
   parseDispositionComment,
   parseDispositionNotes,
   parseProtectedApprovedNotes,
+  parseRequireCopilot,
   parseSecurityReport,
   parseState,
   planPrClosed,
@@ -57,6 +61,7 @@ import {
   renderPlanComment,
   renderProtectedApprovedNote,
   renderProtectedRequest,
+  renderRestartHint,
   renderPrompt,
   renderSpecComment,
   renderState,
@@ -132,8 +137,15 @@ function readState(pr) {
   return c ? parseState(c.body) : emptyState();
 }
 
+/** `vars.REQUIRE_COPILOT`: only the exact string `true` turns the gate on. */
+const requireCopilot = () => parseRequireCopilot(process.env.REQUIRE_COPILOT);
+
 function writeState(pr, state, labels = labelsOf(pr)) {
-  upsertBotComment(pr, MARKERS.state, renderState(state, labels));
+  upsertBotComment(
+    pr,
+    MARKERS.state,
+    renderState(state, labels, { requireCopilot: requireCopilot() }),
+  );
 }
 
 function setStage(number, stage) {
@@ -700,6 +712,7 @@ const commands = {
       dispositioned: new Set(kinds.keys()),
       unresolvedThreads: threads.filter((t) => !t.isResolved).length,
       copilotReviewedHead,
+      requireCopilot: requireCopilot(),
       protectedRequired: protectedEval.required,
       protectedApprovalState: protectedEval.state,
       state,
@@ -794,7 +807,7 @@ const commands = {
         MARKERS.humanApproval,
         [
           `### Ready for human approval`,
-          `CI is green, the Gemini security review is clean or every finding is dispositioned, Copilot has reviewed \`${head.slice(0, 7)}\`, all threads are resolved and \`${GATES_CONTEXT}\` is green.`,
+          `CI is green, the Gemini security review is clean or every finding is dispositioned, ${requireCopilot() ? `Copilot has reviewed \`${head.slice(0, 7)}\`, ` : ''}all threads are resolved and \`${GATES_CONTEXT}\` is green.`,
           `**Preview:** ${url}`,
           `Code owners have been requested for review. Merging is a human decision; no agent can merge.`,
         ].join('\n\n'),
@@ -825,7 +838,9 @@ const commands = {
       sha,
       {
         state: 'pending',
-        description: 'Waiting for CI, the Gemini review and the Copilot review',
+        description: requireCopilot()
+          ? 'Waiting for CI, the Gemini review and the Copilot review'
+          : 'Waiting for CI and the Gemini review',
       },
       statuses,
     );
@@ -901,6 +916,115 @@ const commands = {
     console.log(
       `disposition: recorded ${parsed.commands.map((c) => c.id).join(', ')} at ${head.slice(0, 7)}`,
     );
+  },
+
+  // The owner's /restart <stage> <reason> on an ISSUE (restart.yml,
+  // issue_comment created). The comment arrives through the environment, as
+  // data: COMMENT_BODY, COMMENT_USER, COMMENT_USER_TYPE. decideRestart
+  // checks everything; a comment that cannot be honoured gets one short
+  // reply and changes nothing. Accepted: the issue's lifetime counter and
+  // attempt list are written FIRST (a crash after that costs a restart,
+  // never gives one away), then the restart route note lands on the item
+  // that restarts and its stage label is applied. For `fixing` that item is
+  // the linked open PR, and `fix_pr` asks restart.yml to run Pipeline · Fix.
+  restart([number, commentId]) {
+    const n = num(number);
+    const cid = num(commentId);
+    const item = api(`issues/${n}`);
+    const fetched = api(`issues/comments/${cid}`);
+    const repo = `${OWNER}/${NAME}`;
+    const pullRequests = list('pulls?state=open')
+      .filter(
+        (p) =>
+          isPipelinePr({
+            author: p.user?.login,
+            headRef: p.head?.ref,
+            headRepo: p.head?.repo?.full_name,
+            repo,
+            botLogin: botLogin(),
+          }) &&
+          issueFromBranch({
+            headRef: p.head.ref,
+            headRepo: p.head.repo?.full_name,
+            repo,
+          }) === n,
+      )
+      .map((p) => ({ number: p.number, labels: p.labels.map((l) => l.name) }));
+    const labels = item.labels.map((l) => l.name);
+    const decision = decideRestart({
+      comment: {
+        id: cid,
+        body: process.env.COMMENT_BODY,
+        login: process.env.COMMENT_USER,
+        type: process.env.COMMENT_USER_TYPE,
+        createdAt: fetched.created_at,
+      },
+      ownerLogin: ownerLogin(),
+      edited:
+        fetched.updated_at !== fetched.created_at ||
+        fetched.body !== process.env.COMMENT_BODY,
+      issue: {
+        number: n,
+        state: item.state,
+        isPullRequest: Boolean(item.pull_request),
+        labels,
+      },
+      state: readState(n),
+      pullRequests,
+    });
+    console.log(
+      `restart: ${decision.action}${decision.reason ? ` (${decision.reason})` : ''}`,
+    );
+    if (decision.action === 'ignore') return;
+    if (decision.action === 'reply') {
+      postComment(
+        n,
+        decision.limit
+          ? decision.reason
+          : `Not applied: ${say(decision.reason)}.`,
+      );
+      return;
+    }
+
+    const { target } = decision;
+    writeState(
+      n,
+      decision.state,
+      target.kind === 'issue' ? applyLabels(labels, target.edit) : labels,
+    );
+    postComment(target.number, decision.note);
+    editLabels(target.number, target.edit);
+    if (target.kind === 'pr') {
+      postComment(
+        n,
+        `Restart ${decision.count}/${MAX_LIFETIME_RESETS} accepted: the fix loop of PR #${target.number} has a fresh budget and Pipeline · Fix runs next.`,
+      );
+      setOutput('fix_pr', String(target.number));
+    }
+  },
+
+  // A person moved an item out of stage:needs-attention by hand (restart.yml,
+  // label event by a human): one pointer to /restart per parking. The label
+  // edit already happened and stays; this changes no budget. EVENT_ACTION
+  // and LABEL come from the event, through the environment.
+  'restart-hint'([number]) {
+    const n = num(number);
+    const item = api(`issues/${n}`);
+    if (item.state !== 'open') {
+      console.log(`restart-hint: skipped (#${n} is closed)`);
+      return;
+    }
+    const decision = decideRestartHint({
+      action: process.env.EVENT_ACTION,
+      label: process.env.LABEL,
+      labels: item.labels.map((l) => l.name),
+      comments: list(`issues/${n}/comments`),
+      botLogin: botLogin(),
+    });
+    console.log(
+      `restart-hint: ${decision.post ? 'posting' : `skipped (${decision.reason})`}`,
+    );
+    if (decision.post) postComment(n, renderRestartHint());
   },
 
   // develop.yml publish job, approvable case. The branch is already pushed
@@ -1094,7 +1218,7 @@ const commands = {
     setStage(n, 'stage:building');
     postComment(
       n,
-      `Approved by @${say(by)} for \`${head.slice(0, 7)}\`. PR #${pr.number} carries the protected changes; CI, the security review and Copilot run next.`,
+      `Approved by @${say(by)} for \`${head.slice(0, 7)}\`. PR #${pr.number} carries the protected changes; CI and the review gates run next.`,
     );
     setOutput('pr', String(pr.number));
   },
