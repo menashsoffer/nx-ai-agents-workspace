@@ -27,6 +27,20 @@ export const EXPECTED_UNGATED = {
     kind: 'event',
     reason: 'the fix push re-runs CI, which restarts the review',
   },
+  'stage:awaiting-approval': {
+    kind: 'human',
+    reason:
+      'the branch is pushed with no PR; the owner reads the protected diff and approves or rejects it',
+    human: 'Owner approves or rejects the protected changes',
+    // The owner's /approve-protected or /reject-protected comment.
+    emits: [
+      {
+        event: 'issue_comment',
+        action: 'created',
+        label: '/approve-protected',
+      },
+    ],
+  },
   'stage:human-approval': {
     kind: 'human',
     reason: 'a human reviews the PR and the preview, approves and merges',

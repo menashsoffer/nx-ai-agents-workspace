@@ -1,7 +1,8 @@
 // Run with: pnpm test:pipeline
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { parse as parseYaml } from 'yaml';
 import {
   COPILOT_REVIEWER,
   DISPOSITION_KINDS,
@@ -89,6 +90,29 @@ import {
   classifyThreads,
   checkDispositionAuthor,
   targetStage,
+  APPROVABLE_PATH_PATTERNS,
+  FORBIDDEN_PATH_PATTERNS,
+  APPROVE_COMMAND,
+  COMPARE_FILE_LIMIT,
+  PROTECTED_CONTEXT,
+  REJECT_COMMAND,
+  branchPushTriggers,
+  classifyPatch,
+  classifyProtectedPaths,
+  comparePaths,
+  decideProtectedCommand,
+  evaluateProtectedApproval,
+  isPipelineBranch,
+  latestProtectedRequest,
+  needsProtectedRequest,
+  parseProtectedApprovedNotes,
+  parseProtectedCommand,
+  parseProtectedRequest,
+  pathSetHash,
+  protectedOfCompare,
+  renderApprovedPrBody,
+  renderProtectedApprovedNote,
+  renderProtectedRequest,
 } from './pipeline-lib.mjs';
 
 test('stageTransition keeps exactly one stage label', () => {
@@ -1029,6 +1053,7 @@ const RULE_ROWS = [
   ['develop', 'verify_failed', 'redevelop'],
   ['develop', 'agent_error', 'redevelop'],
   ['develop', 'plan_gap', 'replan'],
+  ['develop', 'protected_rejected', 'human'],
   ['fix', 'agent_error', 'retry'],
   ['fix', 'budget_exhausted', 'human'],
   ['security', 'invalid_output', 'human'],
@@ -1613,16 +1638,17 @@ test('auto-approval: every criterion must be marked testable', () => {
   assert.equal(ev.questions.length, 1);
 });
 
-test('auto-approval: planned protected paths are protected_surface', () => {
+test('auto-approval: planned never-approvable paths are protected_surface', () => {
   for (const file of [
     '.github/workflows/ci.yml',
     './.github/prompts/plan.md',
     '.GITHUB/workflows/x.yml',
-    'apps/site/package.json',
-    'pnpm-lock.yaml',
     'tools/security/src/run.mjs',
     'CODEOWNERS',
     '.claude/settings.json',
+    '.npmrc',
+    'apps/site/.gitmodules',
+    '.pipeline/x.json',
   ]) {
     const ev = evaluatePlanApproval(
       withPlan({
@@ -2028,9 +2054,11 @@ function scanCommandEffects(src, libSrc) {
     const fx = { ...effectsOf(body), emits: [] };
     for (const [helper, hfx] of Object.entries(helperFx)) {
       for (const call of body.matchAll(new RegExp(`\\b${helper}\\(`, 'g'))) {
-        // writeOutcome(n, { result: 'success', ... }) sets no stage.
+        // writeOutcome(n, { result: 'success', ... }) sets no stage, and
+        // neither does one made with { route: false }.
         const args = body.slice(call.index, body.indexOf(');', call.index));
-        const success = /result:\s*'success'/.test(args);
+        const success =
+          /result:\s*'success'/.test(args) || /route:\s*false/.test(args);
         if (!success) {
           fx.stages.push(...hfx.stages);
           fx.problems.push(...hfx.problems);
@@ -2062,7 +2090,11 @@ function scanCommandEffects(src, libSrc) {
       /api\(\s*`pulls\/\$\{\w+\}\/reviews`,\s*\{\s*method:\s*'POST'/.test(body)
     )
       fx.emits.push('pull_request_review');
-    if (/\brenderDispositionNote\(/.test(body)) fx.emits.push('issue_comment');
+    if (/\brender(?:Disposition|ProtectedApproved)Note\(/.test(body))
+      fx.emits.push('issue_comment');
+    // Opening a PR through the API (an approved branch).
+    if (/api\(\s*'pulls',\s*\{\s*method:\s*'POST'/.test(body))
+      fx.emits.push('pull_request');
     if (/\bdecideFix\(/.test(body)) fx.loops = [FIX_LOOP_1, FIX_LOOP_2];
     out[name] = normaliseEffects(fx);
   });
@@ -3068,29 +3100,36 @@ test('evaluateGates truth table', () => {
   assert.equal(both.state, 'failure');
   assert.equal(both.blockedBy, 'ci');
 
-  // pipeline/protected-approval: absent is fine, success is fine, pending waits.
+  // pipeline/protected-approval: a PR with no protected paths passes whatever
+  // the status says; one that touches them needs success.
+  for (const state of [null, undefined, 'success', 'pending', 'failure'])
+    assert.equal(
+      g({ ...passing, protectedRequired: false, protectedApprovalState: state })
+        .state,
+      'success',
+      `no protected paths, status ${state}`,
+    );
+  assert.equal(g(passing).state, 'success', 'the default is: not required');
+  const need = (state) =>
+    g({ ...passing, protectedRequired: true, protectedApprovalState: state });
+  assert.equal(need('success').state, 'success');
+  for (const state of ['pending', null, undefined]) {
+    const r = need(state);
+    assert.equal(r.state, 'pending', String(state));
+    assert.equal(r.blockedBy, 'protected-approval');
+  }
+  assert.equal(need('failure').state, 'failure');
+  assert.equal(need('error').state, 'failure');
+  assert.equal(need('failure').blockedBy, 'protected-approval');
+  // a real blocker elsewhere is reported before a missing approval
   assert.equal(
-    g({ ...passing, protectedApprovalState: null }).state,
-    'success',
-  );
-  assert.equal(
-    g({ ...passing, protectedApprovalState: undefined }).state,
-    'success',
-  );
-  assert.equal(
-    g({ ...passing, protectedApprovalState: 'success' }).state,
-    'success',
-  );
-  const prot = g({ ...passing, protectedApprovalState: 'pending' });
-  assert.equal(prot.state, 'pending');
-  assert.equal(prot.blockedBy, 'protected-approval');
-  assert.equal(
-    g({ ...passing, protectedApprovalState: 'failure' }).state,
-    'failure',
-  );
-  assert.equal(
-    g({ ...passing, protectedApprovalState: 'error' }).state,
-    'failure',
+    g({
+      ...passing,
+      ciConclusion: 'failure',
+      protectedRequired: true,
+      protectedApprovalState: 'pending',
+    }).blockedBy,
+    'ci',
   );
 
   // The description fits a commit status (140 characters).
@@ -3137,14 +3176,15 @@ test('evaluateApproval reports the gates and hands off only when they all hold',
   assert.equal(done.action, 'human-approval');
   assert.equal(done.gates.state, 'success');
   // A pending protected-file approval holds the hand-off, not the Copilot request.
+  const awaiting = {
+    protectedRequired: true,
+    protectedApprovalState: 'pending',
+  };
   assert.equal(
-    evaluateApproval({ ...base, protectedApprovalState: 'pending' }).action,
+    evaluateApproval({ ...base, ...awaiting }).action,
     'request-copilot',
   );
-  const held = evaluateApproval({
-    ...reviewed,
-    protectedApprovalState: 'pending',
-  });
+  const held = evaluateApproval({ ...reviewed, ...awaiting });
   assert.equal(held.action, 'wait');
   assert.equal(held.gates.blockedBy, 'protected-approval');
   // Parked PRs are left alone, but still get a status; closed ones get none.
@@ -3431,4 +3471,1025 @@ test('workflows: /disposition counts only new comments from the owner account', 
   );
   assert.ok(approval.includes('workflow_run:'));
   assert.ok(approval.includes('permission-statuses: write'));
+});
+
+// ---------------------------------------------------------------- protected approval
+
+const PA = 'a'.repeat(40);
+const PB = 'b'.repeat(40);
+const PKG = 'apps/site/package.json';
+const LOCK = 'pnpm-lock.yaml';
+const cf = (filename, extra = {}) => ({
+  filename,
+  status: 'modified',
+  additions: 3,
+  deletions: 1,
+  patch: `@@ -1 +1,3 @@\n-old ${filename}\n+new ${filename}`,
+  ...extra,
+});
+// The compare response's files for a branch that adds a dependency.
+const depFiles = () => [
+  cf(PKG),
+  cf(LOCK, { patch: '@@ -1 +1 @@\n-x\n+y' }),
+  cf('apps/site/src/app.tsx'),
+];
+
+test('APPROVABLE_PATH_PATTERNS is a strict subset of FORBIDDEN_PATH_PATTERNS', () => {
+  const forbidden = FORBIDDEN_PATH_PATTERNS.map((re) => re.source);
+  for (const re of APPROVABLE_PATH_PATTERNS)
+    assert.ok(forbidden.includes(re.source), `${re.source} is forbidden too`);
+  assert.ok(APPROVABLE_PATH_PATTERNS.length < FORBIDDEN_PATH_PATTERNS.length);
+  // Everything approvable is forbidden for an agent patch; the reverse is false.
+  const never = [
+    '.github/workflows/ci.yml',
+    'CODEOWNERS',
+    '.github/CODEOWNERS',
+    '.pipeline/x',
+    '.claude/settings.json',
+    '.gemini/settings.json',
+    '.codex/config.toml',
+    'tools/security/src/run.mjs',
+    '.npmrc',
+    'apps/site/.npmrc',
+    '.gitmodules',
+  ];
+  const approvable = [
+    'package.json',
+    PKG,
+    'pnpm-lock.yaml',
+    'pnpm-workspace.yaml',
+    'tools/workspace-plugin/src/generators/app.ts',
+    'tools/pipeline-map/src/cli.mjs',
+  ];
+  const isAny = (patterns, p) => patterns.some((re) => re.test(p));
+  for (const p of never) {
+    assert.ok(isAny(FORBIDDEN_PATH_PATTERNS, p), p);
+    assert.ok(
+      !isAny(APPROVABLE_PATH_PATTERNS, p),
+      `${p} must not be approvable`,
+    );
+  }
+  for (const p of approvable) {
+    assert.ok(isAny(FORBIDDEN_PATH_PATTERNS, p), p);
+    assert.ok(isAny(APPROVABLE_PATH_PATTERNS, p), p);
+  }
+  // near misses are neither
+  for (const p of ['apps/site/src/package.json.ts', 'docs/github/x.md'])
+    assert.ok(!isAny(FORBIDDEN_PATH_PATTERNS, p), p);
+});
+
+test('classifyProtectedPaths: approvable only, mixed, none', () => {
+  assert.deepEqual(classifyProtectedPaths([PKG, LOCK, 'apps/site/a.ts']), {
+    approvable: [LOCK, PKG].sort(),
+    never: [],
+    protected: [LOCK, PKG].sort(),
+  });
+  const mixed = classifyProtectedPaths([PKG, '.github/x.yml', 'a.ts', PKG]);
+  assert.deepEqual(mixed.approvable, [PKG]);
+  assert.deepEqual(mixed.never, ['.github/x.yml']);
+  assert.deepEqual(mixed.protected, ['.github/x.yml', PKG]);
+  assert.deepEqual(classifyProtectedPaths(['a.ts', 'docs/x.md']), {
+    approvable: [],
+    never: [],
+    protected: [],
+  });
+  // Planned paths are also tested in lower case; the stricter reading wins.
+  assert.deepEqual(
+    classifyProtectedPaths(['.GITHUB/x.yml', 'Package.json'], {
+      foldCase: true,
+    }),
+    {
+      approvable: ['Package.json'],
+      never: ['.GITHUB/x.yml'],
+      protected: ['.GITHUB/x.yml', 'Package.json'],
+    },
+  );
+  assert.deepEqual(classifyProtectedPaths(['Package.json']).protected, []);
+});
+
+const diffHeader = (path) =>
+  `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n${hunk}`;
+
+test('classifyPatch: none, approvable, forbidden (a never path or an unparseable header)', () => {
+  const kind = (patch) => classifyPatch(patch).kind;
+  assert.equal(kind(diffHeader('apps/site/a.ts')), 'none');
+  assert.equal(kind(''), 'none');
+  const dep = diffHeader(PKG) + diffHeader(LOCK);
+  const r = classifyPatch(dep);
+  assert.equal(r.kind, 'approvable');
+  assert.deepEqual(r.approvable, [LOCK, PKG].sort());
+  assert.deepEqual(r.never, []);
+  // one never-approvable path makes the whole patch forbidden
+  const mixed = classifyPatch(dep + diffHeader('.github/workflows/x.yml'));
+  assert.equal(mixed.kind, 'forbidden');
+  assert.deepEqual(mixed.never, ['.github/workflows/x.yml']);
+  assert.equal(kind(diffHeader('tools/security/src/run.mjs')), 'forbidden');
+  assert.equal(kind(diffHeader('.npmrc')), 'forbidden');
+  // fail closed on what it cannot parse, even next to an approvable path
+  assert.equal(kind(dep + 'diff --git nonsense\n'), 'forbidden');
+  // a rename out of .github/ into an approvable path still names .github/
+  assert.equal(
+    kind(
+      'diff --git a/.github/x.json b/package.json\nsimilarity index 100%\nrename from .github/x.json\nrename to package.json\n',
+    ),
+    'forbidden',
+  );
+  // checkPatch keeps rejecting every protected path (fix.yml, verify, push)
+  assert.equal(checkPatch(dep).ok, false);
+  assert.deepEqual(checkPatch(dep).forbidden.sort(), [LOCK, PKG].sort());
+});
+
+test('pathSetHash and comparePaths', () => {
+  assert.equal(pathSetHash(['b', 'a']), pathSetHash(['a', 'b', 'a']));
+  assert.notEqual(pathSetHash(['a']), pathSetHash(['a', 'b']));
+  assert.match(pathSetHash([]), /^[0-9a-f]{64}$/);
+  // renames contribute both names
+  const c = comparePaths([
+    { filename: 'package.json', previous_filename: '.github/x.json' },
+    { filename: 'b.ts' },
+  ]);
+  assert.deepEqual(c.paths, ['.github/x.json', 'b.ts', 'package.json']);
+  assert.equal(c.complete, true);
+  // a list at the API's limit may be cut off: not complete
+  const many = Array.from({ length: COMPARE_FILE_LIMIT }, (_, i) => ({
+    filename: `f${i}.ts`,
+  }));
+  assert.equal(comparePaths(many).complete, false);
+  assert.equal(comparePaths(many.slice(1)).complete, true);
+  // a path that could escape the repo makes the list untrusted
+  assert.equal(comparePaths([{ filename: '../x' }]).complete, false);
+  const p = protectedOfCompare(depFiles());
+  assert.deepEqual(p.protected, [LOCK, PKG].sort());
+  assert.equal(p.hash, pathSetHash([PKG, LOCK]));
+});
+
+// ---- the plan stage
+
+const planWith = (...files) =>
+  withPlan({
+    changes: files.map((file) => ({
+      project: 'x',
+      file,
+      change: 'edit',
+      lines: 5,
+    })),
+  });
+
+test('plan stage: approvable protected files pass auto-approval and are reported', () => {
+  const ev = evaluatePlanApproval(planWith(PKG, LOCK, 'apps/site/src/app.tsx'));
+  assert.equal(ev.approved, true);
+  assert.deepEqual(ev.protectedPaths, [LOCK, PKG].sort());
+  for (const file of [
+    'pnpm-workspace.yaml',
+    'tools/workspace-plugin/src/index.ts',
+    'tools/pipeline-map/src/cli.mjs',
+    'package.json',
+  ]) {
+    const r = evaluatePlanApproval(planWith(file));
+    assert.equal(r.approved, true, file);
+    assert.deepEqual(r.protectedPaths, [file]);
+  }
+  // no key at all when nothing is protected
+  assert.equal('protectedPaths' in evaluatePlanApproval(planned()), false);
+  // the size limits still apply to them
+  assert.equal(
+    evaluatePlanApproval(
+      withPlan({
+        changes: [...filesOf(PLAN_MAX_FILES), planWith(PKG).plan.changes[0]],
+      }),
+    ).problem,
+    'scope_split',
+  );
+});
+
+test('plan stage: any never-approvable path is still protected_surface', () => {
+  const ev = evaluatePlanApproval(
+    planWith(PKG, LOCK, '.github/workflows/ci.yml'),
+  );
+  assert.equal(ev.approved, false);
+  assert.equal(ev.problem, 'protected_surface');
+  assert.match(ev.details.join(' '), /\.github\/workflows\/ci\.yml/);
+  assert.doesNotMatch(ev.details.join(' '), /package\.json/);
+  assert.equal(
+    evaluatePlanApproval(planWith(PKG, 'tools/security/src/run.mjs')).problem,
+    'protected_surface',
+  );
+  assert.equal(
+    evaluatePlanApproval(planWith(PKG, '.GITHUB/x.yml')).problem,
+    'protected_surface',
+  );
+  assert.deepEqual(allowedTargets('plan', 'protected_surface'), ['human']);
+});
+
+test('plan stage: the outcome and the plan comment tell the owner approval is needed', () => {
+  const result = planWith(PKG, LOCK, 'apps/site/src/app.tsx');
+  const o = classifyPlan({ jobResult: 'success', raw: JSON.stringify(result) });
+  assert.equal(o.result, 'success');
+  assert.match(o.summary, /owner approval needed before a PR opens/);
+  assert.deepEqual(o.details, [
+    `Protected paths (owner approval needed before a PR opens): ${[LOCK, PKG].sort().join(', ')}`,
+  ]);
+  const comment = renderPlanComment(result, 'plan.md@5');
+  assert.match(comment, /## Owner approval/);
+  assert.match(comment, /\/approve-protected/);
+  assert.match(comment, /`pnpm-lock\.yaml`/);
+  // unprotected plans are unchanged: no section, no details
+  const plain = classifyPlan({
+    jobResult: 'success',
+    raw: JSON.stringify(planned()),
+  });
+  assert.equal(plain.details, undefined);
+  assert.doesNotMatch(plain.summary, /owner approval/);
+  assert.doesNotMatch(
+    renderPlanComment(planned(), 'plan.md@5'),
+    /Owner approval/,
+  );
+  // a never-approvable path is a problem outcome as before
+  const bad = classifyPlan({
+    jobResult: 'success',
+    raw: JSON.stringify(planWith('.github/x.yml')),
+  });
+  assert.equal(bad.problem, 'protected_surface');
+});
+
+// ---- commands
+
+test('parseProtectedCommand accepts exactly one command and nothing else', () => {
+  assert.deepEqual(
+    parseProtectedCommand(`/approve-protected ${PA.slice(0, 12)}`),
+    {
+      ok: true,
+      kind: 'approve',
+      prefix: 'a'.repeat(12),
+    },
+  );
+  assert.deepEqual(
+    parseProtectedCommand('  /approve-protected 0123456789ab \r\n'),
+    { ok: true, kind: 'approve', prefix: '0123456789ab' },
+  );
+  const r = parseProtectedCommand(
+    '/reject-protected the new dependency is unwanted',
+  );
+  assert.deepEqual(r, {
+    ok: true,
+    kind: 'reject',
+    reason: 'the new dependency is unwanted',
+  });
+  // not commands: ordinary discussion (also lookalikes)
+  for (const body of [
+    '',
+    undefined,
+    'looks good',
+    'please /approve-protected 0123456789ab',
+    'thanks\n/approve-protected 0123456789ab', // text before it: not a command
+    '/approve-protectedx 0123456789ab',
+    '/approve 0123456789ab',
+  ])
+    assert.deepEqual(parseProtectedCommand(body), { ok: false, ignore: true });
+  // commands that cannot be honoured, each with a reason
+  const bad = (body) => {
+    const p = parseProtectedCommand(body);
+    assert.equal(p.ok, false, body);
+    assert.equal(p.ignore, undefined, body);
+    assert.ok(p.error.length > 5);
+    return p.error;
+  };
+  assert.match(bad('/approve-protected'), /expected/);
+  assert.match(bad('/approve-protected abc'), /expected/);
+  assert.match(bad('/approve-protected 0123456789AB'), /expected/); // uppercase
+  assert.match(bad('/approve-protected 0123456789abc'), /expected/); // 13
+  assert.match(bad('/approve-protected 0123456789ab now'), /expected/);
+  assert.match(bad('/approve-protected 0123456789ab\nthanks!'), /one command/);
+  assert.match(
+    bad('/approve-protected 0123456789ab\n/approve-protected 0123456789ab'),
+    /one command/,
+  );
+  assert.match(bad('/reject-protected'), /expected/);
+  assert.match(bad('/reject-protected too short'), /at least 10/);
+  assert.match(bad(`/reject-protected ${'x'.repeat(501)}`), /at most 500/);
+  assert.match(
+    bad('/reject-protected a long enough reason\nsecond line'),
+    /one command/,
+  );
+  // error text never repeats the body
+  assert.doesNotMatch(
+    bad('/approve-protected <script>alert(1)</script>'),
+    /script/,
+  );
+});
+
+// The inputs decideProtectedCommand needs for a healthy approval.
+const healthy = (over = {}) => {
+  const changed = protectedOfCompare(depFiles());
+  return {
+    comment: {
+      body: `/approve-protected ${PA.slice(0, 12)}`,
+      login: OWNER_LOGIN,
+      type: 'User',
+    },
+    ownerLogin: OWNER_LOGIN,
+    edited: false,
+    issue: {
+      state: 'open',
+      isPullRequest: false,
+      labels: ['stage:awaiting-approval'],
+    },
+    request: { head: PA, paths: changed.hash, pr: null },
+    branchHeads: [PA],
+    changed,
+    ...over,
+  };
+};
+
+test('decideProtectedCommand: the owner approves a healthy request', () => {
+  const d = decideProtectedCommand(healthy());
+  assert.equal(d.action, 'approve');
+  assert.equal(d.head, PA);
+  assert.equal(d.paths, protectedOfCompare(depFiles()).hash);
+  assert.deepEqual(d.protectedPaths, [LOCK, PKG].sort());
+  // login comparison is case-insensitive like everywhere else
+  assert.equal(
+    decideProtectedCommand(
+      healthy({ comment: { ...healthy().comment, login: 'MenashSoffer' } }),
+    ).action,
+    'approve',
+  );
+});
+
+test('decideProtectedCommand: every reason to refuse leaves the state alone', () => {
+  const refused = (over, re) => {
+    const d = decideProtectedCommand(healthy(over));
+    assert.equal(d.action, 'reply', JSON.stringify(d));
+    assert.match(d.reason, re);
+    return d;
+  };
+  const comment = (over) => ({ ...healthy().comment, ...over });
+
+  // 1. the commenter
+  refused({ comment: comment({ login: 'mallory' }) }, /not the pipeline owner/);
+  // a stranger's reject is refused too
+  refused(
+    {
+      comment: comment({
+        login: 'mallory',
+        body: '/reject-protected not wanted at all',
+      }),
+    },
+    /not the pipeline owner/,
+  );
+  // a non-user (a bot) is ignored, with no reply, and so is no owner at all
+  assert.equal(
+    decideProtectedCommand(healthy({ comment: comment({ type: 'Bot' }) }))
+      .action,
+    'ignore',
+  );
+  assert.equal(
+    decideProtectedCommand(healthy({ ownerLogin: '' })).action,
+    'ignore',
+  );
+  assert.equal(
+    decideProtectedCommand(healthy({ ownerLogin: undefined })).action,
+    'ignore',
+  );
+  // not a command at all: ignored, whoever wrote it
+  assert.equal(
+    decideProtectedCommand(healthy({ comment: comment({ body: 'lgtm' }) }))
+      .action,
+    'ignore',
+  );
+  assert.equal(
+    decideProtectedCommand(
+      healthy({ comment: comment({ login: 'mallory', body: 'lgtm' }) }),
+    ).action,
+    'ignore',
+  );
+  // 2. extra text or a malformed command
+  refused(
+    {
+      comment: comment({
+        body: `/approve-protected ${PA.slice(0, 12)}\nplease`,
+      }),
+    },
+    /one command/,
+  );
+  refused({ comment: comment({ body: '/approve-protected 123' }) }, /expected/);
+  // 3. an edited comment
+  refused({ edited: true }, /edited/);
+  // 4. the issue's state
+  refused(
+    { issue: { ...healthy().issue, labels: ['stage:building'] } },
+    /not awaiting approval/,
+  );
+  refused(
+    { issue: { ...healthy().issue, labels: [] } },
+    /not awaiting approval/,
+  );
+  refused({ issue: { ...healthy().issue, state: 'closed' } }, /closed/);
+  refused(
+    { issue: { ...healthy().issue, isPullRequest: true } },
+    /pull request/,
+  );
+  refused({ request: null }, /no approval request/);
+  // 5. a stale SHA: it names an older head than the latest request
+  refused(
+    { comment: comment({ body: `/approve-protected ${PB.slice(0, 12)}` }) },
+    /stale.*latest request is for `a{12}`/,
+  );
+  // 6. the branch moved (or was deleted) since the request
+  refused({ branchHeads: [PB] }, /no longer points/);
+  refused({ branchHeads: [] }, /no longer points/);
+  // 7. the recomputed path set differs from the recorded one
+  refused(
+    { changed: protectedOfCompare([cf(PKG), cf('apps/x/package.json')]) },
+    /set of protected paths changed/,
+  );
+  refused(
+    { changed: protectedOfCompare([cf(PKG)]) },
+    /set of protected paths changed/,
+  );
+  // 8. a path became non-approvable (recorded hash covers it, but it is never approvable)
+  const nowNever = protectedOfCompare([cf(PKG), cf('.github/workflows/x.yml')]);
+  refused(
+    {
+      changed: nowNever,
+      request: { head: PA, paths: nowNever.hash, pr: null },
+    },
+    /can no longer be approved: \.github\/workflows\/x\.yml/,
+  );
+  // a file list that may be cut off cannot be verified
+  const long = protectedOfCompare(
+    Array.from({ length: COMPARE_FILE_LIMIT }, (_, i) => cf(`f${i}.ts`)),
+  );
+  refused({ changed: long }, /cannot be listed completely/);
+  refused({ changed: null }, /cannot be listed completely/);
+});
+
+test('decideProtectedCommand: reject needs only the owner and an awaiting request', () => {
+  const reject = healthy({
+    comment: {
+      ...healthy().comment,
+      body: '/reject-protected the dependency is not needed',
+    },
+  });
+  const d = decideProtectedCommand(reject);
+  assert.deepEqual(d, {
+    action: 'reject',
+    reason: 'the dependency is not needed',
+    head: PA,
+  });
+  // a stale head or a moved branch does not stop a rejection
+  assert.equal(
+    decideProtectedCommand({ ...reject, branchHeads: [PB] }).action,
+    'reject',
+  );
+  // but the owner check, the stage and an edit still apply
+  assert.equal(
+    decideProtectedCommand({
+      ...reject,
+      comment: { ...reject.comment, login: 'mallory' },
+    }).action,
+    'reply',
+  );
+  assert.equal(
+    decideProtectedCommand({ ...reject, edited: true }).action,
+    'reply',
+  );
+  assert.equal(
+    decideProtectedCommand({
+      ...reject,
+      issue: { ...reject.issue, labels: ['stage:routing'] },
+    }).action,
+    'reply',
+  );
+  assert.equal(APPROVE_COMMAND, '/approve-protected');
+  assert.equal(REJECT_COMMAND, '/reject-protected');
+});
+
+// ---- the request comment
+
+test('the approval request carries the binding, the full protected diff and the commands', () => {
+  const body = renderProtectedRequest({
+    head: PA,
+    branch: 'issue-7-add-dep',
+    compareUrl: 'https://github.com/o/r/compare/main...issue-7-add-dep',
+    files: depFiles(),
+    title: 'Add a dependency',
+    body: '## Summary\nAdds x.',
+  });
+  const marker = `<!-- pipeline:protected-approval head=${PA} paths=${pathSetHash([PKG, LOCK])} -->`;
+  assert.ok(body.startsWith(`${marker}\n`));
+  assert.match(body, /did not open a pull request/);
+  assert.ok(body.includes('`/approve-protected aaaaaaaaaaaa`'));
+  assert.ok(body.includes('`/reject-protected <reason'));
+  assert.match(body, /\*\*Protected paths \(2\):\*\*/);
+  // full diffs of both protected files, and only a summary of the other one
+  assert.match(
+    body,
+    /<details><summary><code>apps\/site\/package\.json<\/code> \+3 −1<\/summary>/,
+  );
+  assert.ok(
+    body.includes('-old apps/site/package.json\n+new apps/site/package.json'),
+  );
+  assert.ok(body.includes('-x\n+y'));
+  assert.match(
+    body,
+    /\*\*Other changed files \(1\):\*\*\n- `apps\/site\/src\/app\.tsx` \+3 −1/,
+  );
+  assert.doesNotMatch(body, /-old apps\/site\/src\/app\.tsx/);
+  // the lockfile diff comes last
+  assert.ok(
+    body.indexOf('<code>apps/site/package.json</code>') <
+      body.indexOf('<code>pnpm-lock.yaml</code>'),
+  );
+  assert.match(
+    body,
+    /Full branch diff: https:\/\/github\.com\/o\/r\/compare\/main\.\.\.issue-7-add-dep/,
+  );
+  assert.ok(body.length < 65_536);
+  // read back
+  const req = parseProtectedRequest(body);
+  assert.deepEqual(req, {
+    head: PA,
+    paths: pathSetHash([PKG, LOCK]),
+    pr: { title: 'Add a dependency', body: '## Summary\nAdds x.' },
+  });
+  assert.equal(
+    needsProtectedRequest({
+      evaluation: { state: 'pending' },
+      request: req,
+      head: PA,
+    }),
+    false,
+  );
+  assert.equal(
+    needsProtectedRequest({
+      evaluation: { state: 'pending' },
+      request: req,
+      head: PB,
+    }),
+    true,
+  );
+  assert.equal(
+    needsProtectedRequest({
+      evaluation: { state: 'pending' },
+      request: null,
+      head: PB,
+    }),
+    true,
+  );
+  assert.equal(
+    needsProtectedRequest({
+      evaluation: { state: 'success' },
+      request: req,
+      head: PB,
+    }),
+    false,
+  );
+});
+
+test('the approval request is cut only past the comment limit, and never offers a never-approvable path', () => {
+  const big = 'x'.repeat(30_000);
+  const files = [
+    cf(PKG, { patch: `@@ -1 +1 @@\n${`+${big}\n`.repeat(2)}` }),
+    cf(LOCK, { patch: `@@ -1 +1 @@\n${`+${big}\n`.repeat(5)}` }),
+    cf('apps/site/a.ts'),
+  ];
+  const body = renderProtectedRequest({
+    head: PA,
+    branch: 'issue-7-x',
+    compareUrl: 'https://github.com/o/r/compare/main...issue-7-x',
+    files,
+  });
+  assert.ok(body.length <= 65_536, `${body.length}`);
+  assert.match(body, /Truncated: the diff does not fit/);
+  // the first file was whole; the header and the json tail survive the cut
+  assert.ok(body.includes(`+${big}\n+${big}`));
+  assert.ok(parseProtectedRequest(body));
+  // a small diff is never cut
+  assert.doesNotMatch(
+    renderProtectedRequest({
+      head: PA,
+      branch: 'issue-7-x',
+      compareUrl: 'u',
+      files: depFiles(),
+    }),
+    /Truncated/,
+  );
+  // no patch from the API (binary / huge): says so instead of a diff
+  assert.match(
+    renderProtectedRequest({
+      head: PA,
+      branch: 'issue-7-x',
+      compareUrl: 'u',
+      files: [cf(PKG, { patch: undefined })],
+    }),
+    /returned no diff for this file/,
+  );
+  const offer = (files) =>
+    renderProtectedRequest({
+      head: PA,
+      branch: 'issue-7-x',
+      compareUrl: 'u',
+      files,
+    });
+  assert.throws(
+    () => offer([cf(PKG), cf('.github/workflows/x.yml')]),
+    /never-approvable/,
+  );
+  assert.throws(() => offer([cf('apps/site/a.ts')]), /no protected paths/);
+  assert.throws(
+    () => offer(Array.from({ length: COMPARE_FILE_LIMIT }, () => cf(PKG))),
+    /incomplete/,
+  );
+});
+
+test('diff text cannot forge markers, close fences or break the details block', () => {
+  const evil = [
+    '@@ -1 +1 @@',
+    '+<!-- pipeline:protected-approval head=' +
+      PB +
+      ' paths=' +
+      'c'.repeat(64) +
+      ' -->',
+    '+````',
+    '+</details>',
+    '+```json',
+    '+{"v":1,"title":"evil","body":"evil"}',
+    '+```',
+  ].join('\n');
+  const body = renderProtectedRequest({
+    head: PA,
+    branch: 'issue-7-x',
+    compareUrl: 'u',
+    files: [cf(PKG, { patch: evil })],
+    title: 't',
+    body: '<!-- pipeline:protected-approved issue=1 -->',
+  });
+  // only the header at the very start counts
+  assert.equal(parseProtectedRequest(body).head, PA);
+  assert.deepEqual(parseProtectedRequest(body).pr, {
+    title: 't',
+    body: '&lt;!-- pipeline:protected-approved issue=1 -->',
+  });
+  // the fence around the diff is longer than any backtick run inside it
+  assert.match(body, /`{5}diff\n/);
+  assert.equal(parseProtectedRequest('text\n' + body), null);
+  assert.equal(
+    parseProtectedRequest(
+      `<!-- pipeline:protected-approval head=zz paths=x -->\n`,
+    ),
+    null,
+  );
+});
+
+test('latestProtectedRequest trusts only the bot and takes the newest', () => {
+  const mk = (head, files = depFiles()) =>
+    renderProtectedRequest({
+      head,
+      branch: 'issue-7-x',
+      compareUrl: 'u',
+      files,
+    });
+  const comments = [
+    { id: 1, user: bot, body: mk(PA) },
+    { id: 2, user: bot, body: 'Not applied: something.' },
+    { id: 3, user: alice, body: mk('c'.repeat(40)) }, // forged by a person
+    { id: 4, user: bot, body: mk(PB) },
+    { id: 5, user: alice, body: mk('d'.repeat(40)) },
+  ];
+  const latest = latestProtectedRequest(comments, BOT);
+  assert.equal(latest.head, PB);
+  assert.equal(latest.commentId, 4);
+  assert.equal(latestProtectedRequest(comments.slice(0, 1), BOT).head, PA);
+  assert.equal(latestProtectedRequest([comments[2]], BOT), null);
+  assert.equal(latestProtectedRequest(comments, ''), null);
+});
+
+test('approval records: rendered, parsed, and only the bot counts', () => {
+  const note = renderProtectedApprovedNote({
+    issue: 7,
+    pr: 9,
+    head: PA,
+    paths: pathSetHash([PKG]),
+    by: OWNER_LOGIN,
+    commentId: 55,
+    protectedPaths: [PKG],
+  });
+  assert.ok(
+    note.startsWith(
+      `<!-- pipeline:protected-approved issue=7 pr=9 head=${PA} paths=${pathSetHash([PKG])} by=${OWNER_LOGIN} comment=55 -->\n`,
+    ),
+  );
+  const notes = parseProtectedApprovedNotes(
+    [
+      { user: bot, body: note },
+      { user: alice, body: note.replace('pr=9', 'pr=10') },
+      { user: bot, body: 'plain comment' },
+    ],
+    BOT,
+  );
+  assert.deepEqual(notes, [
+    {
+      issue: 7,
+      pr: 9,
+      head: PA,
+      paths: pathSetHash([PKG]),
+      by: OWNER_LOGIN,
+      commentId: 55,
+    },
+  ]);
+  assert.match(
+    renderApprovedPrBody({
+      body: 'Did it.',
+      issue: 7,
+      protectedPaths: [PKG],
+      head: PA,
+      by: OWNER_LOGIN,
+    }),
+    /Did it\.\n\nCloses #7\n\n### Protected changes approved by the owner\n@menashsoffer approved these paths at `aaaaaaa`.*\n- `apps\/site\/package\.json`/s,
+  );
+});
+
+// ---- the status: approval, invalidation on a new head
+
+const approvedNote = (over = {}) => ({
+  issue: 7,
+  pr: 9,
+  head: PA,
+  paths: protectedOfCompare(depFiles()).hash,
+  by: OWNER_LOGIN,
+  commentId: 55,
+  ...over,
+});
+const evalPr = (over = {}) =>
+  evaluateProtectedApproval({
+    pipelinePr: true,
+    head: PA,
+    files: depFiles(),
+    notes: [approvedNote()],
+    ownerLogin: OWNER_LOGIN,
+    ...over,
+  });
+
+test('pipeline/protected-approval: success only for the approved head and path set', () => {
+  const ok = evalPr();
+  assert.equal(ok.state, 'success');
+  assert.equal(ok.required, true);
+  assert.deepEqual(ok.paths, [LOCK, PKG].sort());
+  assert.match(ok.description, /Approved by @menashsoffer/);
+  assert.equal(PROTECTED_CONTEXT, 'pipeline/protected-approval');
+
+  // no approval yet: pending, with the command to give
+  const pending = evalPr({ notes: [] });
+  assert.equal(pending.state, 'pending');
+  assert.equal(
+    pending.description,
+    `Waiting for the owner: /approve-protected ${PA.slice(0, 12)}`,
+  );
+
+  // invalidation: any later push is a new head, so the approval no longer holds
+  const pushed = evalPr({ head: PB });
+  assert.equal(pushed.state, 'pending');
+  assert.equal(pushed.required, true);
+  // ...the same head with a different protected path set does not hold either
+  assert.equal(
+    evalPr({ files: [...depFiles(), cf('apps/x/package.json')] }).state,
+    'pending',
+  );
+  assert.equal(evalPr({ files: [cf(PKG)] }).state, 'pending');
+  // the latest owner record decides: approve A, then B, back on A is pending
+  assert.equal(
+    evalPr({ notes: [approvedNote(), approvedNote({ head: PB })] }).state,
+    'pending',
+  );
+  assert.equal(
+    evalPr({ notes: [approvedNote({ head: PB }), approvedNote()] }).state,
+    'success',
+  );
+  // a record that is not the owner's does not count; without an owner none does
+  assert.equal(
+    evalPr({ notes: [approvedNote({ by: 'mallory' })] }).state,
+    'pending',
+  );
+  assert.equal(evalPr({ ownerLogin: '' }).state, 'pending');
+  assert.equal(evalPr({ ownerLogin: undefined }).state, 'pending');
+});
+
+test('pipeline/protected-approval: automatic success, and failure for what cannot be approved', () => {
+  // no protected path: success automatically, not required
+  const none = evalPr({ files: [cf('apps/site/a.ts')], notes: [] });
+  assert.equal(none.state, 'success');
+  assert.equal(none.required, false);
+  assert.deepEqual(none.paths, []);
+  // not a pipeline PR (a person's own, Dependabot): the code owner reviews it
+  const human = evalPr({ pipelinePr: false, files: depFiles(), notes: [] });
+  assert.equal(human.state, 'success');
+  assert.equal(human.required, false);
+  assert.match(human.description, /Not a pipeline PR/);
+  // a never-approvable path on a pipeline PR fails hard
+  const never = evalPr({
+    files: [...depFiles(), cf('.github/workflows/ci.yml')],
+  });
+  assert.equal(never.state, 'failure');
+  assert.match(never.description, /\.github\/workflows\/ci\.yml/);
+  // a file list that may be cut off cannot be trusted
+  const cut = evalPr({
+    files: Array.from({ length: COMPARE_FILE_LIMIT }, (_, i) => cf(`f${i}.ts`)),
+  });
+  assert.equal(cut.state, 'failure');
+  // statuses are at most 140 characters
+  for (const r of [evalPr(), evalPr({ notes: [] }), never, cut])
+    assert.ok(r.description.length <= 140, r.description);
+});
+
+test('gates take the recomputed protected approval: a push after approval blocks the merge', () => {
+  const gatesFor = (evaluation) =>
+    evaluateGates({
+      ...passing,
+      protectedRequired: evaluation.required,
+      protectedApprovalState: evaluation.state,
+    });
+  assert.equal(gatesFor(evalPr()).state, 'success');
+  const stale = gatesFor(evalPr({ head: PB }));
+  assert.equal(stale.state, 'pending');
+  assert.equal(stale.blockedBy, 'protected-approval');
+  assert.equal(
+    gatesFor(evalPr({ files: [cf('a.ts')], notes: [] })).state,
+    'success',
+  );
+  assert.equal(
+    gatesFor(evalPr({ files: [cf('.github/x.yml')] })).state,
+    'failure',
+  );
+});
+
+// ---- fix.yml, router, stages
+
+test('fix.yml refuses protected content before any push', () => {
+  const fixed = (patchProtected) =>
+    classifyFix({
+      fixResult: 'failure',
+      verifyResult: 'skipped',
+      pushResult: 'skipped',
+      patchRejected: true,
+      patchProtected,
+    });
+  const approvable = fixed('approvable');
+  assert.equal(approvable.problem, 'protected_approval_needed');
+  assert.match(approvable.details.join(' '), /Nothing was pushed/);
+  assert.equal(fixed('forbidden').problem, 'forbidden_path');
+  assert.equal(fixed(undefined).problem, 'forbidden_path');
+  assert.equal(fixed('none').problem, 'forbidden_path');
+  // both are hard gates: only a human
+  for (const p of ['protected_approval_needed', 'forbidden_path']) {
+    assert.ok(HARD_GATES.includes(p));
+    assert.deepEqual(allowedTargets('fix', p), ['human']);
+  }
+  // an accepted patch is unaffected
+  assert.equal(
+    classifyFix({
+      fixResult: 'success',
+      verifyResult: 'success',
+      pushResult: 'success',
+      patchProtected: 'approvable',
+    }).result,
+    'success',
+  );
+  // develop's rejection still is forbidden_path
+  assert.equal(
+    classifyDevelop({ implementResult: 'failure', patchRejected: true })
+      .problem,
+    'forbidden_path',
+  );
+});
+
+test('the new problems, stage and rules', () => {
+  assert.ok(PROBLEMS.includes('protected_approval_needed'));
+  assert.ok(PROBLEMS.includes('protected_rejected'));
+  assert.ok(HARD_GATES.includes('protected_approval_needed'));
+  assert.ok(!HARD_GATES.includes('protected_rejected'));
+  assert.ok(STAGES.includes('stage:awaiting-approval'));
+  assert.equal(STAGE_STATUS['stage:awaiting-approval'], 'Awaiting approval');
+  for (const stage of STAGES) assert.ok(STAGE_STATUS[stage], stage);
+  assert.ok(MARKERS.protectedApproval && MARKERS.protectedApproved);
+  // a rejection goes to a human, and stays one round in the rules table
+  assert.equal(
+    decideByRules({ outcome: problem('develop', 'protected_rejected') }).target,
+    'human',
+  );
+  // the outcome notes round-trip
+  for (const p of ['protected_approval_needed', 'protected_rejected'])
+    assert.equal(
+      parseOutcome(renderOutcome(problem('develop', p))).ok,
+      true,
+      p,
+    );
+  // the request outcome never routes: the hard gate says human anyway
+  assert.equal(
+    decideByRules({ outcome: problem('develop', 'protected_approval_needed') })
+      .target,
+    'human',
+  );
+  assert.ok(isPipelineBranch('issue-7-add-dep'));
+  assert.ok(!isPipelineBranch('main'));
+  assert.ok(!isPipelineBranch('issue-7-'));
+});
+
+test('the router never moves an item out of stage:awaiting-approval', () => {
+  const labels = (...names) => names.map((name) => ({ name }));
+  assert.match(
+    routerSkip({
+      number: 7,
+      state: 'open',
+      labels: labels('stage:awaiting-approval'),
+    }),
+    /awaiting the owner's approval/,
+  );
+  assert.equal(
+    routerSkip({
+      number: 7,
+      state: 'open',
+      labels: ['stage:awaiting-approval'],
+    }) !== null,
+    true,
+  );
+  assert.equal(
+    routerSkip({ number: 7, state: 'open', labels: labels('stage:routing') }),
+    null,
+  );
+  assert.equal(routerSkip({ number: 7, state: 'open' }), null);
+  // an ordinary stage change removes it (one stage label at a time)
+  assert.deepEqual(
+    stageTransition(['stage:awaiting-approval'], 'stage:building'),
+    {
+      add: ['stage:building'],
+      remove: ['stage:awaiting-approval'],
+    },
+  );
+});
+
+// ---- the push-trigger guard
+
+test('branchPushTriggers: which workflows a branch push would fire', () => {
+  const b = 'issue-7-add-dep';
+  const fires = (on) => branchPushTriggers(on, b);
+  assert.deepEqual(fires({ push: { branches: ['main'] } }), []);
+  assert.deepEqual(fires({ push: { branches: ['main', 'release/**'] } }), []);
+  assert.deepEqual(fires({ push: null }), ['push']);
+  assert.deepEqual(fires({ push: {} }), ['push']);
+  assert.deepEqual(fires('push'), ['push']);
+  assert.deepEqual(fires(['pull_request', 'push']), ['push']);
+  assert.deepEqual(fires({ push: { branches: ['**'] } }), ['push']);
+  assert.deepEqual(fires({ push: { branches: ['*'] } }), ['push']);
+  assert.deepEqual(fires({ push: { branches: ['issue-*'] } }), ['push']);
+  assert.deepEqual(fires({ push: { branches: ['issue-**'] } }), ['push']);
+  assert.deepEqual(fires({ push: { branches: ['issue-7-*'] } }), ['push']);
+  // a negation excludes the branch again
+  assert.deepEqual(fires({ push: { branches: ['**', '!issue-*'] } }), []);
+  assert.deepEqual(fires({ push: { branches: ['!issue-*', '**'] } }), ['push']);
+  assert.deepEqual(fires({ push: { 'branches-ignore': ['issue-*'] } }), []);
+  assert.deepEqual(fires({ push: { 'branches-ignore': ['docs/**'] } }), [
+    'push',
+  ]);
+  // tags only: a branch push does not fire it
+  assert.deepEqual(fires({ push: { tags: ['v*'] } }), []);
+  assert.deepEqual(fires({ push: { tags: ['v*'], branches: ['**'] } }), [
+    'push',
+  ]);
+  // a branch being created fires `create`, a filter cannot stop it
+  assert.deepEqual(fires({ create: null }), ['create']);
+  assert.deepEqual(fires(['create']), ['create']);
+  assert.deepEqual(
+    fires({ pull_request: { types: ['opened'] }, workflow_dispatch: null }),
+    [],
+  );
+  assert.deepEqual(fires(undefined), []);
+});
+
+test('push guard: no workflow runs on a push of an issue-<n>-<slug> branch', () => {
+  // The approval flow pushes such a branch with no PR, so protected content
+  // must not meet secrets before the owner approved it. Every workflow's
+  // `on:` is checked for a branch named like the pipeline's.
+  const dir = new URL('../workflows/', import.meta.url);
+  const files = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f));
+  assert.ok(files.length >= 10, 'found the workflows');
+  for (const file of files) {
+    const wf = parseYaml(readFileSync(new URL(file, dir), 'utf8'));
+    // YAML 1.1 readers turn a bare `on` key into `true`
+    const on = wf.on ?? wf[true];
+    assert.ok(on, `${file} has triggers`);
+    for (const branch of [
+      'issue-1-x',
+      'issue-7-add-a-dependency',
+      'issue-123-task',
+    ])
+      assert.deepEqual(
+        branchPushTriggers(on, branch),
+        [],
+        `${file} would run on a push of ${branch}`,
+      );
+  }
+  // deploy.yml is the only push trigger, and it is limited to the default branch
+  const deploy = parseYaml(readFileSync(new URL('deploy.yml', dir), 'utf8'));
+  assert.deepEqual((deploy.on ?? deploy[true]).push.branches, ['main']);
 });
