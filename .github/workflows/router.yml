@@ -1,0 +1,118 @@
+name: Pipeline · Router
+
+# A stage reported a problem: it appended an outcome note and set
+# stage:routing. The router reads the pipeline bot's outcome and route notes
+# on that issue or PR, decides the next step (re-spec, re-plan, re-develop,
+# retry, or a human) within the loop caps and hard gates, appends a route
+# note and applies it. It never sets stage:routing itself.
+# See docs/pipeline.md, "Router".
+on:
+  issues:
+    types: [labeled]
+  # Labels on PRs arrive as pull_request events, not issues events.
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      item:
+        description: Issue or pull request number
+        required: true
+        type: number
+
+permissions: {}
+
+jobs:
+  # Optional external brain (vars.ROUTER_MODE == 'external', or
+  # vars.ROUTER_SHADOW == 'true'). Read-only token; its pick is data that
+  # the route job validates and clamps. Currently a stub that returns null.
+  brain:
+    if: >-
+      vars.PIPELINE_APP_CLIENT_ID != '' &&
+      (vars.ROUTER_MODE == 'external' || vars.ROUTER_SHADOW == 'true') &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'stage:routing' &&
+      (github.event_name == 'issues' || github.event.pull_request.head.repo.full_name == github.repository)))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      pick: ${{ steps.pick.outputs.pick }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          N: ${{ github.event.issue.number || github.event.pull_request.number || inputs.item }}
+        run: node .github/scripts/pipeline.mjs route-external "$N"
+
+  route:
+    needs: brain
+    # always(): a skipped or failed brain falls back to the rules.
+    if: >-
+      always() &&
+      vars.PIPELINE_APP_CLIENT_ID != '' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'stage:routing' &&
+      (github.event_name == 'issues' || github.event.pull_request.head.repo.full_name == github.repository)))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pipeline-item-${{ github.event.issue.number || github.event.pull_request.number || inputs.item }}-router
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    outputs:
+      target: ${{ steps.route.outputs.target }}
+      retry_pr: ${{ steps.route.outputs.retry_pr }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      # App token: label changes made with GITHUB_TOKEN would not trigger the next stage.
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-issues: write
+          permission-pull-requests: write
+
+      - id: route
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ github.event.issue.number || github.event.pull_request.number || inputs.item }}
+          # Only notes authored by this login are trusted.
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          ROUTER_MODE: ${{ vars.ROUTER_MODE }}
+          ROUTER_SHADOW: ${{ vars.ROUTER_SHADOW }}
+          ROUTER_EXTERNAL_PICK: ${{ needs.brain.outputs.pick }}
+        run: node .github/scripts/pipeline.mjs route "$N"
+
+  # target=retry for a fix round: re-run fix.yml in retry mode. A
+  # workflow_dispatch made with GITHUB_TOKEN does trigger the workflow, so
+  # the App needs no Actions permission.
+  retry:
+    needs: route
+    if: ${{ needs.route.outputs.retry_pr != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.route.outputs.retry_pr }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: gh workflow run fix.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" -f pr="$PR" -f retry=true
