@@ -1,4 +1,10 @@
-import { formatFiles, generateFiles, names, type Tree } from '@nx/devkit';
+import {
+  formatFiles,
+  generateFiles,
+  names,
+  updateJson,
+  type Tree,
+} from '@nx/devkit';
 import { applicationGenerator } from '@nx/react';
 import { join } from 'node:path';
 import {
@@ -66,6 +72,14 @@ export async function appGenerator(tree: Tree, options: AppGeneratorSchema) {
     devDependencies: [`${scope}/vite-config`],
   });
   addDomLib(tree, `${projectRoot}/tsconfig.app.json`);
+  // Keep typecheck output out of dist: Vite empties dist on every build, which
+  // races a parallel `typecheck` and breaks tsc --build with TS6305.
+  updateJson(tree, `${projectRoot}/tsconfig.app.json`, (json) => {
+    json.compilerOptions.outDir = 'out-tsc/app';
+    json.compilerOptions.tsBuildInfoFile =
+      'out-tsc/app/tsconfig.app.tsbuildinfo';
+    return json;
+  });
   addDomLib(tree, `${projectRoot}/tsconfig.spec.json`);
 
   await formatFiles(tree);
