@@ -607,11 +607,22 @@ export function decideFix({ labels, actionable }) {
 
 // ---------------------------------------------------------------- security
 
-/** Extracts and validates the JSON report from the reviewer's reply. */
+/**
+ * Extracts and validates the JSON report from the reviewer's reply. The
+ * reply must hold exactly one fenced `json` block: with two, injected PR
+ * content could append a clean report after the real one. Zero or several
+ * blocks is an error, which the workflow treats as a failed review.
+ */
 export function parseSecurityReport(text) {
   const src = String(text ?? '');
-  const fences = [...src.matchAll(/```json\s*\n([\s\S]*?)\n```/g)];
-  const raw = fences.length ? fences.at(-1)[1] : src.trim();
+  const opens = src.match(/```[ \t]*json\b/gi) ?? [];
+  const fences = [...src.matchAll(/```json[ \t]*\r?\n([\s\S]*?)\r?\n```/g)];
+  if (opens.length !== 1 || fences.length !== 1)
+    return {
+      ok: false,
+      error: `reviewer output must contain exactly one json block, found ${opens.length}`,
+    };
+  const raw = fences[0][1];
   let obj;
   try {
     obj = JSON.parse(raw);

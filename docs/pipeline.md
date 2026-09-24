@@ -76,7 +76,9 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   deterministic job validates it before anything is written:
   - spec: required headings present;
   - plan / develop: JSON schema (`--json-schema`), status field decides the stage;
-  - security review: JSON parsed and normalised; unknown severities count as blocking;
+  - security review: exactly one fenced `json` block, parsed and normalised
+    (zero or several blocks fail the review: `pipeline/security` = error,
+    `stage:needs-attention`); unknown severities count as blocking;
   - develop / fix patches: rejected if they touch `.github/`, `CODEOWNERS`,
     `.claude/`, `.gemini/` or `.pipeline/`, or the execution surface of
     `pnpm` (`package.json` and `pnpm-lock.yaml` at any depth,
