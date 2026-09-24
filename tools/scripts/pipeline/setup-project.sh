@@ -39,7 +39,7 @@ mutation($field: ID!) {
       { name: "Human approval",  color: ORANGE, description: "stage:human-approval" }
       { name: "Routing",         color: PINK,   description: "stage:routing" }
       { name: "Needs attention", color: RED,    description: "stage:needs-attention" }
-      { name: "Done",            color: GREEN,  description: "merged" }
+      { name: "Done",            color: GREEN,  description: "stage:done (merged)" }
     ]
   }) { projectV2Field { ... on ProjectV2SingleSelectField { id } } }
 }' -f field="$field_id" >/dev/null

@@ -4,7 +4,9 @@ name: Pipeline · Router
 # stage:routing. The router reads the pipeline bot's outcome and route notes
 # on that issue or PR, decides the next step (re-spec, re-plan, re-develop,
 # retry, or a human) within the loop caps and hard gates, appends a route
-# note and applies it. It never sets stage:routing itself.
+# note and applies it. It never sets stage:routing itself. Closed issues and
+# PRs are finished and never routed (checked here for label events and in
+# the script for manual runs); an open issue whose PR was closed does route.
 # See docs/pipeline.md, "Router".
 on:
   issues:
@@ -31,6 +33,7 @@ jobs:
       (vars.ROUTER_MODE == 'external' || vars.ROUTER_SHADOW == 'true') &&
       (github.event_name == 'workflow_dispatch' ||
       (github.event.label.name == 'stage:routing' &&
+      (github.event.issue.state || github.event.pull_request.state) == 'open' &&
       (github.event_name == 'issues' || github.event.pull_request.head.repo.full_name == github.repository)))
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -62,6 +65,7 @@ jobs:
       vars.PIPELINE_APP_CLIENT_ID != '' &&
       (github.event_name == 'workflow_dispatch' ||
       (github.event.label.name == 'stage:routing' &&
+      (github.event.issue.state || github.event.pull_request.state) == 'open' &&
       (github.event_name == 'issues' || github.event.pull_request.head.repo.full_name == github.repository)))
     runs-on: ubuntu-latest
     timeout-minutes: 5

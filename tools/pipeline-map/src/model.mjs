@@ -136,6 +136,10 @@ export function buildModel({
     const id = `h_${slug(s)}`;
     addNode(id, `👤 ${cfg.human ?? 'Human'}`, 'human', 'stadium');
     edge(stageId(s), id, 'human');
+    for (const e of cfg.emits ?? [])
+      for (const w of wfs)
+        if (w.triggers.some((t) => triggerMatches(t, e)))
+          edge(id, workflowId(w.file), 'event', e.label);
   }
 
   // Workflows on the map; the ones nothing triggers start from outside.

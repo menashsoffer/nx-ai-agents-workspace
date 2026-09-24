@@ -40,8 +40,10 @@ command shows up on the map as soon as the sources mention it. A new
   `workflow_run` by workflow name.
 - **fix loop:** `COMMAND_EFFECTS[cmd].loops`, ending at the command's problem stage.
 - **humans:** `EXPECTED_UNGATED` entries of kind `triage` lead to their
-  `next` stage, kind `human` lead out to a human; any other stage that is
-  gated but never set gets a human entry.
+  `next` stage, kind `human` lead out to a human (and, through its
+  `emits`, into the workflows the human's action triggers, e.g. merging or
+  closing the PR → `done.yml`); any other stage that is gated but never
+  set gets a human entry.
 - **markers:** `COMMAND_EFFECTS[cmd].markers` (and `upsert-comment`) are
   upserted, one comment per item; `appends` are append-only history. Only a
   marker upserted by several workflows is reported as a finding.

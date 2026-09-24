@@ -9,8 +9,10 @@ import {
   STAGE_STATUS,
   allowedTargets,
   applyLabels,
+  branchIssueEligible,
   branchName,
   buildSecurityReview,
+  clearStages,
   checkPatch,
   classifyDevelop,
   classifyFix,
@@ -24,16 +26,20 @@ import {
   evaluateApproval,
   isPipelinePr,
   issueForAgents,
+  issueFromBranch,
   normalizeOutcome,
   parseSecurityReport,
   parseState,
+  planPrClosed,
   planRoute,
+  prClosedOutcome,
   previewUrl,
   promptVersion,
   renderOutcome,
   renderPrompt,
   renderState,
   resetFixLoop,
+  routerSkip,
   sameLogin,
   selectActionable,
   stageTransition,
@@ -217,6 +223,12 @@ const commands = {
 
   // Read-only: asks the external brain for a pick (router.yml `brain` job).
   async 'route-external'([number]) {
+    const skip = routerSkip(api(`issues/${num(number)}`));
+    if (skip) {
+      console.log(`route-external: skipped (${skip})`);
+      setOutput('pick', 'null');
+      return;
+    }
     const { outcome, history } = collectRouterInput({
       comments: list(`issues/${num(number)}/comments`),
       botLogin: process.env.PIPELINE_BOT_LOGIN,
@@ -234,6 +246,13 @@ const commands = {
   route([number]) {
     const n = num(number);
     const item = api(`issues/${n}`);
+    const skip = routerSkip(item);
+    if (skip) {
+      console.log(`route: skipped (${skip})`);
+      setOutput('target', '');
+      setOutput('retry_pr', '');
+      return;
+    }
     let external = null;
     try {
       external = JSON.parse(process.env.ROUTER_EXTERNAL_PICK || 'null');
@@ -629,30 +648,146 @@ const commands = {
     });
   },
 
-  'linked-issues'([pr]) {
-    const data = graphql(
+  // done.yml, read-only: what to do about a closed PR (see planPrClosed).
+  // Writes the plan to `outFile` for `pr-closed`, and the board's node ids.
+  'pr-closed-plan'([pr, outFile]) {
+    const n = num(pr);
+    const repo = `${OWNER}/${NAME}`;
+    const p = graphql(
       `
         query ($owner: String!, $name: String!, $number: Int!) {
           repository(owner: $owner, name: $name) {
             pullRequest(number: $number) {
               id
+              merged
+              mergedAt
+              headRefName
+              headRepository {
+                nameWithOwner
+              }
+              labels(first: 100) {
+                nodes {
+                  name
+                }
+              }
               closingIssuesReferences(first: 20) {
                 nodes {
                   id
                   number
+                  state
                 }
               }
             }
           }
         }
       `,
-      { owner: OWNER, name: NAME, number: num(pr) },
+      { owner: OWNER, name: NAME, number: n },
     ).repository.pullRequest;
-    setOutput('pr_node_id', data.id);
+    let linked = p.closingIssuesReferences.nodes.map((i) => ({
+      id: i.id,
+      number: i.number,
+      state: i.state.toLowerCase(),
+    }));
+    if (!linked.length) {
+      const b = issueFromBranch({
+        headRef: p.headRefName,
+        headRepo: p.headRepository?.nameWithOwner,
+        repo,
+      });
+      let issue = null;
+      try {
+        issue = b ? api(`issues/${b}`) : null;
+      } catch {
+        issue = null; // no such issue
+      }
+      if (
+        branchIssueEligible({ issue, merged: p.merged, mergedAt: p.mergedAt })
+      )
+        linked = [{ id: issue.node_id, number: b, state: issue.state }];
+    }
+    // A replacement PR: another open same-repo PR that closes the issue or
+    // is on its issue-<n>- branch.
+    const openPrs = p.merged ? [] : list('pulls?state=open');
+    const issues = linked.map((i) => ({
+      ...i,
+      openPrs: p.merged
+        ? []
+        : [
+            ...graphql(
+              `
+                query ($owner: String!, $name: String!, $number: Int!) {
+                  repository(owner: $owner, name: $name) {
+                    issue(number: $number) {
+                      closedByPullRequestsReferences(
+                        first: 20
+                        includeClosedPrs: false
+                      ) {
+                        nodes {
+                          number
+                        }
+                      }
+                    }
+                  }
+                }
+              `,
+              { owner: OWNER, name: NAME, number: i.number },
+            ).repository.issue.closedByPullRequestsReferences.nodes.map(
+              (x) => x.number,
+            ),
+            ...openPrs
+              .filter(
+                (o) =>
+                  issueFromBranch({
+                    headRef: o.head.ref,
+                    headRepo: o.head.repo?.full_name,
+                    repo,
+                  }) === i.number,
+              )
+              .map((o) => o.number),
+          ],
+    }));
+    const plan = planPrClosed({
+      pr: {
+        number: n,
+        merged: p.merged,
+        labels: p.labels.nodes.map((l) => l.name),
+      },
+      issues,
+    });
+    console.log(
+      `pr-closed-plan: ${plan.act ? plan.reason : `noop (${plan.reason})`}; ${plan.issues.map((i) => `#${i.number} ${i.action} (${i.reason})`).join(', ') || 'no issues'}`,
+    );
+    writeFileSync(
+      outFile,
+      JSON.stringify({ ...plan, closedBy: process.env.CLOSED_BY ?? '' }),
+    );
+    setOutput('act', String(plan.act));
+    setOutput('pr_node_id', plan.act ? p.id : '');
     setOutput(
       'issue_node_ids',
-      data.closingIssuesReferences.nodes.map((i) => i.id).join(' '),
+      plan.issues
+        .filter((i) => i.action === 'done')
+        .map((i) => linked.find((l) => l.number === i.number).id)
+        .join(' '),
     );
+  },
+
+  // done.yml, App token: applies a pr-closed-plan. Merged: stage:done on
+  // the PR and its issues. Closed: a pr_closed note on each issue to route.
+  'pr-closed'([file]) {
+    const plan = JSON.parse(readFileSync(file, 'utf8'));
+    if (!plan.act) return;
+    const pr = num(plan.pr.number);
+    if (plan.pr.labels === 'done')
+      editLabels(pr, resetFixLoop(labelsOf(pr), 'stage:done'));
+    else editLabels(pr, clearStages(labelsOf(pr)));
+    for (const i of plan.issues) {
+      const n = num(i.number);
+      if (i.action === 'done')
+        editLabels(n, resetFixLoop(labelsOf(n), 'stage:done'));
+      else if (i.action === 'route')
+        writeOutcome(n, prClosedOutcome({ pr, closedBy: plan.closedBy }));
+    }
   },
 
   'project-status'(args) {

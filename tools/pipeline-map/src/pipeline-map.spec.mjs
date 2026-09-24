@@ -197,6 +197,10 @@ describe('this repository', () => {
       'w_fix -.-> s_stage_routing',
       's_stage_routing --> w_router',
       'w_router -.-> s_stage_needs_attention',
+      // Merged: stage:done. Closed unmerged: pr_closed -> router -> human.
+      'h_stage_human_approval -->|"merges / closes PR"| w_done',
+      'w_done --> s_stage_done',
+      'w_done -.-> s_stage_routing',
     ])
       expect(md).toContain(`  ${line}\n`);
   });

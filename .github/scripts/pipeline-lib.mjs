@@ -13,6 +13,8 @@ export const STAGES = [
   'stage:human-approval',
   'stage:routing',
   'stage:needs-attention',
+  // Terminal: the PR merged. Set only by done.yml, on the PR and its issues.
+  'stage:done',
 ];
 
 export const FIX_LOOP_1 = 'fix-loop:1';
@@ -30,6 +32,7 @@ export const STAGE_STATUS = {
   'stage:human-approval': 'Human approval',
   'stage:routing': 'Routing',
   'stage:needs-attention': 'Needs attention',
+  'stage:done': 'Done',
 };
 
 export const MARKERS = {
@@ -631,13 +634,28 @@ export function threadsToResolve(threads, itemIds, autoResolveLogins) {
 }
 
 const FIX_LOOPS = [FIX_LOOP_1, FIX_LOOP_2];
+const isFixLoop = (l) => String(l).startsWith('fix-loop:');
 
-/** Label edits that make `stage` the only stage and clear the fix budget. */
+/**
+ * Label edits that make `stage` the only stage and clear the fix budget
+ * (every `fix-loop:*` label).
+ */
 export function resetFixLoop(labels, stage) {
   const t = stageTransition(labels, stage);
   return {
     add: t.add,
-    remove: [...t.remove, ...FIX_LOOPS.filter((l) => labels.includes(l))],
+    remove: [...t.remove, ...labels.filter(isFixLoop)],
+  };
+}
+
+/**
+ * Label edits that leave no stage and no fix budget: for a PR closed
+ * without merging, which no stage may pick up again.
+ */
+export function clearStages(labels) {
+  return {
+    add: [],
+    remove: labels.filter((l) => STAGES.includes(l) || isFixLoop(l)),
   };
 }
 
@@ -896,6 +914,109 @@ export function evaluateApproval({
   return { action: 'human-approval' };
 }
 
+// ---------------------------------------------------------------- done
+
+const ISSUE_BRANCH = /^issue-([1-9]\d*)-/;
+
+/**
+ * The issue a PR's head branch names (`issue-<n>-<slug>`, see branchName),
+ * or null. Same-repo branches only: a fork can name its branch anything.
+ */
+export function issueFromBranch({ headRef, headRepo, repo }) {
+  if (!sameLogin(headRepo, repo)) return null;
+  const m = ISSUE_BRANCH.exec(String(headRef ?? ''));
+  return m ? Number(m[1]) : null;
+}
+
+// GitHub closes an issue a moment after the merge that closes it.
+const MERGE_CLOSE_SKEW_MS = 60_000;
+
+/**
+ * Whether the issue found through issueFromBranch counts as linked: it
+ * exists, is an issue (not a PR), and is open or was closed by this merge
+ * (closed no earlier than a minute before the PR merged).
+ */
+export function branchIssueEligible({ issue, merged, mergedAt }) {
+  if (!issue || issue.pull_request) return false;
+  if (issue.state === 'open') return true;
+  if (!merged || !issue.closed_at || !mergedAt) return false;
+  return (
+    Date.parse(issue.closed_at) >= Date.parse(mergedAt) - MERGE_CLOSE_SKEW_MS
+  );
+}
+
+/**
+ * What done.yml does when a PR closes. `issues` are the linked issues
+ * (closingIssuesReferences, or the branch fallback), each with `state`
+ * ('open' | 'closed') and `openPrs`: other open PRs linked to it.
+ *
+ * - merged: the PR and every linked issue get `stage:done` (no router). A
+ *   PR with no linked issue and no stage label is not a pipeline item.
+ * - closed unmerged: each still-open issue without a replacement PR gets a
+ *   `pr_closed` outcome note (the router hands it to a human). The closed
+ *   PR's stage and fix-loop labels are cleared. No linked issue: nothing.
+ */
+export function planPrClosed({ pr, issues = [] }) {
+  const noop = (reason) => ({ act: false, reason, pr: null, issues: [] });
+  if (pr.merged) {
+    if (!issues.length && !pr.labels.some((l) => STAGES.includes(l)))
+      return noop('no linked issue and no stage label');
+    return {
+      act: true,
+      reason: 'merged',
+      pr: { number: pr.number, labels: 'done' },
+      issues: issues.map((i) => ({
+        number: i.number,
+        action: 'done',
+        reason: 'merged',
+      })),
+    };
+  }
+  if (!issues.length) return noop('no linked issue');
+  return {
+    act: true,
+    reason: 'closed without merging',
+    pr: { number: pr.number, labels: 'clear' },
+    issues: issues.map((i) => {
+      const others = (i.openPrs ?? []).filter((n) => n !== pr.number);
+      if (i.state !== 'open')
+        return { number: i.number, action: 'skip', reason: 'issue is closed' };
+      if (others.length)
+        return {
+          number: i.number,
+          action: 'skip',
+          reason: `replacement PR #${others[0]} is open`,
+        };
+      return { number: i.number, action: 'route', reason: 'no open PR left' };
+    }),
+  };
+}
+
+/** The `pr_closed` outcome note written on an issue whose PR was closed. */
+export function prClosedOutcome({ pr, closedBy }) {
+  const who = /^[A-Za-z0-9-]+(?:\[bot\])?$/.test(closedBy ?? '')
+    ? `\`${closedBy}\``
+    : 'an unknown user';
+  return {
+    stage: 'pr',
+    result: 'problem',
+    problem: 'pr_closed',
+    summary: `PR #${pr} was closed without merging.`,
+    details: [
+      `PR #${pr} was closed by ${who}; its code is not on the default branch.`,
+      'Reopen the PR, open a replacement PR, restart the issue (add `stage:planned` or an earlier stage label; re-developing force-pushes its `issue-<n>-` branch), or close the issue.',
+    ],
+  };
+}
+
+/**
+ * Why the router must leave an item alone, or null. Closed issues and PRs
+ * are finished; an open issue whose PR was closed still routes.
+ */
+export function routerSkip(item) {
+  return item?.state === 'closed' ? `#${item.number} is closed` : null;
+}
+
 // ---------------------------------------------------------------- outcomes
 
 /** Stages that leave outcome notes. */
@@ -907,6 +1028,8 @@ export const OUTCOME_STAGES = [
   'fix',
   'approval',
   'ci',
+  // The PR itself: closed without merging (done.yml). Noted on the issue.
+  'pr',
 ];
 
 /** Closed set of problem codes an outcome note may carry. */
@@ -922,6 +1045,7 @@ export const PROBLEMS = [
   'budget_exhausted', // fix: both fix rounds used
   'copilot_request_failed', // approval: could not request Copilot
   'ci_failed', // ci: CI failed on a pipeline PR's current head
+  'pr_closed', // pr: the issue's PR was closed without merging
   // Hard gates (HARD_GATES): always a human.
   'protected_surface',
   'needs_secrets_ci_infra',
@@ -1007,6 +1131,7 @@ const STAGE_TITLE = {
   fix: 'Fix',
   approval: 'Approval',
   ci: 'CI',
+  pr: 'Pull request',
 };
 
 const PROBLEM_TEXT = {
@@ -1020,6 +1145,7 @@ const PROBLEM_TEXT = {
   budget_exhausted: 'the fix-loop budget (2 rounds) is used up',
   copilot_request_failed: 'the Copilot review could not be requested',
   ci_failed: 'CI failed on the agent PR',
+  pr_closed: 'the pull request was closed without merging',
   protected_surface: 'the work touches protected files',
   needs_secrets_ci_infra:
     'the work needs secrets, CI, infrastructure or a server',
@@ -1203,6 +1329,15 @@ const RULES = [
     problems: ['ci_failed'],
     target: 'human',
     reason: 'CI failed on the agent PR, see run',
+  },
+  // Never retried: someone closed the PR on purpose. A person decides
+  // whether to restart the issue or close it.
+  {
+    stage: 'pr',
+    problems: ['pr_closed'],
+    target: 'human',
+    reason:
+      'the pull request was closed without merging; restart the issue or close it',
   },
 ];
 
@@ -1751,6 +1886,13 @@ export const COMMAND_EFFECTS = {
   },
   'ci-failed': {
     stages: ['stage:routing'],
+    problems: ['stage:routing'],
+    markers: [],
+    appends: ['outcome'],
+    emits: [],
+  },
+  'pr-closed': {
+    stages: ['stage:done', 'stage:routing'],
     problems: ['stage:routing'],
     markers: [],
     appends: ['outcome'],

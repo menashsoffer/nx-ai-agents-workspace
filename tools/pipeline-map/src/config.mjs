@@ -5,7 +5,9 @@
  * Anything set, ungated and missing here is reported as a finding.
  * - kind `triage`: waits for a human to add the `next` stage;
  * - kind `event`: the next workflow reacts to a GitHub event, not the label;
- * - kind `human`: the pipeline hands over to a human (`human` is the map text).
+ * - kind `human`: the pipeline hands over to a human (`human` is the map text);
+ *   `emits` lists the GitHub events that human's action causes, as in
+ *   COMMAND_EVENTS (e.g. merging the PR), which lead to the workflows on them.
  */
 export const EXPECTED_UNGATED = {
   'stage:inbox': {
@@ -29,6 +31,10 @@ export const EXPECTED_UNGATED = {
     kind: 'human',
     reason: 'a human reviews the PR and the preview, approves and merges',
     human: 'Human reviews, approves, merges',
+    // Merging (or closing) the PR is what the human does next.
+    emits: [
+      { event: 'pull_request', action: 'closed', label: 'merges / closes PR' },
+    ],
   },
   'stage:needs-attention': {
     kind: 'human',
