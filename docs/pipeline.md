@@ -365,23 +365,6 @@ old way.) If the item already has both a spec and a plan comment you trust,
 `spec`-stage outcome notes and `respec` route notes still parse: see
 [Router](#router).
 
-## Gemini queue
-
-Gemini's daily quota was burned by parallel calls. The two jobs that call
-`run-gemini-cli` (`security.yml` `review` and `fix.yml` `fix`) share one
-concurrency group, `pipeline-gemini`, with `queue: max` and
-`cancel-in-progress: false`: at most one Gemini job runs at a time and the
-rest wait in FIFO order (up to 100). Two details matter:
-
-- A concurrency group normally keeps only **one** pending run and cancels
-  the older pending one, which would silently drop reviews in a burst.
-  `queue: max` keeps them all.
-- `queue: max` cannot be combined with `cancel-in-progress: true`, so the
-  security review's old per-PR "newest head wins" cancellation is gone. In
-  its place, the `fresh` step checks the PR head when the job finally starts
-  and skips the Gemini call if the head moved (the publish job already
-  ignores a review of an older head).
-
 ## Router
 
 ### Outcome notes

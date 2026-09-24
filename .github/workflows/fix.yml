@@ -101,15 +101,8 @@ jobs:
     if: ${{ needs.adapter.outputs.action == 'fix' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # Gemini quota: every job that calls run-gemini-cli shares this one group
-    # (security.yml review, fix.yml fix), so a burst queues (FIFO, up to 100
-    # pending) instead of running in parallel. `queue: max` matters: by
-    # default a group keeps one pending run and cancels the older pending one.
-    # Nothing is cancelled while waiting. This replaces the old per-PR group:
-    # with one Gemini job at a time, two fixes for a PR can never overlap.
     concurrency:
-      group: pipeline-gemini
-      queue: max
+      group: pipeline-pr-${{ needs.adapter.outputs.pr }}-fix
       cancel-in-progress: false
     permissions:
       contents: read
