@@ -18,6 +18,7 @@ flowchart TD
   E -->|yes| F[stage:planned]
   F -->|develop.yml: Claude| G[draft PR · stage:building]
   G -->|ci.yml green| H[security.yml: Gemini · stage:reviewing]
+  G -->|ci.yml failed: ci_failed| X
   H -->|blocking findings| I[fix.yml: Gemini · stage:fixing]
   I -->|push, CI again| H
   I -->|3rd round needed| X
@@ -53,6 +54,7 @@ From `stage:building` on, the **PR** carries the stage; the issue stays at
 | `develop.yml`      | `stage:planned` added                                | Claude (`develop.md`)         | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`         |
 | `ci.yml`           | every PR                                             | none                          | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site) |
 | `security.yml`     | CI succeeded on a PR                                 | Gemini (`security-review.md`) | PR review, `pipeline/security` status, `stage:reviewing`                  |
+| `security.yml`     | CI failed on a pipeline PR (`ci_failed`)             | none                          | PR → `stage:needs-attention`, `<!-- pipeline:notice:ci -->` with the run  |
 | `fix.yml`          | review submitted, or manual                          | Gemini (`fix.md`)             | one fix commit per round, replies on threads                              |
 | `approval.yml`     | `pipeline/security` status, review submitted, manual | none                          | Copilot review request, then `stage:human-approval` + preview comment     |
 | `preview.yml`      | PR opened/updated/closed                             | none                          | `https://<owner>.github.io/<repo>/pr-<n>/`, removed on close              |
@@ -233,7 +235,8 @@ Nothing happens until these files are on `main`.
 
 ### When it stops at `stage:needs-attention`
 
-Read the `<!-- pipeline:notice -->` comment and the linked run. Then either
+Read the `<!-- pipeline:notice -->` (or, for failed CI,
+`<!-- pipeline:notice:ci -->`) comment and the linked run. Then either
 finish the PR by hand (you are the reviewer anyway), or fix the cause and
 restart a stage:
 
@@ -242,7 +245,14 @@ restart a stage:
 - fix loop: remove `stage:needs-attention` (escalation already cleared
   `fix-loop:*`, so this resets the budget to two rounds), then run
   **Pipeline · Fix** manually with the PR number;
-- approval: run **Pipeline · Approval** manually with the PR number.
+- approval: run **Pipeline · Approval** manually with the PR number;
+- failed CI (`ci_failed`): push a fix to the PR branch. The next green CI
+  run starts the security review, which moves the PR to `stage:reviewing`.
+
+Problems are registered in `PROBLEMS` (`pipeline-lib.mjs`). Today only
+`ci_failed` exists and it always goes to a human; a router will later
+decide per problem (for `ci_failed`, proposed: one retry through the fixer
+with the CI log, then a human).
 
 ## Prompts
 

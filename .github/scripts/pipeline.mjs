@@ -11,6 +11,7 @@ import {
   branchName,
   buildSecurityReview,
   checkPatch,
+  decideCiFailed,
   decideFix,
   emptyState,
   evaluateApproval,
@@ -436,6 +437,31 @@ const commands = {
       );
       writeState(n, { ...state, humanApprovalFor: head });
     }
+  },
+
+  // CI failed on a PR (security.yml, workflow_run). Pipeline PRs only.
+  'ci-failed'([pr, sha, runUrl]) {
+    const n = num(pr);
+    const decision = decideCiFailed({
+      pr: api(`pulls/${n}`),
+      runHeadSha: sha,
+      botLogin: botLogin(),
+      repo: `${OWNER}/${NAME}`,
+    });
+    console.log(
+      `ci-failed: ${decision.action}${decision.reason ? ` (${decision.reason})` : ''}`,
+    );
+    if (decision.action === 'noop') return;
+    setStage(n, 'stage:needs-attention');
+    upsertBotComment(
+      n,
+      MARKERS.noticeCi,
+      [
+        `**CI failed on the agent PR; needs attention.** Problem: \`${decision.problem}\` (commit \`${sha.slice(0, 7)}\`).`,
+        `See the run: ${runUrl}`,
+        'Push a fix to the branch (or take the PR over by hand). The next green CI run starts the security review again and moves the PR on.',
+      ].join('\n\n'),
+    );
   },
 
   'linked-issues'([pr]) {

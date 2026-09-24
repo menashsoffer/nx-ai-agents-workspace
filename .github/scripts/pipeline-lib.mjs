@@ -41,7 +41,18 @@ export const MARKERS = {
   securityReview: 'pipeline:security-review',
   // A pipeline-authored review body that the fixer must act on.
   actionable: '<!-- pipeline:actionable -->',
+  // Stage-specific notice, so it never overwrites another stage's notice.
+  noticeCi: '<!-- pipeline:notice:ci -->',
 };
+
+/**
+ * Problems the pipeline can hit, keyed by name, with the stage they arise
+ * in. Only `ci_failed` so far; the router will extend this and decide how
+ * each one is handled (today ci_failed parks the PR for a human).
+ */
+export const PROBLEMS = Object.freeze({
+  ci_failed: Object.freeze({ stage: 'ci' }),
+});
 
 export const COPILOT_REVIEWER = 'copilot-pull-request-reviewer[bot]';
 export const COPILOT_LOGINS = [COPILOT_REVIEWER, 'Copilot'];
@@ -776,6 +787,30 @@ export function buildSecurityReview({ report, sha, files, promptVer }) {
     .filter(Boolean)
     .join('\n\n');
   return { clean, body, comments: inline, blockingCount: blocking.length };
+}
+
+// ---------------------------------------------------------------- ci
+
+/**
+ * Reaction to a failed CI run: park a pipeline PR in stage:needs-attention,
+ * only if the run is for the PR's current head (older runs are stale) and
+ * the PR is open.
+ */
+export function decideCiFailed({ pr, runHeadSha, botLogin, repo }) {
+  if (pr.state !== 'open') return { action: 'noop', reason: 'PR is not open' };
+  if (
+    !isPipelinePr({
+      author: pr.user?.login,
+      headRef: pr.head?.ref,
+      headRepo: pr.head?.repo?.full_name,
+      repo,
+      botLogin,
+    })
+  )
+    return { action: 'noop', reason: 'not a pipeline PR' };
+  if (pr.head?.sha !== runHeadSha)
+    return { action: 'noop', reason: 'CI run is for an older commit' };
+  return { action: 'needs-attention', problem: 'ci_failed' };
 }
 
 // ---------------------------------------------------------------- approval

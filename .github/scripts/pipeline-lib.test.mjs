@@ -6,8 +6,10 @@ import {
   applyLabels,
   MARKERS,
   branchName,
+  PROBLEMS,
   buildSecurityReview,
   checkPatch,
+  decideCiFailed,
   commentableLines,
   decideFix,
   emptyState,
@@ -903,5 +905,39 @@ test('selectActionable skips approved and dismissed reviews and their comments',
   assert.deepEqual(
     actionable.map((a) => a.key),
     ['c5', 'r3'],
+  );
+});
+
+test('PROBLEMS registers ci_failed at the ci stage', () => {
+  assert.deepEqual(PROBLEMS.ci_failed, { stage: 'ci' });
+  assert.ok(Object.isFrozen(PROBLEMS));
+  assert.notEqual(MARKERS.noticeCi, MARKERS.notice);
+  assert.ok(!MARKERS.noticeCi.includes(MARKERS.notice));
+  assert.ok(!MARKERS.notice.includes(MARKERS.noticeCi));
+});
+
+test('decideCiFailed parks only open pipeline PRs at the failed head', () => {
+  const pr = {
+    state: 'open',
+    user: { login: BOT },
+    head: { ref: 'issue-3-task', sha: 'h1', repo: { full_name: 'o/r' } },
+  };
+  const decide = (over = {}, sha = 'h1') =>
+    decideCiFailed({
+      pr: { ...pr, ...over },
+      runHeadSha: sha,
+      botLogin: BOT,
+      repo: 'o/r',
+    });
+  assert.deepEqual(decide(), {
+    action: 'needs-attention',
+    problem: 'ci_failed',
+  });
+  assert.equal(decide({}, 'old').action, 'noop');
+  assert.equal(decide({ state: 'closed' }).action, 'noop');
+  assert.equal(decide({ user: { login: 'alice' } }).action, 'noop');
+  assert.equal(
+    decide({ head: { ...pr.head, ref: 'dependabot/npm/x' } }).action,
+    'noop',
   );
 });
