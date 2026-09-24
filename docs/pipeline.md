@@ -91,6 +91,13 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   `git add/commit` only; no push, `gh`, `curl` or web. Fix: file edits only,
   **no shell**; a separate job with no secrets formats the patch and runs
   `pnpm verify` before the push job.
+- **Markers count only from the bot.** Anyone can post a comment containing
+  `<!-- pipeline-state -->` or `<!-- pipeline:spec -->`. The scripts match a
+  marker comment only if `PIPELINE_BOT_LOGIN` wrote it (the preview comment:
+  `github-actions[bot]`), and the plan/develop agents get the spec and plan
+  as separate fields taken from the bot's comments, with markers in all
+  other text neutralised. Editing the bot's spec comment keeps the bot as
+  its author, so that still works.
 - **Trusted feedback only.** The fix loop runs only on PRs the pipeline
   opened (author `PIPELINE_BOT_LOGIN`, branch `issue-<n>-<slug>`), and only
   on feedback from the pipeline bot, Copilot, or people whose
@@ -161,17 +168,17 @@ Nothing happens until these files are on `main`.
    (label, push, PR, review, status) is made with this App's token.
 3. **Secrets and variables** (Settings → Secrets and variables → Actions):
 
-   | Kind     | Name                       | Value                                                                              |
-   | -------- | -------------------------- | ---------------------------------------------------------------------------------- |
-   | variable | `PIPELINE_APP_CLIENT_ID`   | the App's client ID                                                                |
-   | secret   | `PIPELINE_APP_PRIVATE_KEY` | the App's private key (PEM)                                                        |
-   | variable | `PIPELINE_BOT_LOGIN`       | the App's bot login, e.g. `my-pipeline[bot]` (lets Claude run on its label events) |
-   | secret   | `CLAUDE_CODE_OAUTH_TOKEN`  | Claude subscription token from `claude setup-token` (Pro/Max); no API billing      |
-   | secret   | `GEMINI_API_KEY`           | Gemini API key                                                                     |
-   | variable | `GEMINI_MODEL`             | optional, e.g. a specific Gemini model                                             |
-   | variable | `PROJECT_URL`              | set by `setup-project.sh`; leave unset to run without a Project                    |
-   | secret   | `PROJECT_TOKEN`            | classic PAT, `project` scope (App tokens cannot reach user-owned Projects)         |
-   | secret   | `COPILOT_REVIEW_TOKEN`     | PAT of a user with Copilot code review (Pull requests: write); App token if unset  |
+   | Kind     | Name                       | Value                                                                                                         |
+   | -------- | -------------------------- | ------------------------------------------------------------------------------------------------------------- |
+   | variable | `PIPELINE_APP_CLIENT_ID`   | the App's client ID                                                                                           |
+   | secret   | `PIPELINE_APP_PRIVATE_KEY` | the App's private key (PEM)                                                                                   |
+   | variable | `PIPELINE_BOT_LOGIN`       | **required**: the App's bot login, e.g. `my-pipeline[bot]`; the only author whose marker comments are trusted |
+   | secret   | `CLAUDE_CODE_OAUTH_TOKEN`  | Claude subscription token from `claude setup-token` (Pro/Max); no API billing                                 |
+   | secret   | `GEMINI_API_KEY`           | Gemini API key                                                                                                |
+   | variable | `GEMINI_MODEL`             | optional, e.g. a specific Gemini model                                                                        |
+   | variable | `PROJECT_URL`              | set by `setup-project.sh`; leave unset to run without a Project                                               |
+   | secret   | `PROJECT_TOKEN`            | classic PAT, `project` scope (App tokens cannot reach user-owned Projects)                                    |
+   | secret   | `COPILOT_REVIEW_TOKEN`     | PAT of a user with Copilot code review (Pull requests: write); App token if unset                             |
 
 4. **Labels:** `tools/scripts/pipeline/setup-labels.sh`
 5. **Project:** `gh auth refresh -s project && tools/scripts/pipeline/setup-project.sh`,

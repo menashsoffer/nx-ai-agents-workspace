@@ -80,6 +80,8 @@ jobs:
           N: ${{ github.event.pull_request.number }}
           REPO: ${{ github.event.repository.name }}
           SHA: ${{ github.event.pull_request.head.sha }}
+          # Posted with GITHUB_TOKEN, so the marker comment is github-actions'.
+          COMMENT_AUTHOR: github-actions[bot]
         run: |
           url="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/$REPO/pr-$N/"
           printf '**Preview:** %s\n\nBuilt from commit %s. Pages can take a minute to update. Removed when the PR closes.\n' \
@@ -121,6 +123,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           N: ${{ github.event.pull_request.number }}
+          COMMENT_AUTHOR: github-actions[bot]
         run: |
           printf '**Preview removed** (PR closed).\n' > body.md
           node .github/scripts/pipeline.mjs upsert-comment "$N" preview body.md

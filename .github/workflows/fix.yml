@@ -331,6 +331,7 @@ jobs:
       - env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.adapter.outputs.pr }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           printf '**Automated fix failed; needs attention.** The fixer made no usable change, its patch was rejected or failed `pnpm verify`, or the branch moved. Run: %s\n' "$RUN_URL" > body.md

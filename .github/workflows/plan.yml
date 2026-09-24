@@ -28,13 +28,15 @@ jobs:
         with:
           persist-credentials: false
 
+      # The spec comes only from the pipeline bot's marker comment.
       - name: Collect issue, spec and comments (untrusted data)
         env:
           GH_TOKEN: ${{ github.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          N: ${{ github.event.issue.number }}
         run: |
           mkdir -p .pipeline
-          gh issue view "${{ github.event.issue.number }}" --repo "$GITHUB_REPOSITORY" \
-            --json number,title,body,author,labels,comments > .pipeline/issue.json
+          node .github/scripts/pipeline.mjs collect-issue "$N" .pipeline/issue.json
 
       - id: prompt
         run: |
@@ -86,6 +88,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ github.event.issue.number }}
           RESULT: ${{ needs.plan.outputs.result }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
           VERSION: ${{ needs.plan.outputs.prompt_version }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |

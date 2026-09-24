@@ -3,6 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { findMarkerComment } from './pipeline-lib.mjs';
 
 const REPO = process.env.GITHUB_REPOSITORY ?? '';
 export const [OWNER, NAME] = REPO.split('/');
@@ -81,15 +82,14 @@ export function editLabels(number, { add = [], remove = [] }) {
     api(`issues/${number}/labels`, { method: 'POST', body: { labels: add } });
 }
 
-export function findComment(number, marker) {
-  return list(`issues/${number}/comments`).find((c) =>
-    c.body?.includes(marker),
-  );
+/** The comment with `marker` written by `author`; see findMarkerComment. */
+export function findComment(number, marker, { author } = {}) {
+  return findMarkerComment(list(`issues/${number}/comments`), marker, author);
 }
 
-export function upsertComment(number, marker, body) {
+export function upsertComment(number, marker, body, { author } = {}) {
   const full = body.includes(marker) ? body : `${marker}\n${body}`;
-  const existing = findComment(number, marker);
+  const existing = findComment(number, marker, { author });
   if (existing)
     return api(`issues/comments/${existing.id}`, {
       method: 'PATCH',

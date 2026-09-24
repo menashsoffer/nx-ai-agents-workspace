@@ -14,12 +14,14 @@ import {
   emptyState,
   evaluateApproval,
   isPipelinePr,
+  issueForAgents,
   parseSecurityReport,
   parseState,
   previewUrl,
   promptVersion,
   renderPrompt,
   renderState,
+  sameLogin,
   selectActionable,
   stageTransition,
   validateSpec,
@@ -71,15 +73,21 @@ function botLogin() {
   return login;
 }
 
+/** Marker comments are trusted only when the pipeline bot wrote them. */
+const findBotComment = (number, marker) =>
+  findComment(number, marker, { author: botLogin() });
+const upsertBotComment = (number, marker, body) =>
+  upsertComment(number, marker, body, { author: botLogin() });
+
 // ------------------------------------------------------------ state
 
 function readState(pr) {
-  const c = findComment(pr, MARKERS.state);
+  const c = findBotComment(pr, MARKERS.state);
   return c ? parseState(c.body) : emptyState();
 }
 
 function writeState(pr, state) {
-  upsertComment(pr, MARKERS.state, renderState(state, labelsOf(pr)));
+  upsertBotComment(pr, MARKERS.state, renderState(state, labelsOf(pr)));
 }
 
 function setStage(number, stage) {
@@ -121,10 +129,26 @@ const commands = {
     editLabels(num(f._[0]), { add: many(f.add), remove: many(f.remove) });
   },
 
+  // COMMENT_AUTHOR overrides the author to match, for comments posted with
+  // GITHUB_TOKEN (github-actions[bot]) instead of the pipeline App.
   'upsert-comment'([number, markerKey, file]) {
     const marker = MARKERS[markerKey];
     if (!marker) throw new Error(`Unknown marker ${markerKey}`);
-    upsertComment(num(number), marker, readFileSync(file, 'utf8'));
+    upsertComment(num(number), marker, readFileSync(file, 'utf8'), {
+      author: process.env.COMMENT_AUTHOR || botLogin(),
+    });
+  },
+
+  // Issue + comments for the plan/develop agents, with the spec and plan
+  // taken only from the bot's own marker comments.
+  'collect-issue'([number, outFile]) {
+    const n = num(number);
+    const data = issueForAgents({
+      issue: api(`issues/${n}`),
+      comments: list(`issues/${n}/comments`),
+      botLogin: botLogin(),
+    });
+    writeFileSync(outFile, JSON.stringify(data, null, 2));
   },
 
   'branch-name'([number]) {
@@ -149,7 +173,7 @@ const commands = {
 
   'init-state'([pr]) {
     const n = num(pr);
-    if (findComment(n, MARKERS.state)) return;
+    if (findBotComment(n, MARKERS.state)) return;
     const created = api(`pulls/${n}`).created_at;
     writeState(n, { ...emptyState(), watermark: created });
   },
@@ -207,7 +231,7 @@ const commands = {
     };
     if (decision.action === 'escalate') {
       setStage(n, 'stage:needs-attention');
-      upsertComment(
+      upsertBotComment(
         n,
         MARKERS.notice,
         `**Pipeline stopped: needs attention.** ${decision.reason}; ${actionable.length} new review item(s) remain. A human needs to take over this PR.`,
@@ -268,8 +292,11 @@ const commands = {
       console.log(`Head moved (${head}); skipping stale review of ${sha}.`);
       return;
     }
-    const already = list(`pulls/${n}/reviews`).some((r) =>
-      r.body?.includes(`${MARKERS.securityReview} sha=${sha}`),
+    const bot = botLogin();
+    const already = list(`pulls/${n}/reviews`).some(
+      (r) =>
+        sameLogin(r.user?.login, bot) &&
+        r.body?.includes(`${MARKERS.securityReview} sha=${sha}`),
     );
     if (already) {
       console.log('Security review for this commit already posted.');
@@ -288,7 +315,7 @@ const commands = {
     if (!report.ok) {
       status('error', report.error);
       setStage(n, 'stage:needs-attention');
-      upsertComment(
+      upsertBotComment(
         n,
         MARKERS.notice,
         `**Security review failed:** ${report.error}. A human needs to review this PR.`,
@@ -376,7 +403,7 @@ const commands = {
       } catch (e) {
         process.env.GH_TOKEN = saved;
         setStage(n, 'stage:needs-attention');
-        upsertComment(
+        upsertBotComment(
           n,
           MARKERS.notice,
           '**Could not request a Copilot review.** Check that Copilot code review is enabled for this repo and that `COPILOT_REVIEW_TOKEN` belongs to a user with Copilot access.',
@@ -404,7 +431,7 @@ const commands = {
           { id: p.node_id },
         );
       const url = previewUrl(OWNER, NAME, n);
-      upsertComment(
+      upsertBotComment(
         n,
         MARKERS.humanApproval,
         [

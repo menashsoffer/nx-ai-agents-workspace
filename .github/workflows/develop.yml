@@ -34,13 +34,15 @@ jobs:
 
       - uses: ./.github/actions/setup
 
+      # The spec and plan come only from the pipeline bot's marker comments.
       - name: Collect issue, spec and plan (untrusted data)
         env:
           GH_TOKEN: ${{ github.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          N: ${{ github.event.issue.number }}
         run: |
           mkdir -p .pipeline
-          gh issue view "${{ github.event.issue.number }}" --repo "$GITHUB_REPOSITORY" \
-            --json number,title,body,author,labels,comments > .pipeline/issue.json
+          node .github/scripts/pipeline.mjs collect-issue "$N" .pipeline/issue.json
 
       - id: branch
         env:
@@ -144,6 +146,7 @@ jobs:
           RESULT: ${{ needs.implement.outputs.result }}
           VERSION: ${{ needs.implement.outputs.prompt_version }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
         run: |
           # Checked again here: the patch crossed a job boundary.
           node .github/scripts/pipeline.mjs check-patch "$RUNNER_TEMP/in/changes.patch"
@@ -192,6 +195,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ github.event.issue.number }}
           RESULT: ${{ needs.implement.outputs.result }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           reason=$(jq -r '.blocked_reason // empty' <<<"${RESULT:-null}" 2>/dev/null || true)
