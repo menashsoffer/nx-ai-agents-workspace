@@ -47,7 +47,7 @@ check(
   manifestProblems,
 );
 
-check('AI-assistant config (A1-A3)', checkRepoAiConfig(workspaceRoot));
+check('AI-assistant config (A1-A3, A6)', checkRepoAiConfig(workspaceRoot));
 
 const prodGating = gatingAdvisories(
   runAudit(workspaceRoot, { prod: true }),
