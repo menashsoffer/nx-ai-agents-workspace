@@ -29,6 +29,13 @@ describe('app generator', () => {
     );
     expect(tree.exists('apps/admin-panel/src/app/nx-welcome.tsx')).toBe(false);
 
+    // Typecheck output stays out of Vite's dist, which each build empties.
+    const tsconfig = readJson(tree, 'apps/admin-panel/tsconfig.app.json');
+    expect(tsconfig.compilerOptions.outDir).toBe('out-tsc/app');
+    expect(tsconfig.compilerOptions.tsBuildInfoFile).toBe(
+      'out-tsc/app/tsconfig.app.tsbuildinfo',
+    );
+
     const pkg = readJson(tree, 'apps/admin-panel/package.json');
     expect(pkg.dependencies['@acme/ui']).toBe('workspace:*');
 
