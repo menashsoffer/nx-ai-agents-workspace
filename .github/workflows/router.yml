@@ -161,7 +161,10 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PIPELINE_APPROVER_LOGIN: ${{ vars.PIPELINE_APPROVER_LOGIN }}
           GITHUB_ACTOR: ${{ github.actor }}
+          ITEM: ${{ inputs.item }}
+          STAGE: ${{ inputs.stage }}
+          REASON: ${{ inputs.reason }}
+          ATTEMPT_ID: ${{ inputs.attempt_id }}
         run: >-
           node .github/scripts/pipeline.mjs restart
-          "${{ inputs.item }}" "${{ inputs.stage }}" "${{ inputs.reason }}"
-          "${{ inputs.attempt_id }}"
+          "$ITEM" "$STAGE" "$REASON" "$ATTEMPT_ID"
