@@ -94,7 +94,7 @@ jobs:
             git commit -m "Add remaining agent changes"
           fi
           mkdir -p "$RUNNER_TEMP/out"
-          git format-patch "$BASE..HEAD" --stdout > "$RUNNER_TEMP/out/changes.patch"
+          git -c core.quotePath=false format-patch "$BASE..HEAD" --stdout > "$RUNNER_TEMP/out/changes.patch"
           test -s "$RUNNER_TEMP/out/changes.patch" || { echo "::error::The agent produced no commits"; exit 1; }
           node .github/scripts/pipeline.mjs check-patch "$RUNNER_TEMP/out/changes.patch"
 

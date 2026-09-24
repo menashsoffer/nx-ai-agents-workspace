@@ -6,6 +6,7 @@ import {
   MARKERS,
   branchName,
   buildSecurityReview,
+  checkPatch,
   commentableLines,
   decideFix,
   emptyState,
@@ -21,6 +22,7 @@ import {
   renderState,
   selectActionable,
   stageTransition,
+  unquoteCPath,
   validateSpec,
 } from './pipeline-lib.mjs';
 
@@ -118,10 +120,126 @@ test('forbiddenPaths blocks pipeline and ownership files', () => {
     'diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml',
     'diff --git a/.github/CODEOWNERS b/.github/CODEOWNERS',
   ].join('\n');
-  assert.deepEqual(forbiddenPaths(patchPaths(patch)), [
+  assert.deepEqual(forbiddenPaths(patchPaths(patch).paths), [
     '.github/workflows/ci.yml',
     '.github/CODEOWNERS',
   ]);
+});
+
+// Hunks below are real `git diff` output (default core.quotePath=true).
+const hunk = '@@ -0,0 +1 @@\n+x\n';
+
+test('unquoteCPath decodes git C-quoting', () => {
+  assert.equal(
+    unquoteCPath(String.raw`"a/\327\251\327\234\327\225\327\235.md"`),
+    'a/שלום.md',
+  );
+  assert.equal(unquoteCPath(String.raw`"a/q\"x\\y\tz"`), 'a/q"x\\y\tz');
+  assert.equal(unquoteCPath('"a/ש.md"'), 'a/ש.md'); // quotePath=false
+  assert.equal(unquoteCPath('"a/😀"'), 'a/😀');
+  assert.equal(unquoteCPath('a/x'), null);
+  assert.equal(unquoteCPath('"a/x'), null);
+  assert.equal(unquoteCPath('"a/"x"'), null);
+  assert.equal(unquoteCPath(String.raw`"a/\q"`), null);
+  assert.equal(unquoteCPath(String.raw`"a/\8"`), null);
+  assert.equal(unquoteCPath(String.raw`"a/\327"`), null); // invalid UTF-8
+});
+
+test('check-patch sees a Hebrew (C-quoted) filename under .github/', () => {
+  const patch = [
+    String.raw`diff --git "a/.github/\327\251.yml" "b/.github/\327\251.yml"`,
+    'new file mode 100644',
+    'index 0000000..975fbec',
+    '--- /dev/null',
+    String.raw`+++ "b/.github/\327\251.yml"`,
+    hunk,
+  ].join('\n');
+  assert.deepEqual(patchPaths(patch), { paths: ['.github/ש.yml'], errors: [] });
+  assert.deepEqual(checkPatch(patch).forbidden, ['.github/ש.yml']);
+  assert.equal(checkPatch(patch).ok, false);
+
+  const ok = patch.replaceAll('.github/', 'docs/');
+  assert.deepEqual(checkPatch(ok), { ok: true, forbidden: [], errors: [] });
+});
+
+test('check-patch handles spaces in names', () => {
+  const patch = [
+    'diff --git a/.github/a b.yml b/.github/a b.yml',
+    'new file mode 100644',
+    '--- /dev/null',
+    '+++ b/.github/a b.yml\t',
+    hunk,
+    'diff --git a/docs/my file.md b/docs/my file.md',
+    '--- a/docs/my file.md\t',
+    '+++ b/docs/my file.md\t',
+    hunk,
+  ].join('\n');
+  assert.deepEqual(patchPaths(patch).paths, [
+    '.github/a b.yml',
+    'docs/my file.md',
+  ]);
+  assert.deepEqual(checkPatch(patch).forbidden, ['.github/a b.yml']);
+});
+
+test('check-patch sees renames and copies into protected paths', () => {
+  const rename = [
+    'diff --git a/moved.txt b/.github/workflows/evil.yml',
+    'similarity index 100%',
+    'rename from moved.txt',
+    'rename to .github/workflows/evil.yml',
+  ].join('\n');
+  assert.deepEqual(checkPatch(rename).forbidden, [
+    '.github/workflows/evil.yml',
+  ]);
+  // Even when the diff --git header itself looks harmless.
+  const copy = [
+    'diff --git a/x b/x',
+    'similarity index 100%',
+    'copy from x',
+    String.raw`copy to "\056github/w.yml"`,
+  ].join('\n');
+  assert.deepEqual(checkPatch(copy).forbidden, ['.github/w.yml']);
+  // A traditional ---/+++ pair with no matching git header.
+  const trad = [
+    'diff --git a/ok.ts b/ok.ts',
+    '--- a/ok.ts',
+    '+++ b/ok.ts',
+    hunk,
+    '--- x/.claude/settings.json\t2026-01-01',
+    '+++ y/.claude/settings.json\t2026-01-01',
+    hunk,
+  ].join('\n');
+  assert.deepEqual(checkPatch(trad).forbidden, ['.claude/settings.json']);
+});
+
+test('check-patch fails closed on headers it cannot parse', () => {
+  const bad = (patch) => {
+    const r = checkPatch(patch);
+    assert.equal(r.ok, false, patch);
+    assert.ok(r.errors.length > 0, patch);
+  };
+  bad('diff --git a/x');
+  bad('diff --git x y');
+  bad(String.raw`diff --git "a/x "b/x"`);
+  bad(String.raw`diff --git "a/\327" "b/\327"`);
+  bad('diff --git a/x b/y b/z'); // ambiguous split
+  bad('diff --git\ta/x b/x');
+  bad('diff --git a/../x b/../x');
+  bad('diff --git a//etc/passwd b//etc/passwd');
+  bad('rename to "unterminated');
+  bad('--- a/ok\n+++ b/ok\n@@ -1 +1 @@\n-a\n+b'); // no git header at all
+  // A malformed header hides nothing even next to a good one.
+  bad(`diff --git a/ok.ts b/ok.ts\n${hunk}diff --git "a/.github/x b/.github/x`);
+  // Paths are normalised before matching.
+  assert.deepEqual(
+    checkPatch('diff --git a/./.github//x.yml b/./.github//x.yml').forbidden,
+    ['.github/x.yml'],
+  );
+  // CRLF from `git am --keep-cr` inputs.
+  assert.deepEqual(
+    checkPatch('diff --git a/.github/x b/.github/x\r\n').forbidden,
+    ['.github/x'],
+  );
 });
 
 test('state round-trips through the state comment', () => {

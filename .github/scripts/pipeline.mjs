@@ -9,14 +9,13 @@ import {
   STAGE_STATUS,
   branchName,
   buildSecurityReview,
+  checkPatch,
   decideFix,
   emptyState,
   evaluateApproval,
-  forbiddenPaths,
   isPipelinePr,
   parseSecurityReport,
   parseState,
-  patchPaths,
   previewUrl,
   promptVersion,
   renderPrompt,
@@ -139,11 +138,13 @@ const commands = {
   },
 
   'check-patch'([file]) {
-    const bad = forbiddenPaths(patchPaths(readFileSync(file, 'utf8')));
-    if (bad.length) {
-      console.error(`Patch touches protected paths: ${bad.join(', ')}`);
-      process.exit(1);
-    }
+    const res = checkPatch(readFileSync(file, 'utf8'));
+    if (res.forbidden.length)
+      console.error(
+        `Patch touches protected paths: ${res.forbidden.join(', ')}`,
+      );
+    for (const e of res.errors) console.error(`Patch rejected: ${e}`);
+    if (!res.ok) process.exit(1);
   },
 
   'init-state'([pr]) {

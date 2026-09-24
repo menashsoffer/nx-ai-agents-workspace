@@ -80,7 +80,10 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   - develop / fix patches: rejected if they touch `.github/`, `CODEOWNERS`,
     `.claude/`, `.gemini/` or `.pipeline/`, or the execution surface of
     `pnpm` (`package.json` and `pnpm-lock.yaml` at any depth,
-    `pnpm-workspace.yaml`, `.npmrc`, `.gitmodules`), checked twice. So
+    `pnpm-workspace.yaml`, `.npmrc`, `.gitmodules`), checked twice. The
+    check reads every header `git apply` uses (`diff --git`, rename/copy,
+    `---`/`+++`), decodes git's C-quoted names and rejects any patch it
+    cannot parse. So
     **agents cannot add or change dependencies, scripts or projects**: a
     task that needs that stops at CI or review and a human finishes it.
 - **Minimal tools.** Spec and security review: Gemini read-only file tools.
