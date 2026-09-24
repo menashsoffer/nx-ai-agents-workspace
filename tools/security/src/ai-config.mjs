@@ -36,7 +36,8 @@ const ARBITRARY_PREFIXES = [
   'pnpm nx run',
 ];
 
-const PINNED_REF = /^([0-9a-f]{40}|v?\d+\.\d+\.\d+)$/;
+// Only a full commit SHA is immutable; a tag can be moved after review.
+const PINNED_REF = /^[0-9a-f]{40}$/;
 const REMOTE_RUNNERS = ['npx', 'pnpx', 'bunx', 'uvx', 'dlx'];
 
 export function checkClaudePermissions(settings) {
@@ -69,9 +70,11 @@ export function checkClaudePlugins(settings) {
       problems.push(
         `A2: plugin "${plugin}" is enabled from an undeclared marketplace.`,
       );
-    } else if (!PINNED_REF.test(source.ref ?? '')) {
+    } else if (
+      ![source.sha, source.ref].some((ref) => PINNED_REF.test(ref ?? ''))
+    ) {
       problems.push(
-        `A2: plugin "${plugin}" is enabled from marketplace "${marketplace}" without a pinned ref (commit SHA or vX.Y.Z tag).`,
+        `A2: plugin "${plugin}" is enabled from marketplace "${marketplace}" without a pinned commit (a full 40-char SHA in "sha" or "ref"; tags can be moved).`,
       );
     }
   }

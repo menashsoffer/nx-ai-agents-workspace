@@ -54,16 +54,37 @@ describe('A2: Claude plugins', () => {
     ).toHaveLength(1);
   });
 
-  it('accepts a pinned tag or commit, or a listed-but-disabled plugin', () => {
+  it.each(['v1.2.3', '1.2.3', 'main', 'a'.repeat(39), 'A'.repeat(40)])(
+    'rejects a movable or malformed ref %s',
+    (ref) => {
+      expect(
+        checkClaudePlugins({
+          ...marketplace(ref),
+          enabledPlugins: { 'p@m': true },
+        }),
+      ).toHaveLength(1);
+    },
+  );
+
+  it('accepts a pinned commit, or a listed-but-disabled plugin', () => {
     expect(
       checkClaudePlugins({
-        ...marketplace('v1.2.3'),
+        ...marketplace('a'.repeat(40)),
         enabledPlugins: { 'p@m': true },
       }),
     ).toEqual([]);
     expect(
       checkClaudePlugins({
-        ...marketplace('a'.repeat(40)),
+        extraKnownMarketplaces: {
+          m: {
+            source: {
+              source: 'github',
+              repo: 'o/r',
+              ref: 'v1',
+              sha: 'b'.repeat(40),
+            },
+          },
+        },
         enabledPlugins: { 'p@m': true },
       }),
     ).toEqual([]);
