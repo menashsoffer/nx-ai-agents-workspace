@@ -113,8 +113,10 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   reviews load prompts and scripts from the default branch, not from the PR.
   Fork PRs never reach an agent.
 - **No merge path for bots.** The ruleset needs a code-owner approval after
-  the last push, resolved conversations and a green, up-to-date `ci`, with
-  no bypass actors. The pipeline App has no `workflows` or `administration`
+  the last push, resolved conversations, and two green, up-to-date status
+  checks: `ci` (GitHub Actions) and `pipeline/security` (the security
+  review verdict, accepted **only from the pipeline App**, so no other
+  token can post a passing one). There are no bypass actors. The pipeline App has no `workflows` or `administration`
   permission. `GITHUB_TOKEN` cannot approve PRs.
 - **Bounded loops.** Two automated fix rounds per PR. Router loops per item:
   re-spec 2, re-plan 1, re-develop 1, fix retry 1, and 5 routed rounds in
@@ -224,6 +226,9 @@ Nothing happens until these files are on `main`.
    (see [ADR 0004](decisions/0004-gh-pages-branch-for-previews.md)).
 7. **Copilot code review** enabled for the repo (Settings → Copilot → Code review).
 8. **Ruleset** (after everything above is merged): `tools/scripts/pipeline/setup-ruleset.sh`.
+   It pins `pipeline/security` to the App's ID, found from
+   `PIPELINE_BOT_LOGIN` (or pass `PIPELINE_APP_ID=<App ID>`). Re-run it if
+   you replace the App.
 
 ## Running one task through it
 
@@ -430,3 +435,17 @@ data, never instructions.
   you need to.
 - The pipeline's own files (`.github/**`) cannot be changed by the pipeline.
   Change them in a normal PR.
+- **Every PR to `main` needs `pipeline/security` = success**, including
+  PRs you open yourself. `security.yml` reviews every same-repo PR after
+  green CI, but the fix loop only runs on pipeline PRs, so fix blocking
+  findings on your own PRs by hand (the next push gets a fresh review). If
+  the review errored (quota, invalid output), re-run **Pipeline · Security
+  Review** from the Actions tab. A status you post yourself does not count.
+- **Dependabot and fork PRs get no `pipeline/security` status**, so they
+  cannot merge as they are. Fork PRs are never reviewed (on purpose: no
+  secrets for fork code). Runs triggered by Dependabot see only
+  _Dependabot_ secrets, so neither Gemini nor the App token is available.
+  For Dependabot, add `PIPELINE_APP_PRIVATE_KEY` and `GEMINI_API_KEY` as
+  Dependabot secrets too (Settings → Secrets and variables → Dependabot),
+  so its PRs are reviewed like any other. For a fork PR, re-create the
+  change on a same-repo branch.
