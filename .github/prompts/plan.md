@@ -52,8 +52,10 @@ worse, sends the developer down the wrong path.
 
 ## Decide the status
 
-Return `status: "problem"`, one `problem` code, and empty `spec` and `plan`
-strings and lists when you cannot write both artifacts. A router reads the
+Return `status: "problem"` and one `problem` code when you cannot write both
+artifacts. The schema still requires `spec` and `plan` to be objects with
+every field present, so return them with every text field `""` and every
+list `[]` (and `signals` set honestly). A router reads the
 code and decides what happens next, so pick the most specific one. **Check
 the gate problems first**; they win over the others.
 
