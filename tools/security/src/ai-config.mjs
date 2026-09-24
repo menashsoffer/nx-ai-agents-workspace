@@ -37,6 +37,24 @@ const ARBITRARY_PREFIXES = [
 ];
 
 // Only a full commit SHA is immutable; a tag can be moved after review.
+// A1: wildcard rules that let the agent pick which project-defined task or
+// generator runs, or pass extra arguments through to one (`pnpm new:app:*`
+// forwards `--config x.ts`-style flags; `pnpm nx test:*` accepts any project
+// and runner flags). Task definitions are pinned by A7, but the code those
+// runners load is agent-editable, so only fixed commands may be pre-approved.
+// Nx subcommands that only read the workspace (or run the formatter, whose
+// config is JSON) may keep a wildcard.
+const NX_WILDCARD_SAFE = ['show', 'graph', 'format:write', 'format:check'];
+
+function runsProjectTasks(prefix) {
+  const words = prefix.split(/\s+/);
+  const nx =
+    words[0] === 'nx' ? 1 : words[0] === 'pnpm' && words[1] === 'nx' ? 2 : -1;
+  if (nx !== -1) return !NX_WILDCARD_SAFE.includes(words[nx] ?? '');
+  // `pnpm <script> …`: runs a package script with agent-chosen arguments.
+  return words[0] === 'pnpm';
+}
+
 const PINNED_REF = /^[0-9a-f]{40}$/;
 const REMOTE_RUNNERS = ['npx', 'pnpx', 'bunx', 'uvx', 'dlx'];
 
@@ -48,9 +66,15 @@ export function checkClaudePermissions(settings) {
       continue;
     }
     const match = /^Bash\((.*?)(?::\*| \*|\*)\)$/.exec(rule);
-    if (match && ARBITRARY_PREFIXES.includes(match[1].trim())) {
+    if (!match) continue;
+    const prefix = match[1].trim();
+    if (ARBITRARY_PREFIXES.includes(prefix)) {
       problems.push(
         `A1: "${rule}" allows arbitrary commands; allow specific subcommands instead.`,
+      );
+    } else if (runsProjectTasks(prefix)) {
+      problems.push(
+        `A1: "${rule}" lets the agent choose project tasks, generators or their arguments; pre-approve fixed commands (e.g. "Bash(pnpm verify)") instead.`,
       );
     }
   }

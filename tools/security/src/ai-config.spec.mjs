@@ -23,6 +23,17 @@ describe('A1: Claude permission allow-list', () => {
     'Bash(*)',
     'Bash',
     'Bash(pnpm:*)',
+    'Bash(pnpm nx run-many:*)',
+    'Bash(pnpm nx affected:*)',
+    'Bash(pnpm nx test:*)',
+    'Bash(pnpm nx build *)',
+    'Bash(pnpm nx dev:*)',
+    'Bash(pnpm nx g @starter/workspace-plugin:*)',
+    'Bash(pnpm nx generate:*)',
+    'Bash(nx test:*)',
+    'Bash(pnpm new:app:*)',
+    'Bash(pnpm verify:*)',
+    'Bash(pnpm test *)',
   ])('rejects %s', (rule) => {
     expect(
       checkClaudePermissions({ permissions: { allow: [rule] } }),
@@ -31,9 +42,12 @@ describe('A1: Claude permission allow-list', () => {
 
   it.each([
     'Bash(pnpm verify)',
-    'Bash(pnpm nx run-many:*)',
-    'Bash(pnpm new:*)',
+    'Bash(pnpm test)',
+    'Bash(pnpm nx sync)',
     'Bash(pnpm nx show:*)',
+    'Bash(pnpm nx graph:*)',
+    'Bash(pnpm nx format:write:*)',
+    'Read(docs/**)',
   ])('accepts %s', (rule) => {
     expect(checkClaudePermissions({ permissions: { allow: [rule] } })).toEqual(
       [],
