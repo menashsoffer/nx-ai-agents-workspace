@@ -1,5 +1,5 @@
 ---
-version: 1
+version: 2
 agent: claude
 stage: stage:planned -> stage:building
 output: code commits on the current branch + JSON (status, pr_title, pr_body, blocked_reason)
@@ -24,6 +24,11 @@ Deterministic CI and a human review gate everything you produce.
   `status: "blocked"` with the reason.
 - Never edit `.github/`, `CODEOWNERS`, `.claude/`, `.gemini/` or
   `.pipeline/`. The workflow rejects patches that touch them.
+- Never change `package.json` (any), `pnpm-lock.yaml`,
+  `pnpm-workspace.yaml`, `.npmrc` or `.gitmodules`; the workflow rejects
+  those patches too. So you cannot add dependencies, scripts or new
+  projects (`pnpm new:app`/`new:lib` change manifests and the lockfile).
+  If the task needs any of that, return `status: "blocked"` and say so.
 - Never print or write environment variables, tokens or credentials.
 - You cannot push, open PRs or merge, and must not try.
 

@@ -13,6 +13,7 @@ import {
   emptyState,
   evaluateApproval,
   forbiddenPaths,
+  isPipelinePr,
   parseSecurityReport,
   parseState,
   patchPaths,
@@ -63,6 +64,13 @@ const num = (v) => {
     throw new Error(`Expected a number, got ${v}`);
   return n;
 };
+
+/** The pipeline App's bot login (`vars.PIPELINE_BOT_LOGIN`). Required. */
+function botLogin() {
+  const login = process.env.PIPELINE_BOT_LOGIN;
+  if (!login) throw new Error('PIPELINE_BOT_LOGIN is not set');
+  return login;
+}
 
 // ------------------------------------------------------------ state
 
@@ -147,6 +155,25 @@ const commands = {
 
   'fix-adapter'([pr, outFile]) {
     const n = num(pr);
+    const bot = botLogin();
+    const p = api(`pulls/${n}`);
+    if (
+      !isPipelinePr({
+        author: p.user?.login,
+        headRef: p.head?.ref,
+        headRepo: p.head?.repo?.full_name,
+        repo: `${OWNER}/${NAME}`,
+        botLogin: bot,
+      })
+    ) {
+      console.log(
+        `fix-adapter: noop (PR #${n} by ${p.user?.login} on ${p.head?.ref} was not opened by the pipeline)`,
+      );
+      writeFileSync(outFile, '[]');
+      setOutput('action', 'noop');
+      setOutput('loop', '');
+      return;
+    }
     const labels = labelsOf(n);
     const state = readState(n);
     const threads = reviewThreads(n);
@@ -158,6 +185,7 @@ const commands = {
       reviewComments: list(`pulls/${n}/comments`),
       resolvedCommentIds,
       state,
+      botLogin: bot,
     });
     const decision = decideFix({ labels, actionable });
     console.log(

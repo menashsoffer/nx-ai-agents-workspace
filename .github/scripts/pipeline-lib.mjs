@@ -46,14 +46,25 @@ export const MARKERS = {
 export const COPILOT_REVIEWER = 'copilot-pull-request-reviewer[bot]';
 export const COPILOT_LOGINS = [COPILOT_REVIEWER, 'Copilot'];
 
+// Humans whose review feedback may reach the fixer. Anyone else can comment
+// on a public repo, so their text never becomes agent input.
+export const TRUSTED_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+
 // Agent-produced patches may never touch these. The pipeline's own
-// workflows, prompts and scripts are the trust boundary.
+// workflows, prompts and scripts are the trust boundary. Package manifests,
+// the lockfile and pnpm/npm/git config are the execution surface of every
+// later `pnpm` run, so dependency and script changes need a human.
 export const FORBIDDEN_PATH_PATTERNS = [
   /^\.github\//,
   /(^|\/)CODEOWNERS$/,
   /^\.pipeline\//,
   /^\.claude\//,
   /^\.gemini\//,
+  /(^|\/)package\.json$/,
+  /(^|\/)pnpm-lock\.yaml$/,
+  /(^|\/)pnpm-workspace\.yaml$/,
+  /(^|\/)\.npmrc$/,
+  /(^|\/)\.gitmodules$/,
 ];
 
 const BLOCKING_SEVERITIES = new Set(['critical', 'high', 'medium']);
@@ -88,6 +99,24 @@ export function branchName(issueNumber, title) {
   const n = Number(issueNumber);
   if (!Number.isInteger(n) || n <= 0) throw new Error('Bad issue number');
   return `issue-${n}-${slugify(title)}`;
+}
+
+const PIPELINE_BRANCH = /^issue-[1-9]\d*-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** GitHub logins are case-insensitive. */
+export const sameLogin = (a, b) =>
+  Boolean(a && b) && String(a).toLowerCase() === String(b).toLowerCase();
+
+/**
+ * True only for PRs the pipeline opened: authored by the pipeline App's bot
+ * and on an `issue-<n>-<slug>` branch (see branchName) in this repository.
+ */
+export function isPipelinePr({ author, headRef, headRepo, repo, botLogin }) {
+  return (
+    sameLogin(author, botLogin) &&
+    PIPELINE_BRANCH.test(String(headRef ?? '')) &&
+    (headRepo === undefined || sameLogin(headRepo, repo))
+  );
 }
 
 export function previewUrl(owner, repo, prNumber) {
@@ -226,23 +255,40 @@ const short = (sha) => (sha ? `\`${sha.slice(0, 7)}\`` : '-');
 const hasPipelineMarker = (body) => /<!-- pipeline[-:]/.test(body ?? '');
 
 /**
+ * Where review feedback comes from. Only these sources reach the fixer:
+ * the pipeline bot, Copilot, and humans who are owners, members or
+ * collaborators. Everything else is dropped before it can reach a prompt.
+ */
+export function feedbackSource({ user, author_association }, botLogin) {
+  const login = user?.login;
+  if (sameLogin(login, botLogin)) return 'pipeline';
+  if (COPILOT_LOGINS.some((l) => sameLogin(l, login))) return 'copilot';
+  if (user?.type !== 'Bot' && TRUSTED_ASSOCIATIONS.includes(author_association))
+    return 'human';
+  return null;
+}
+
+/**
  * Review feedback the fixer should act on: inline comments and review
- * bodies that are (a) newer than the state watermark, (b) not already
- * handled (deduped by id), (c) not in a resolved thread, (d) not pipeline
- * bookkeeping. Returns `{ actionable, watermark }`, where `watermark` is the
- * newest timestamp seen in this scan.
+ * bodies that are (a) from a trusted source (feedbackSource), (b) newer than
+ * the state watermark, (c) not already handled (deduped by id), (d) not in
+ * a resolved thread, (e) not pipeline bookkeeping. Returns
+ * `{ actionable, watermark }`, where `watermark` is the newest timestamp seen
+ * in this scan.
  */
 export function selectActionable({
   reviews = [],
   reviewComments = [],
   resolvedCommentIds = new Set(),
   state = emptyState(),
+  botLogin = '',
   ignoreLogins = ['github-actions[bot]'],
 }) {
   const handled = new Set(state.handled);
   const since = state.watermark ? Date.parse(state.watermark) : -Infinity;
   const isNew = (key, at) => !handled.has(key) && Date.parse(at) >= since;
-  const ignored = (login) => ignoreLogins.includes(login);
+  const ignored = (item) =>
+    ignoreLogins.includes(item.user?.login) || !feedbackSource(item, botLogin);
   let watermark = state.watermark;
   const bump = (at) => {
     if (at && (!watermark || Date.parse(at) > Date.parse(watermark)))
@@ -253,7 +299,7 @@ export function selectActionable({
   for (const c of reviewComments) {
     bump(c.created_at);
     const key = `c${c.id}`;
-    if (!isNew(key, c.created_at) || ignored(c.user?.login)) continue;
+    if (!isNew(key, c.created_at) || ignored(c)) continue;
     if (resolvedCommentIds.has(c.id)) continue;
     const body = (c.body ?? '').trim();
     if (!body || body.includes(MARKERS.fixReply)) continue;
@@ -272,7 +318,7 @@ export function selectActionable({
     bump(r.submitted_at);
     const key = `r${r.id}`;
     if (!r.submitted_at || !isNew(key, r.submitted_at)) continue;
-    if (ignored(r.user?.login) || r.state === 'APPROVED') continue;
+    if (ignored(r) || r.state === 'APPROVED') continue;
     if (COPILOT_LOGINS.includes(r.user?.login)) continue; // summary only
     const body = (r.body ?? '').trim();
     if (!body) continue;

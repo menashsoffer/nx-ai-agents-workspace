@@ -78,11 +78,21 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   - plan / develop: JSON schema (`--json-schema`), status field decides the stage;
   - security review: JSON parsed and normalised; unknown severities count as blocking;
   - develop / fix patches: rejected if they touch `.github/`, `CODEOWNERS`,
-    `.claude/`, `.gemini/` or `.pipeline/`, checked twice.
+    `.claude/`, `.gemini/` or `.pipeline/`, or the execution surface of
+    `pnpm` (`package.json` and `pnpm-lock.yaml` at any depth,
+    `pnpm-workspace.yaml`, `.npmrc`, `.gitmodules`), checked twice. So
+    **agents cannot add or change dependencies, scripts or projects**: a
+    task that needs that stops at CI or review and a human finishes it.
 - **Minimal tools.** Spec and security review: Gemini read-only file tools.
   Plan: Claude `Read, Glob, Grep`. Develop: file edits, `pnpm` and local
-  `git add/commit` only; no push, `gh`, `curl` or web. Fix: file edits plus
-  `pnpm`.
+  `git add/commit` only; no push, `gh`, `curl` or web. Fix: file edits only,
+  **no shell**; a separate job with no secrets formats the patch and runs
+  `pnpm verify` before the push job.
+- **Trusted feedback only.** The fix loop runs only on PRs the pipeline
+  opened (author `PIPELINE_BOT_LOGIN`, branch `issue-<n>-<slug>`), and only
+  on feedback from the pipeline bot, Copilot, or people whose
+  `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR`. Anyone else
+  can comment on this public repo; their text never reaches the fixer.
 - **Trusted code only.** Workflows triggered by `workflow_run`, `status` or
   reviews load prompts and scripts from the default branch, not from the PR.
   Fork PRs never reach an agent.
@@ -100,13 +110,16 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
 
 `fix.yml`'s first job is deterministic. On each run it:
 
-1. reads the `<!-- pipeline-state -->` comment on the PR (created with the PR);
-2. collects review comments and review bodies **newer than the state's
+1. stops (no-op) unless the PR was opened by the pipeline: author is
+   `PIPELINE_BOT_LOGIN` and the head branch is `issue-<n>-<slug>`;
+2. reads the `<!-- pipeline-state -->` comment on the PR (created with the PR);
+3. collects review comments and review bodies from **trusted sources** (the
+   pipeline bot, Copilot, repo owners/members/collaborators) **newer than the state's
    watermark**, skips ones already handled (**deduped by comment id**),
    resolved threads, approvals, Copilot's summary body, and pipeline
    bookkeeping. Pipeline review bodies count only if marked
    `<!-- pipeline:actionable -->`;
-3. decides:
+4. decides:
 
    | Labels on the PR | New actionable comments | Action                              |
    | ---------------- | ----------------------- | ----------------------------------- |
@@ -115,7 +128,7 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
    | `fix-loop:1`     | yes                     | swap to `fix-loop:2`, run the fixer |
    | `fix-loop:2`     | yes                     | `stage:needs-attention`, stop       |
 
-4. records the handled ids and new watermark **before** the fixer runs.
+5. records the handled ids and new watermark **before** the fixer runs.
 
 After a successful fix, the push job replies on each inline thread and
 resolves the threads opened by bots (security review, Copilot). Threads

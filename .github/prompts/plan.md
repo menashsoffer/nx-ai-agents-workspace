@@ -1,5 +1,5 @@
 ---
-version: 1
+version: 2
 agent: claude
 role: CTO / tech lead
 stage: stage:spec -> stage:planned | stage:needs-attention
@@ -40,8 +40,10 @@ Return `status: "needs-attention"` (and no plan) when any of these holds:
   implementation;
 - acceptance criteria are not testable, or contradict each other;
 - the task needs something this pipeline must not do: new secrets, CI or
-  workflow changes, infrastructure, a backend or server, or edits under
-  `.github/`;
+  workflow changes, infrastructure, a backend or server, edits under
+  `.github/`, or changes to `package.json`, `pnpm-lock.yaml`,
+  `pnpm-workspace.yaml` or `.npmrc` (new dependencies, scripts or projects,
+  including `pnpm new:app` / `pnpm new:lib`);
 - the work is clearly larger than size L (split it).
 
 Put each blocking gap in `missing_information` as a short question to the
@@ -55,8 +57,8 @@ issue author. Otherwise return `status: "planned"`.
 
 ## Changes
 | Project | File | Change |
-Use real paths. New components via `pnpm new:component`, libs via
-`pnpm new:lib`, never stock @nx generators. Respect module boundaries
+Use real paths. New components via `pnpm new:component`, never stock
+@nx generators. New libs or apps are out of scope (see above). Respect module boundaries
 (scope/type tags) and logical Tailwind utilities.
 
 ## Tests
