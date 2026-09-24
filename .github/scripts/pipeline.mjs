@@ -897,22 +897,37 @@ const commands = {
     });
     if (!checked.ok) return reject(checked.error);
 
-    // Resolve first: the record notes are what re-run the gates.
-    for (const { id } of parsed.commands)
-      for (const t of threads.filter(
-        (t) => t.id === id && !t.thread.isResolved,
-      ))
-        resolveThread(t.thread.id);
-    for (const c of parsed.commands)
-      postComment(
-        n,
-        renderDispositionNote({
-          ...c,
-          head,
-          by: process.env.COMMENT_USER,
-          commentId: num(commentId),
-        }),
-      );
+    // Validation passed: a failure from here on must not leave the owner
+    // without any reply. Tell them once, then fail the job.
+    try {
+      // Resolve first: the record notes are what re-run the gates.
+      for (const { id } of parsed.commands)
+        for (const t of threads.filter(
+          (t) => t.id === id && !t.thread.isResolved,
+        ))
+          resolveThread(t.thread.id);
+      for (const c of parsed.commands)
+        postComment(
+          n,
+          renderDispositionNote({
+            ...c,
+            head,
+            by: process.env.COMMENT_USER,
+            commentId: num(commentId),
+          }),
+        );
+    } catch (e) {
+      const url = runUrl();
+      try {
+        postComment(
+          n,
+          `Not recorded: the bot hit an error${url ? `; see ${url}` : ''}. Nothing was changed; post the command again after a fix.`,
+        );
+      } catch (postError) {
+        console.error(postError.stack ?? postError);
+      }
+      throw e;
+    }
     console.log(
       `disposition: recorded ${parsed.commands.map((c) => c.id).join(', ')} at ${head.slice(0, 7)}`,
     );

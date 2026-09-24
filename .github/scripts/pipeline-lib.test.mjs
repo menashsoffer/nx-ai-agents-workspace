@@ -3650,6 +3650,42 @@ test('workflows: /disposition counts only new comments from the owner account', 
   assert.ok(approval.includes('permission-statuses: write'));
 });
 
+test('workflows: every job that resolves review threads mints its App token with contents: write', () => {
+  // resolveReviewThread needs contents: write on an App installation token;
+  // pull-requests: write alone crashes with "Resource not accessible".
+  const src = readFileSync(new URL('./pipeline.mjs', import.meta.url), 'utf8');
+  const commandsThatResolve = [
+    ...src.matchAll(
+      /^ {2}'?([\w-]+)'?\(\[[^\]]*\]\) \{\n([\s\S]*?)^ {2}\},?$/gm,
+    ),
+  ]
+    .filter(([, , body]) => body.includes('resolveThread('))
+    .map(([, name]) => name);
+  assert.deepEqual(commandsThatResolve.sort(), ['disposition', 'fix-reply']);
+  const dir = new URL('../workflows/', import.meta.url);
+  let checked = 0;
+  for (const file of readdirSync(dir).filter((f) => f.endsWith('.yml'))) {
+    const workflow = parseYaml(readFileSync(new URL(file, dir), 'utf8'));
+    for (const [jobName, job] of Object.entries(workflow.jobs ?? {})) {
+      const runs = (job.steps ?? []).map((s) => s.run ?? '').join('\n');
+      for (const command of commandsThatResolve) {
+        if (!new RegExp(`pipeline\\.mjs ${command}( |$)`, 'm').test(runs))
+          continue;
+        const app = (job.steps ?? []).find((s) =>
+          s.uses?.startsWith('actions/create-github-app-token@'),
+        );
+        assert.equal(
+          app?.with?.['permission-contents'],
+          'write',
+          `${file} job ${jobName} runs \`${command}\` without permission-contents: write`,
+        );
+        checked += 1;
+      }
+    }
+  }
+  assert.equal(checked, commandsThatResolve.length);
+});
+
 // ---------------------------------------------------------------- protected approval
 
 const PA = 'a'.repeat(40);
