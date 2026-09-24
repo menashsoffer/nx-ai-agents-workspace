@@ -1,7 +1,8 @@
 # Multi-agent pipeline (stage 1)
 
 An issue goes in; a reviewed, previewed, human-approved pull request comes
-out. Gemini and Claude do the writing. Deterministic workflows move work
+out. Claude writes the spec, plan and implementation; Gemini supplies the
+security review. Deterministic workflows move work
 between stages, check every agent output, and hold every token that can
 write. **No agent can merge.** Only a code owner's approval on a green PR
 unlocks the merge button.
@@ -28,7 +29,7 @@ decides what happens next.
 | ----------------------- | -------------- | -------------------------------------------------------------------------------------------- |
 | `stage:inbox`           | `inbox.yml`    | New issue. A maintainer triages it.                                                          |
 | `stage:qualified`       | **a human**    | Starts the spec agent.                                                                       |
-| `stage:spec`            | `spec.yml`     | Spec comment posted. Starts the plan agent.                                                  |
+| `stage:spec`            | `spec.yml`     | Claude spec comment posted. Starts the plan agent.                                           |
 | `stage:planned`         | `plan.yml`     | Plan comment posted. Starts the develop agent.                                               |
 | `stage:building`        | `develop.yml`  | Draft PR open (on the issue and the PR). CI runs.                                            |
 | `stage:reviewing`       | `security.yml` | Security review posted on the PR.                                                            |
@@ -46,7 +47,7 @@ From `stage:building` on, the **PR** carries the stage; the issue stays at
 | Workflow           | Trigger                                              | Agent                          | Output                                                                    |
 | ------------------ | ---------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
 | `inbox.yml`        | issue opened                                         | none                           | `stage:inbox`, Project item in Inbox                                      |
-| `spec.yml`         | `stage:qualified` added                              | Gemini (`spec.md`)             | spec comment, `stage:spec`                                                |
+| `spec.yml`         | `stage:qualified` added                              | Claude (`spec.md`)             | spec comment, `stage:spec`                                                |
 | `plan.yml`         | `stage:spec` added                                   | Claude (`plan.md`)             | plan comment, `stage:planned` (or an outcome note + `stage:routing`)      |
 | `develop.yml`      | `stage:planned` added                                | Claude (`develop.md`)          | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`         |
 | `router.yml`       | `stage:routing` added (issue or PR), or manual       | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)       |
@@ -92,8 +93,9 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
     cannot parse. So
     **agents cannot add or change dependencies, scripts or projects**: a
     task that needs that stops at CI or review and a human finishes it.
-- **Minimal tools.** Spec and security review: Gemini read-only file tools.
-  Plan: Claude `Read, Glob, Grep`. Develop: file edits, `pnpm` and local
+- **Minimal tools.** Spec, plan and development use Claude; security review
+  uses Gemini read-only file tools. Plan: Claude `Read, Glob, Grep`. Develop:
+  file edits, `pnpm` and local
   `git add/commit` only; no push, `gh`, `curl` or web. Fix: file edits only,
   **no shell**; a separate job with no secrets formats the patch and runs
   `pnpm verify` before the push job.
@@ -117,10 +119,16 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   checks: `ci` (GitHub Actions) and `pipeline/security` (the security
   review verdict, accepted **only from the pipeline App**, so no other
   token can post a passing one). There are no bypass actors. The pipeline App has no `workflows` or `administration`
-  permission. `GITHUB_TOKEN` cannot approve PRs.
+  permission. `GITHUB_TOKEN` cannot approve PRs. Approval also requires
+  Gemini evidence bound to the exact issue, PR and head SHA. Protected-path
+  changes require a one-time, path-specific owner approval; every push
+  invalidates that approval.
 - **Bounded loops.** Two automated fix rounds per PR. Router loops per item:
   re-spec 2, re-plan 1, re-develop 1, fix retry 1, and 5 routed rounds in
   total (`ROUTER_CAPS`); after that, a human. See [Router](#router).
+  Lifetime reset counts are stored in pipeline state. After three resets the
+  item is parked; a restart requires an owner-only command with a non-empty
+  reason and a new attempt id, while the lifetime counter is never cleared.
 - **Notes are trusted by author.** The router reads only outcome and route
   notes written by `PIPELINE_BOT_LOGIN`; anyone can comment on a public repo.
 - **Pinned supply chain.** Every action is pinned to a commit SHA, with the
@@ -165,9 +173,9 @@ It does nothing while the PR is in `stage:routing` or
 replays `lastBatch` under the current `fix-loop:*` label. A retry never
 consumes a new fix round.
 
-The budget resets whenever `fix-loop:*` is cleared: on escalation (so a
-human restart gives the PR two fresh rounds) and when the PR reaches
-`stage:human-approval` (so later human feedback starts at round 1).
+The current PR budget resets whenever `fix-loop:*` is cleared, but every reset
+is recorded in state. Three lifetime resets park the item instead of silently
+opening an unlimited loop.
 
 After a successful fix, the push job replies on each inline thread and
 resolves a thread only if **every** comment in it is from the pipeline bot
@@ -235,7 +243,7 @@ Nothing happens until these files are on `main`.
 1. **New issue → Task.** Fill in goal, acceptance criteria, size, area.
    `inbox.yml` labels it `stage:inbox` and adds it to the Project.
 2. **Triage.** If it is ready, add `stage:qualified`.
-3. **Spec** (~1 min). Gemini posts a spec comment and the label moves to
+3. **Spec** (~1 min). Claude posts a spec comment and the label moves to
    `stage:spec`. Edit the comment if needed.
 4. **Plan** (~2 min). Claude posts a plan and labels `stage:planned`. If
    the spec has gaps, it reports them as questions and the router sends
@@ -276,10 +284,12 @@ questions / fix the cause and restart a stage:
   the latest outcome note again (it goes to a human if that note was
   already routed).
 
-**Resetting loops.** Router caps count only the route notes after the
-latest route to a human, so a restart after a hand-off always starts with
-the full budget. There is nothing else to reset: escalation clears the
-fix-loop label, which resets the fix rounds.
+**Resetting loops.** Router caps count only the route notes after the latest
+route to a human, while lifetime reset counts remain in pipeline state. A
+restart must be an owner-authored, machine-parsed command with a non-empty
+reason and a new attempt id. After three lifetime resets the item remains
+parked in `stage:needs-attention`; escalation clears `fix-loop:*` only for the
+current PR budget.
 
 ## Router
 

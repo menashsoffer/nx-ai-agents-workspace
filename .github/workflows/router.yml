@@ -18,6 +18,26 @@ on:
         description: Issue or pull request number
         required: true
         type: number
+      action:
+        description: Router action
+        required: false
+        default: route
+        type: choice
+        options: [route, restart]
+      stage:
+        description: Restart stage
+        required: false
+        default: stage:qualified
+        type: choice
+        options: [stage:qualified, stage:spec, stage:planned]
+      reason:
+        description: Non-empty restart reason
+        required: false
+        type: string
+      attempt_id:
+        description: New restart attempt identifier
+        required: false
+        type: string
 
 permissions: {}
 
@@ -116,3 +136,32 @@ jobs:
           PR: ${{ needs.route.outputs.retry_pr }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: gh workflow run fix.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" -f pr="$PR" -f retry=true
+
+  restart:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.action == 'restart' && vars.PIPELINE_APP_CLIENT_ID != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-issues: write
+      - name: Validate and apply owner restart
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PIPELINE_APPROVER_LOGIN: ${{ vars.PIPELINE_APPROVER_LOGIN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: >-
+          node .github/scripts/pipeline.mjs restart
+          "${{ inputs.item }}" "${{ inputs.stage }}" "${{ inputs.reason }}"
+          "${{ inputs.attempt_id }}"

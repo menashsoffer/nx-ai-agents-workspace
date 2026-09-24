@@ -85,4 +85,5 @@ jobs:
           # falls back to the App token when unset.
           COPILOT_GH_TOKEN: ${{ secrets.COPILOT_REVIEW_TOKEN }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          PIPELINE_APPROVER_LOGIN: ${{ vars.PIPELINE_APPROVER_LOGIN }}
         run: node .github/scripts/pipeline.mjs approval "${{ needs.resolve.outputs.pr }}"

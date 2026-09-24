@@ -17,6 +17,7 @@ export const STAGES = [
 
 export const FIX_LOOP_1 = 'fix-loop:1';
 export const FIX_LOOP_2 = 'fix-loop:2';
+export const MAX_LIFETIME_RESETS = 3;
 
 /** Project "Status" option name for every stage label. */
 export const STAGE_STATUS = {
@@ -46,6 +47,7 @@ export const MARKERS = {
   securityReview: 'pipeline:security-review',
   // A pipeline-authored review body that the fixer must act on.
   actionable: '<!-- pipeline:actionable -->',
+  protectedApproval: '<!-- pipeline:protected-approval -->',
 };
 
 export const COPILOT_REVIEWER = 'copilot-pull-request-reviewer[bot]';
@@ -394,6 +396,9 @@ export function emptyState() {
     lastBatch: [],
     copilotRequestedFor: null,
     humanApprovalFor: null,
+    securityReviewFor: null,
+    resetCount: 0,
+    attemptId: null,
   };
 }
 
@@ -401,7 +406,18 @@ export function parseState(body) {
   const m = STATE_DATA.exec(String(body ?? ''));
   if (!m) return emptyState();
   try {
-    return { ...emptyState(), ...JSON.parse(m[1]) };
+    const parsed = { ...emptyState(), ...JSON.parse(m[1]) };
+    return {
+      ...parsed,
+      resetCount:
+        Number.isInteger(parsed.resetCount) && parsed.resetCount >= 0
+          ? parsed.resetCount
+          : 0,
+      attemptId:
+        typeof parsed.attemptId === 'string' && parsed.attemptId.trim()
+          ? parsed.attemptId
+          : null,
+    };
   } catch {
     return emptyState();
   }
@@ -414,9 +430,9 @@ export function renderState(state, labels = []) {
     MARKERS.state,
     '**Pipeline state.** Managed by automation. Please do not edit.',
     '',
-    `| stage | fix loop | review items handled | Copilot requested for | human approval for |`,
-    `| --- | --- | --- | --- | --- |`,
-    `| \`${stage}\` | \`${loop}\` | ${state.handled.length} | ${short(state.copilotRequestedFor)} | ${short(state.humanApprovalFor)} |`,
+    `| stage | fix loop | review items handled | Copilot requested for | security reviewed for | human approval for | lifetime resets | attempt |`,
+    `| --- | --- | --- | --- | --- | --- | --- | --- |`,
+    `| \`${stage}\` | \`${loop}\` | ${state.handled.length} | ${short(state.copilotRequestedFor)} | ${short(state.securityReviewFor)} | ${short(state.humanApprovalFor)} | ${state.resetCount} | ${state.attemptId ?? '-'} |`,
     '',
     `<!-- pipeline-state-data\n${JSON.stringify(state)}\n-->`,
   ].join('\n');
@@ -641,6 +657,34 @@ export function resetFixLoop(labels, stage) {
   };
 }
 
+export function recordReset(state) {
+  const count = Number.isInteger(state?.resetCount) ? state.resetCount : 0;
+  if (count >= MAX_LIFETIME_RESETS)
+    return {
+      ok: false,
+      reason: `lifetime reset cap reached (${MAX_LIFETIME_RESETS})`,
+      state: { ...emptyState(), ...state, resetCount: count },
+    };
+  return {
+    ok: true,
+    state: {
+      ...emptyState(),
+      ...state,
+      resetCount: count + 1,
+    },
+  };
+}
+
+export function validateRestart({ actor, approver, reason, attemptId }) {
+  return (
+    sameLogin(actor, approver) &&
+    typeof reason === 'string' &&
+    reason.trim().length > 0 &&
+    typeof attemptId === 'string' &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(attemptId)
+  );
+}
+
 /** `labels` after `editLabels(..., { add, remove })`. */
 export const applyLabels = (labels, { add = [], remove = [] }) => [
   ...new Set([...labels.filter((l) => !remove.includes(l)), ...add]),
@@ -863,6 +907,12 @@ export function evaluateApproval({
   headSha,
   ciConclusion,
   securityState,
+  securityReviewHead,
+  protectedPaths = [],
+  protectedApproval = null,
+  issue,
+  pr,
+  approver,
   unresolvedThreads,
   copilotReviewedHead,
   state,
@@ -872,21 +922,40 @@ export function evaluateApproval({
   if (parked) return { action: 'noop', reason: `PR is in ${parked}` };
   if (ciConclusion !== 'success')
     return { action: 'wait', reason: `ci is ${ciConclusion ?? 'missing'}` };
-  if (securityState !== 'success')
+  if (securityState !== 'success' || securityReviewHead !== headSha)
     return {
       action: 'wait',
-      reason: `security review is ${securityState ?? 'missing'}`,
+      reason:
+        securityState !== 'success'
+          ? `security review is ${securityState ?? 'missing'}`
+          : 'security review is not bound to the current head SHA',
     };
   if (unresolvedThreads > 0)
     return {
       action: 'wait',
       reason: `${unresolvedThreads} unresolved review thread(s)`,
     };
+  if (
+    protectedPaths.length > 0 &&
+    !isProtectedApprovalValid({
+      approval: protectedApproval,
+      issue,
+      pr,
+      headSha,
+      approver,
+      paths: protectedPaths,
+    })
+  )
+    return {
+      action: 'wait',
+      reason: 'protected-path approval is missing, stale, or incomplete',
+    };
   if (!copilotReviewedHead) {
     if (state.copilotRequestedFor === headSha)
       return { action: 'wait', reason: 'waiting for Copilot review' };
     return { action: 'request-copilot' };
   }
+
   if (
     state.humanApprovalFor === headSha &&
     labels.includes('stage:human-approval') &&
@@ -894,6 +963,53 @@ export function evaluateApproval({
   )
     return { action: 'noop', reason: 'already handed to human approval' };
   return { action: 'human-approval' };
+}
+
+/** Parses a one-time protected-path approval comment. */
+export function parseProtectedApproval(body) {
+  const text = String(body ?? '');
+  if (!text.includes(MARKERS.protectedApproval)) {
+    return { ok: false, error: 'missing protected approval marker' };
+  }
+  const parsed = lastJsonFence(text);
+  if (parsed.error) return { ok: false, error: parsed.error };
+  const value = parsed.value;
+  if (!value || typeof value !== 'object')
+    return { ok: false, error: 'approval is not an object' };
+  if (
+    !Number.isInteger(value.issue) ||
+    !Number.isInteger(value.pr) ||
+    typeof value.head_sha !== 'string' ||
+    !/^[0-9a-f]{40}$/.test(value.head_sha) ||
+    !Array.isArray(value.paths) ||
+    value.paths.some((p) => typeof p !== 'string') ||
+    typeof value.approver !== 'string' ||
+    !value.approver ||
+    typeof value.reason !== 'string' ||
+    !value.reason.trim()
+  )
+    return { ok: false, error: 'approval fields are invalid' };
+  return { ok: true, approval: value };
+}
+
+export function isProtectedApprovalValid({
+  approval,
+  issue,
+  pr,
+  headSha,
+  approver,
+  paths = [],
+}) {
+  if (!approval) return false;
+  if (issue !== undefined && approval.issue !== issue) return false;
+  if (pr !== undefined && approval.pr !== pr) return false;
+  if (headSha !== undefined && approval.head_sha !== headSha) return false;
+  if (approver !== undefined && !sameLogin(approval.approver, approver))
+    return false;
+  return (
+    [...new Set(approval.paths)].length === paths.length &&
+    [...new Set(approval.paths)].every((path) => paths.includes(path))
+  );
 }
 
 // ---------------------------------------------------------------- outcomes
@@ -1745,7 +1861,7 @@ export const COMMAND_EFFECTS = {
   'security-publish': {
     stages: ['stage:reviewing', 'stage:routing'],
     problems: ['stage:routing'],
-    markers: [],
+    markers: ['state'],
     appends: ['actionable', 'outcome', 'securityReview'],
     emits: ['pull_request_review', 'status'],
   },
@@ -1756,11 +1872,18 @@ export const COMMAND_EFFECTS = {
     appends: ['outcome'],
     emits: [],
   },
+  'pr-closed': {
+    stages: ['stage:needs-attention'],
+    problems: [],
+    markers: [],
+    appends: [],
+    emits: [],
+  },
   approval: {
     stages: ['stage:human-approval', 'stage:routing'],
     problems: ['stage:routing'],
     markers: ['humanApproval', 'state'],
-    appends: ['outcome'],
+    appends: ['outcome', 'securityReview'],
     emits: ['pull_request_review'],
   },
 };

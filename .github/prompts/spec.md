@@ -1,6 +1,6 @@
 ---
-version: 2
-agent: gemini
+version: 3
+agent: claude
 stage: stage:qualified -> stage:spec (or stage:routing on a problem)
 output: Markdown spec (posted as an issue comment by the workflow)
 ---

@@ -10,6 +10,7 @@ import {
   FIX_LOOP_2,
   HARD_GATES,
   MARKERS,
+  MAX_LIFETIME_RESETS,
   RETRY_STAGE,
   TARGET_STAGE,
   OUTCOME_STAGES,
@@ -38,9 +39,11 @@ import {
   findMarkerComment,
   forbiddenPaths,
   isPipelinePr,
+  isProtectedApprovalValid,
   issueForAgents,
   normalizeOutcome,
   parseOutcome,
+  parseProtectedApproval,
   parseRoute,
   parseSecurityReport,
   parseState,
@@ -51,6 +54,7 @@ import {
   renderPrompt,
   renderRoute,
   renderState,
+  recordReset,
   resetFixLoop,
   selectActionable,
   stageTransition,
@@ -58,6 +62,7 @@ import {
   unquoteCPath,
   targetStage,
   validateSpec,
+  validateRestart,
 } from './pipeline-lib.mjs';
 
 test('stageTransition keeps exactly one stage label', () => {
@@ -339,6 +344,34 @@ test('state round-trips through the state comment', () => {
   };
   assert.deepEqual(parseState(renderState(s, ['stage:fixing'])), s);
   assert.deepEqual(parseState('no state here'), emptyState());
+});
+
+test('lifetime reset cap is visible and restart validation is user-bound', () => {
+  let state = emptyState();
+  for (let i = 0; i < MAX_LIFETIME_RESETS; i++) {
+    const result = recordReset(state);
+    assert.equal(result.ok, true);
+    state = result.state;
+  }
+  assert.equal(recordReset(state).ok, false);
+  assert.equal(
+    validateRestart({
+      actor: 'Alice',
+      approver: 'alice',
+      reason: 'Re-scoped the issue.',
+      attemptId: 'attempt-4',
+    }),
+    true,
+  );
+  assert.equal(
+    validateRestart({
+      actor: 'mallory',
+      approver: 'alice',
+      reason: 'Re-scoped the issue.',
+      attemptId: 'attempt-4',
+    }),
+    false,
+  );
 });
 
 const BOT = 'pipeline[bot]';
@@ -839,6 +872,7 @@ test('evaluateApproval gates in order and is idempotent', () => {
     headSha: 'h1',
     ciConclusion: 'success',
     securityState: 'success',
+    securityReviewHead: 'h1',
     unresolvedThreads: 0,
     copilotReviewedHead: false,
     state: emptyState(),
@@ -849,6 +883,10 @@ test('evaluateApproval gates in order and is idempotent', () => {
   );
   assert.equal(
     evaluateApproval({ ...base, securityState: 'failure' }).action,
+    'wait',
+  );
+  assert.equal(
+    evaluateApproval({ ...base, securityReviewHead: 'old-head' }).action,
     'wait',
   );
   assert.equal(
@@ -884,6 +922,36 @@ test('evaluateApproval gates in order and is idempotent', () => {
   assert.equal(
     evaluateApproval({ ...base, labels: ['stage:routing'] }).action,
     'noop',
+  );
+});
+
+test('protected approvals are exact, user-bound and head-bound', () => {
+  const body = [
+    MARKERS.protectedApproval,
+    '',
+    '```json',
+    JSON.stringify({
+      issue: 7,
+      pr: 8,
+      head_sha: 'a'.repeat(40),
+      paths: ['.github/workflows/approval.yml'],
+      approver: 'Alice',
+      reason: 'Reviewed the workflow gate.',
+    }),
+    '```',
+  ].join('\n');
+  const parsed = parseProtectedApproval(body);
+  assert.equal(parsed.ok, true);
+  assert.equal(
+    isProtectedApprovalValid({
+      approval: parsed.approval,
+      issue: 7,
+      pr: 8,
+      headSha: 'a'.repeat(40),
+      approver: 'alice',
+      paths: ['.github/workflows/approval.yml'],
+    }),
+    true,
   );
 });
 

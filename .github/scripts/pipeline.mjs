@@ -26,19 +26,23 @@ import {
   issueForAgents,
   normalizeOutcome,
   parseSecurityReport,
+  parseProtectedApproval,
   parseState,
+  forbiddenPaths,
   planRoute,
   previewUrl,
   promptVersion,
   renderOutcome,
   renderPrompt,
   renderState,
+  recordReset,
   resetFixLoop,
   sameLogin,
   selectActionable,
   stageTransition,
   threadsToResolve,
   validateSpec,
+  validateRestart,
 } from './pipeline-lib.mjs';
 import { decideExternal } from './router-external.mjs';
 import {
@@ -503,6 +507,7 @@ const commands = {
       summary: `Security review of ${sha.slice(0, 7)}: ${review.clean ? 'clean' : `${review.blockingCount} blocking finding(s)`}.`,
       prompt_version: `security-review.md@${promptVer}`,
     });
+    writeState(n, { ...readState(n), securityReviewFor: sha });
     setStage(n, 'stage:reviewing');
     setOutput('clean', String(review.clean));
   },
@@ -519,7 +524,33 @@ const commands = {
     const sec = api(`commits/${head}/statuses?per_page=100`).find(
       (s) => s.context === 'pipeline/security',
     )?.state;
+    const securityReviewHead = list(`pulls/${n}/reviews`).find(
+      (r) =>
+        sameLogin(r.user?.login, botLogin()) &&
+        new RegExp(`<!--\\s*${MARKERS.securityReview}\\s+sha=${head}\\b`).test(
+          r.body ?? '',
+        ),
+    )
+      ? head
+      : null;
     const unresolved = reviewThreads(n).filter((t) => !t.isResolved).length;
+    const files = list(`pulls/${n}/files`);
+    const protectedPaths = forbiddenPaths(files.map((f) => f.filename));
+    const issueNumber =
+      Number(p.head?.ref?.match(/^issue-(\d+)-/)?.[1]) ||
+      Number(
+        /(?:close[sd]?|fixe[sd]?|resolve[sd]?)\s+#(\d+)/i.exec(
+          p.body ?? '',
+        )?.[1],
+      ) ||
+      null;
+    const approver = process.env.PIPELINE_APPROVER_LOGIN || '';
+    const protectedApproval = issueNumber
+      ? (list(`issues/${issueNumber}/comments`)
+          .filter((c) => sameLogin(c.user?.login, approver))
+          .map((c) => parseProtectedApproval(c.body))
+          .find((r) => r.ok)?.approval ?? null)
+      : null;
     const copilotReviewedHead = list(`pulls/${n}/reviews`).some(
       (r) => COPILOT_LOGINS.includes(r.user?.login) && r.commit_id === head,
     );
@@ -531,6 +562,12 @@ const commands = {
       headSha: head,
       ciConclusion: ci,
       securityState: sec,
+      securityReviewHead,
+      protectedPaths,
+      protectedApproval,
+      issue: issueNumber || undefined,
+      pr: n,
+      approver,
       unresolvedThreads: unresolved,
       copilotReviewedHead,
       state,
@@ -567,6 +604,18 @@ const commands = {
     }
 
     if (decision.action === 'human-approval') {
+      const reset = recordReset(state);
+      if (!reset.ok) {
+        writeOutcome(n, {
+          stage: 'approval',
+          result: 'problem',
+          problem: 'budget_exhausted',
+          summary:
+            'Approval parked: the issue lifetime reset cap is exhausted.',
+          details: [reset.reason],
+        });
+        return;
+      }
       writeOutcome(n, {
         stage: 'approval',
         result: 'success',
@@ -598,7 +647,11 @@ const commands = {
           `Code owners have been requested for review. Merging is a human decision; no agent can merge.`,
         ].join('\n\n'),
       );
-      writeState(n, { ...state, humanApprovalFor: head });
+      writeState(n, {
+        ...reset.state,
+        humanApprovalFor: head,
+        attemptId: `approval-${head.slice(0, 12)}`,
+      });
     }
   },
 
@@ -627,6 +680,64 @@ const commands = {
       ],
       run_url: runUrl,
     });
+  },
+
+  'pr-closed'([pr]) {
+    const n = num(pr);
+    const data = graphql(
+      `
+        query ($owner: String!, $name: String!, $number: Int!) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              state
+              merged
+              closingIssuesReferences(first: 20) {
+                nodes {
+                  number
+                }
+              }
+            }
+          }
+        }
+      `,
+      { owner: OWNER, name: NAME, number: n },
+    ).repository.pullRequest;
+    if (data.state !== 'CLOSED' || data.merged) return;
+    for (const issue of data.closingIssuesReferences.nodes) {
+      editLabels(
+        issue.number,
+        stageTransition(labelsOf(issue.number), 'stage:needs-attention'),
+      );
+      postComment(
+        issue.number,
+        [
+          `<!-- pipeline:route pr=${n} reason=pr_closed -->`,
+          'The linked pipeline PR was closed without merging. The issue remains open and needs your triage; it was not reopened automatically.',
+        ].join('\n'),
+      );
+    }
+  },
+
+  restart([issue, stage, reason, attemptId]) {
+    const n = num(issue);
+    const result = validateRestart({
+      actor: process.env.GITHUB_ACTOR,
+      approver: process.env.PIPELINE_APPROVER_LOGIN,
+      reason,
+      attemptId,
+    });
+    if (!result.ok) throw new Error(result.reason);
+    const target = stage || 'stage:qualified';
+    if (!['stage:qualified', 'stage:spec', 'stage:planned'].includes(target))
+      throw new Error(`Invalid restart stage: ${target}`);
+    editLabels(n, stageTransition(labelsOf(n), target));
+    postComment(
+      n,
+      [
+        `<!-- pipeline:route restart attempt=${attemptId} -->`,
+        `Restarted by the configured approver for: ${reason.trim()}`,
+      ].join('\n'),
+    );
   },
 
   'linked-issues'([pr]) {
