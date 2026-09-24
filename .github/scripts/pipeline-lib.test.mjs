@@ -805,3 +805,28 @@ test('threadsToResolve resolves only all-bot threads', () => {
   );
   assert.deepEqual(threadsToResolve(threads, fixed, []), []);
 });
+
+test('selectActionable skips approved and dismissed reviews and their comments', () => {
+  const { actionable } = selectActionable({
+    botLogin: BOT,
+    reviews: [
+      review(1, '2026-01-03T00:00:00Z', { state: 'APPROVED', body: 'lgtm' }),
+      review(2, '2026-01-03T00:00:00Z', {
+        state: 'DISMISSED',
+        body: 'please rewrite everything',
+      }),
+      review(3, '2026-01-03T00:00:00Z', {
+        state: 'CHANGES_REQUESTED',
+        body: 'fix it',
+      }),
+    ],
+    reviewComments: [
+      comment(4, '2026-01-03T00:00:00Z', { pull_request_review_id: 2 }),
+      comment(5, '2026-01-03T00:00:00Z', { pull_request_review_id: 3 }),
+    ],
+  });
+  assert.deepEqual(
+    actionable.map((a) => a.key),
+    ['c5', 'r3'],
+  );
+});

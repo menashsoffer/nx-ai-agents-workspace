@@ -486,6 +486,9 @@ export function selectActionable({
   const ignored = (item) =>
     ignoreLogins.includes(item.user?.login) || !feedbackSource(item, botLogin);
   const submitted = new Map(reviews.map((r) => [r.id, r.submitted_at]));
+  const dismissed = new Set(
+    reviews.filter((r) => r.state === 'DISMISSED').map((r) => r.id),
+  );
   const withInline = new Set(
     reviewComments.map((c) => c.pull_request_review_id),
   );
@@ -511,7 +514,7 @@ export function selectActionable({
         ? reviewAt
         : c.created_at;
     scan(`c${c.id}`, at, () => {
-      if (ignored(c)) return null;
+      if (ignored(c) || dismissed.has(c.pull_request_review_id)) return null;
       const body = (c.body ?? '').trim();
       if (body.includes(MARKERS.fixReply)) return null;
       if (!body || resolvedCommentIds.has(c.id)) return DEFER;
@@ -528,7 +531,9 @@ export function selectActionable({
   }
   for (const r of reviews) {
     scan(`r${r.id}`, r.submitted_at, () => {
-      if (ignored(r) || r.state === 'APPROVED') return null;
+      // Approvals carry no requests; a dismissed review was withdrawn.
+      if (ignored(r) || ['APPROVED', 'DISMISSED'].includes(r.state))
+        return null;
       if (COPILOT_LOGINS.includes(r.user?.login)) return null; // summary only
       const body = (r.body ?? '').trim();
       if (hasPipelineMarker(body) && !body.includes(MARKERS.actionable))

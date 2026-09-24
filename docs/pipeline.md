@@ -128,7 +128,7 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
 3. collects review comments and review bodies from **trusted sources** (the
    pipeline bot, Copilot, repo owners/members/collaborators) **newer than the state's
    watermark**, skips ones already handled (**deduped by comment id**),
-   resolved threads, approvals, Copilot's summary body, and pipeline
+   resolved threads, approved and dismissed reviews, Copilot's summary body, and pipeline
    bookkeeping. Pipeline review bodies count only if marked
    `<!-- pipeline:actionable -->`. Dedupe is by id; the watermark only moves
    past items with a final decision. Resolved threads and empty bodies are
