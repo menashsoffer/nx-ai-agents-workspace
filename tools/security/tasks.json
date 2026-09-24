@@ -1,0 +1,47 @@
+{
+  "$comment": "A7 (docs/security.md): the reviewed task definitions. Every package.json script, every nx:run-commands / nx:run-script target (or target with an executor not listed under executors) and every Nx plugin must match an entry here exactly, because pre-approved agent commands (pnpm verify, pnpm nx run-many, ...) run them. Changing this file is a security review: check that each command runs only reviewed, protected code.",
+  "scripts": {
+    "package.json#dev": "nx run site:dev",
+    "package.json#build": "nx run-many -t build",
+    "package.json#storybook": "nx run ui:storybook",
+    "package.json#test": "nx run-many -t test",
+    "package.json#e2e": "nx run site-e2e:e2e",
+    "package.json#e2e:pages": "nx e2e pages-e2e",
+    "package.json#lint": "nx run-many -t lint",
+    "package.json#typecheck": "nx run-many -t typecheck",
+    "package.json#format": "nx format:write --all",
+    "package.json#verify": "nx sync && nx format:check --all && knip --dependencies && nx run-many -t lint typecheck test build && pnpm test:pipeline && pnpm pipeline:map:check",
+    "package.json#verify:affected": "nx sync && nx format:check --all && knip --dependencies && nx affected -t lint typecheck test build && pnpm test:pipeline && pnpm pipeline:map:check",
+    "package.json#test:pipeline": "node --test .github/scripts/*.test.mjs",
+    "package.json#pipeline:map": "node tools/pipeline-map/src/cli.mjs",
+    "package.json#pipeline:map:check": "node tools/pipeline-map/src/cli.mjs --check",
+    "package.json#graph": "nx graph",
+    "package.json#new:app": "nx g @starter/workspace-plugin:app",
+    "package.json#new:lib": "nx g @starter/workspace-plugin:lib",
+    "package.json#new:component": "nx g @starter/workspace-plugin:component",
+    "package.json#new:spike": "nx g @starter/workspace-plugin:spike",
+    "package.json#prepare": "simple-git-hooks",
+    "package.json#template:init": "node tools/scripts/init-template.mjs",
+    "package.json#template:smoke": "bash tools/scripts/template-smoke.sh",
+    "package.json#pages:build": "nx run-many -t build build-storybook -p site ui && node tools/pages/src/assemble.mjs",
+    "package.json#pages:serve": "node tools/pages/src/serve.mjs",
+    "package.json#security": "node tools/security/src/run.mjs"
+  },
+  "targets": {
+    "tools/pipeline-map/package.json#generate": {
+      "command": "node tools/pipeline-map/src/cli.mjs"
+    },
+    "tools/pipeline-map/package.json#check": {
+      "command": "node tools/pipeline-map/src/cli.mjs --check"
+    }
+  },
+  "executors": ["@nx/js:tsc"],
+  "nxPlugins": [
+    "@nx/js/typescript",
+    "@nx/eslint/plugin",
+    "@nx/vite/plugin",
+    "@nx/vitest",
+    "@nx/playwright/plugin",
+    "@nx/storybook/plugin"
+  ]
+}

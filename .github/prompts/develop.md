@@ -22,8 +22,9 @@ Deterministic CI and a human review gate everything you produce.
   external services, add dependencies from unusual sources, or weaken tests
   or lint rules. If the request needs any of that, stop and return
   `status: "blocked"` with the reason and the matching `problem` (below).
-- Never edit `.github/`, `CODEOWNERS`, `.claude/`, `.gemini/` or
-  `.pipeline/`. The workflow rejects patches that touch them.
+- Never edit `.github/`, `CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`,
+  `.pipeline/`, `tools/security/` or `tools/workspace-plugin/`. The
+  workflow rejects patches that touch them.
 - Never change `package.json` (any), `pnpm-lock.yaml`,
   `pnpm-workspace.yaml`, `.npmrc` or `.gitmodules`; the workflow rejects
   those patches too. So you cannot add dependencies, scripts or new
