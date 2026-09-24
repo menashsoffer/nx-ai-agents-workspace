@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   COPILOT_REVIEWER,
+  applyLabels,
   MARKERS,
   branchName,
   buildSecurityReview,
@@ -22,6 +23,7 @@ import {
   promptVersion,
   renderPrompt,
   renderState,
+  resetFixLoop,
   selectActionable,
   stageTransition,
   threadsToResolve,
@@ -509,25 +511,65 @@ test('selectActionable: inline comments count from their review submission', () 
 test('fix loop: none -> 1 -> 2 -> needs-attention, and noop without new comments', () => {
   const some = [{ key: 'c1' }];
   assert.equal(decideFix({ labels: [], actionable: [] }).action, 'noop');
-  assert.deepEqual(decideFix({ labels: [], actionable: some }), {
-    action: 'fix',
-    loop: 1,
-    add: ['fix-loop:1', 'stage:fixing'],
-    remove: [],
-  });
-  const second = decideFix({ labels: ['fix-loop:1'], actionable: some });
-  assert.equal(second.loop, 2);
-  assert.deepEqual(second.remove, ['fix-loop:1']);
-  assert.equal(
-    decideFix({ labels: ['fix-loop:2'], actionable: some }).action,
-    'escalate',
+  assert.deepEqual(
+    decideFix({ labels: ['stage:reviewing'], actionable: some }),
+    {
+      action: 'fix',
+      loop: 1,
+      add: ['stage:fixing', 'fix-loop:1'],
+      remove: ['stage:reviewing'],
+    },
   );
+  const second = decideFix({
+    labels: ['stage:reviewing', 'fix-loop:1'],
+    actionable: some,
+  });
+  assert.equal(second.loop, 2);
+  assert.deepEqual(second.add, ['stage:fixing', 'fix-loop:2']);
+  assert.deepEqual(second.remove, ['stage:reviewing', 'fix-loop:1']);
   assert.equal(
     decideFix({
       labels: ['fix-loop:2', 'stage:needs-attention'],
       actionable: some,
     }).action,
     'noop',
+  );
+});
+
+test('fix loop: escalating clears fix-loop labels, so un-parking resets the budget', () => {
+  const some = [{ key: 'c1' }];
+  const labels = ['stage:reviewing', 'fix-loop:2', 'bug'];
+  const esc = decideFix({ labels, actionable: some });
+  assert.equal(esc.action, 'escalate');
+  assert.deepEqual(esc.add, ['stage:needs-attention']);
+  assert.deepEqual(esc.remove, ['stage:reviewing', 'fix-loop:2']);
+  const parked = applyLabels(labels, esc);
+  assert.deepEqual(parked, ['bug', 'stage:needs-attention']);
+  // A human removes stage:needs-attention: the next feedback is round 1.
+  const unparked = parked.filter((l) => l !== 'stage:needs-attention');
+  assert.equal(decideFix({ labels: unparked, actionable: some }).loop, 1);
+});
+
+test('resetFixLoop: reaching human approval clears the fix budget', () => {
+  const edit = resetFixLoop(
+    ['stage:reviewing', 'fix-loop:1', 'bug'],
+    'stage:human-approval',
+  );
+  assert.deepEqual(edit, {
+    add: ['stage:human-approval'],
+    remove: ['stage:reviewing', 'fix-loop:1'],
+  });
+  assert.deepEqual(
+    applyLabels(['stage:reviewing', 'fix-loop:1', 'bug'], edit),
+    ['bug', 'stage:human-approval'],
+  );
+  // Later human feedback is round 1 again, not an instant escalation.
+  assert.equal(
+    decideFix({
+      labels: ['bug', 'stage:human-approval'],
+      actionable: [{ key: 'c9' }],
+    }).loop,
+    1,
   );
 });
 

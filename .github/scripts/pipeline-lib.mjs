@@ -579,9 +579,28 @@ export function threadsToResolve(threads, itemIds, autoResolveLogins) {
   );
 }
 
+const FIX_LOOPS = [FIX_LOOP_1, FIX_LOOP_2];
+
+/** Label edits that make `stage` the only stage and clear the fix budget. */
+export function resetFixLoop(labels, stage) {
+  const t = stageTransition(labels, stage);
+  return {
+    add: t.add,
+    remove: [...t.remove, ...FIX_LOOPS.filter((l) => labels.includes(l))],
+  };
+}
+
+/** `labels` after `editLabels(..., { add, remove })`. */
+export const applyLabels = (labels, { add = [], remove = [] }) => [
+  ...new Set([...labels.filter((l) => !remove.includes(l)), ...add]),
+];
+
 /**
  * The fix-loop state machine. No new feedback -> noop (idempotent reruns).
  * none -> fix-loop:1 -> fix-loop:2 -> stage:needs-attention (stop).
+ * `add`/`remove` are the complete label edits. Escalating clears the
+ * fix-loop labels, so un-parking a PR (removing stage:needs-attention)
+ * starts a fresh budget of two rounds.
  */
 export function decideFix({ labels, actionable }) {
   if (labels.includes('stage:needs-attention'))
@@ -592,21 +611,15 @@ export function decideFix({ labels, actionable }) {
     return {
       action: 'escalate',
       reason: 'fix loop budget (2) exhausted',
-      add: ['stage:needs-attention'],
-      remove: [],
+      ...resetFixLoop(labels, 'stage:needs-attention'),
     };
-  if (labels.includes(FIX_LOOP_1))
-    return {
-      action: 'fix',
-      loop: 2,
-      add: [FIX_LOOP_2, 'stage:fixing'],
-      remove: [FIX_LOOP_1],
-    };
+  const loop = labels.includes(FIX_LOOP_1) ? 2 : 1;
+  const t = stageTransition(labels, 'stage:fixing');
   return {
     action: 'fix',
-    loop: 1,
-    add: [FIX_LOOP_1, 'stage:fixing'],
-    remove: [],
+    loop,
+    add: [...t.add, FIX_LOOPS[loop - 1]],
+    remove: [...t.remove, ...(loop === 2 ? [FIX_LOOP_1] : [])],
   };
 }
 

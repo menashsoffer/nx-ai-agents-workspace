@@ -7,6 +7,7 @@ import {
   COPILOT_REVIEWER,
   MARKERS,
   STAGE_STATUS,
+  applyLabels,
   branchName,
   buildSecurityReview,
   checkPatch,
@@ -21,6 +22,7 @@ import {
   promptVersion,
   renderPrompt,
   renderState,
+  resetFixLoop,
   sameLogin,
   selectActionable,
   stageTransition,
@@ -87,8 +89,8 @@ function readState(pr) {
   return c ? parseState(c.body) : emptyState();
 }
 
-function writeState(pr, state) {
-  upsertBotComment(pr, MARKERS.state, renderState(state, labelsOf(pr)));
+function writeState(pr, state, labels = labelsOf(pr)) {
+  upsertBotComment(pr, MARKERS.state, renderState(state, labels));
 }
 
 function setStage(number, stage) {
@@ -222,7 +224,8 @@ const commands = {
     setOutput('loop', String(decision.loop ?? ''));
     if (decision.action === 'noop') return;
 
-    // Record before acting: a rerun with no newer comments is a no-op.
+    // Record before acting: a rerun with no newer comments is a no-op, and
+    // a crash after this line cannot spend the same round twice.
     const next = {
       ...state,
       watermark,
@@ -230,21 +233,15 @@ const commands = {
         ...new Set([...state.handled, ...actionable.map((a) => a.key)]),
       ],
     };
-    if (decision.action === 'escalate') {
-      setStage(n, 'stage:needs-attention');
+    const edit = { add: decision.add, remove: decision.remove };
+    writeState(n, next, applyLabels(labels, edit));
+    editLabels(n, edit);
+    if (decision.action === 'escalate')
       upsertBotComment(
         n,
         MARKERS.notice,
-        `**Pipeline stopped: needs attention.** ${decision.reason}; ${actionable.length} new review item(s) remain. A human needs to take over this PR.`,
+        `**Pipeline stopped: needs attention.** ${decision.reason}; ${actionable.length} new review item(s) remain. A human needs to take over this PR. Removing \`stage:needs-attention\` restarts the fix loop with a fresh budget.`,
       );
-    } else {
-      editLabels(n, stageTransition(labels, 'stage:fixing'));
-      editLabels(n, {
-        add: decision.add.filter((l) => !l.startsWith('stage:')),
-        remove: decision.remove,
-      });
-    }
-    writeState(n, next);
   },
 
   'fix-reply'([pr, sha, itemsFile]) {
@@ -411,7 +408,8 @@ const commands = {
     }
 
     if (decision.action === 'human-approval') {
-      setStage(n, 'stage:human-approval');
+      // Later human feedback starts a fresh fix budget.
+      editLabels(n, resetFixLoop(labels, 'stage:human-approval'));
       if (p.draft)
         graphql(
           `

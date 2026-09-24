@@ -27,18 +27,18 @@ flowchart TD
   K -->|human approves + merges| L[done.yml: Project → Done]
 ```
 
-| Stage label             | Set by         | Meaning / next step                                                                 |
-| ----------------------- | -------------- | ----------------------------------------------------------------------------------- |
-| `stage:inbox`           | `inbox.yml`    | New issue. A maintainer triages it.                                                 |
-| `stage:qualified`       | **a human**    | Starts the spec agent.                                                              |
-| `stage:spec`            | `spec.yml`     | Spec comment posted. Starts the plan agent.                                         |
-| `stage:planned`         | `plan.yml`     | Plan comment posted. Starts the develop agent.                                      |
-| `stage:building`        | `develop.yml`  | Draft PR open (on the issue and the PR). CI runs.                                   |
-| `stage:reviewing`       | `security.yml` | Security review posted on the PR.                                                   |
-| `stage:fixing`          | `fix.yml`      | Fixer is applying review feedback.                                                  |
-| `stage:human-approval`  | `approval.yml` | Everything green. A human reviews the PR and the preview, then approves and merges. |
-| `stage:needs-attention` | any step       | The pipeline stopped. Read the `pipeline:notice` comment and act.                   |
-| `fix-loop:1` / `:2`     | `fix.yml`      | Automated fix rounds used. At most two.                                             |
+| Stage label             | Set by         | Meaning / next step                                                                          |
+| ----------------------- | -------------- | -------------------------------------------------------------------------------------------- |
+| `stage:inbox`           | `inbox.yml`    | New issue. A maintainer triages it.                                                          |
+| `stage:qualified`       | **a human**    | Starts the spec agent.                                                                       |
+| `stage:spec`            | `spec.yml`     | Spec comment posted. Starts the plan agent.                                                  |
+| `stage:planned`         | `plan.yml`     | Plan comment posted. Starts the develop agent.                                               |
+| `stage:building`        | `develop.yml`  | Draft PR open (on the issue and the PR). CI runs.                                            |
+| `stage:reviewing`       | `security.yml` | Security review posted on the PR.                                                            |
+| `stage:fixing`          | `fix.yml`      | Fixer is applying review feedback.                                                           |
+| `stage:human-approval`  | `approval.yml` | Everything green. A human reviews the PR and the preview, then approves and merges.          |
+| `stage:needs-attention` | any step       | The pipeline stopped. Read the `pipeline:notice` comment and act.                            |
+| `fix-loop:1` / `:2`     | `fix.yml`      | Automated fix rounds used. At most two. Cleared on escalation and at `stage:human-approval`. |
 
 From `stage:building` on, the **PR** carries the stage; the issue stays at
 `stage:building` until the PR merges and closes it.
@@ -137,14 +137,20 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
    submission time;
 4. decides:
 
-   | Labels on the PR | New actionable comments | Action                              |
-   | ---------------- | ----------------------- | ----------------------------------- |
-   | any              | none                    | nothing (rerunning is safe)         |
-   | no `fix-loop:*`  | yes                     | add `fix-loop:1`, run the fixer     |
-   | `fix-loop:1`     | yes                     | swap to `fix-loop:2`, run the fixer |
-   | `fix-loop:2`     | yes                     | `stage:needs-attention`, stop       |
+   | Labels on the PR | New actionable comments | Action                                            |
+   | ---------------- | ----------------------- | ------------------------------------------------- |
+   | any              | none                    | nothing (rerunning is safe)                       |
+   | no `fix-loop:*`  | yes                     | add `fix-loop:1`, run the fixer                   |
+   | `fix-loop:1`     | yes                     | swap to `fix-loop:2`, run the fixer               |
+   | `fix-loop:2`     | yes                     | `stage:needs-attention`, clear `fix-loop:*`, stop |
 
-5. records the handled ids and new watermark **before** the fixer runs.
+5. records the handled ids and new watermark in the state comment
+   **before** it edits labels or the fixer runs, so a crash cannot spend
+   the same round twice (at worst, that round's items are dropped).
+
+The budget resets whenever `fix-loop:*` is cleared: on escalation (so
+un-parking a PR gives it two fresh rounds) and when the PR reaches
+`stage:human-approval` (so later human feedback starts at round 1).
 
 After a successful fix, the push job replies on each inline thread and
 resolves a thread only if **every** comment in it is from the pipeline bot
@@ -230,8 +236,9 @@ restart a stage:
 
 - spec / plan / develop: remove and re-add the stage's trigger label
   (`stage:qualified`, `stage:spec`, `stage:planned`);
-- fix loop: remove `stage:needs-attention` and the `fix-loop:*` label, then
-  run **Pipeline · Fix** manually with the PR number;
+- fix loop: remove `stage:needs-attention` (escalation already cleared
+  `fix-loop:*`, so this resets the budget to two rounds), then run
+  **Pipeline · Fix** manually with the PR number;
 - approval: run **Pipeline · Approval** manually with the PR number.
 
 ## Prompts
