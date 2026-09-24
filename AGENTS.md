@@ -153,7 +153,9 @@ Do **not** change these unless the user explicitly asks for that change:
 `.github/workflows/`, `.github/dependabot.yml`, `.github/zizmor.yml`, `.claude/settings.json`,
 `.claude/hooks/`, `.gemini/`, `.codex/`, the supply-chain settings in
 `pnpm-workspace.yaml` (`allowBuilds`, `strictDepBuilds`, `minimumReleaseAge`,
-`overrides`), `packageManager` in `package.json`, and `tools/security/`.
+`overrides`), `packageManager` in `package.json`, `tools/security/`, and
+`tools/workspace-plugin/` (its generators run through pre-approved
+`pnpm new:*` commands).
 Never add exceptions to `tools/security/exceptions.json` on your own. The
 rules are in `docs/security.md`.
 

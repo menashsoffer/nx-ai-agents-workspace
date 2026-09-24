@@ -16,6 +16,7 @@ import {
   unsupportedMessage,
 } from './platform.mjs';
 import { runScanners } from './scanners.mjs';
+import { checkRepoTasks } from './tasks.mjs';
 
 const isTemplateRepo = existsSync(
   join(workspaceRoot, 'tools/scripts/init-template.mjs'),
@@ -48,6 +49,10 @@ check(
 );
 
 check('AI-assistant config (A1-A3, A6)', checkRepoAiConfig(workspaceRoot));
+check(
+  'A7: scripts, run-commands targets and Nx plugins match tasks.json',
+  checkRepoTasks(workspaceRoot, join(securityDir, 'tasks.json')),
+);
 
 const prodGating = gatingAdvisories(
   runAudit(workspaceRoot, { prod: true }),
