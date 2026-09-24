@@ -3,24 +3,19 @@
 // locally. Exit codes: 0 = all passed, 1 = a gate failed,
 // 2 = this platform can't run the binary scanners, so they were NOT run
 // (never read 2 as "passed"; CI is authoritative).
-import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkRepoAiConfig } from './ai-config.mjs';
 import { describe, gatingAdvisories, runAudit } from './audit.mjs';
 import { exceptedTargets, validateExceptions } from './exceptions.mjs';
-import {
-  ensureTool,
-  loadManifest,
-  securityDir,
-  workspaceRoot,
-} from './fetch-tool.mjs';
+import { loadManifest, securityDir, workspaceRoot } from './fetch-tool.mjs';
 import { validateManifest } from './manifest.mjs';
 import {
   detectPlatform,
   EXIT_NOT_RUN,
   unsupportedMessage,
 } from './platform.mjs';
+import { runScanners } from './scanners.mjs';
 
 const isTemplateRepo = existsSync(
   join(workspaceRoot, 'tools/scripts/init-template.mjs'),
@@ -46,9 +41,10 @@ check('Exceptions file is valid and nothing has expired', exceptionProblems);
 const validExceptions = exceptionProblems.length ? [] : exceptions;
 
 const manifest = loadManifest();
+const manifestProblems = validateManifest(manifest);
 check(
   'Pinned tool manifest is complete and reviewed within 120 days',
-  validateManifest(manifest),
+  manifestProblems,
 );
 
 check('AI-assistant config (A1-A3)', checkRepoAiConfig(workspaceRoot));
@@ -88,19 +84,6 @@ if ('unsupported' in platform) {
   notRun = true;
   console.log(`⚠ ${unsupportedMessage(platform.unsupported)}`);
 } else {
-  const run = (label, tool, args) => {
-    const binary = ensureTool(tool, platform.key, { manifest });
-    const result = spawnSync(binary, args, {
-      cwd: workspaceRoot,
-      stdio: 'inherit',
-    });
-    check(
-      label,
-      result.status === 0 ? [] : [`${tool} exited with ${result.status}`],
-    );
-  };
-
-  run('W7/W8: actionlint', 'actionlint', []);
   // Online audits (e.g. impostor commits behind pinned SHAs) need a working
   // GitHub token; CI provides one. Locally, tokens are often absent or scoped
   // differently, so run offline there.
@@ -108,25 +91,15 @@ if ('unsupported' in platform) {
     process.env['CI'] &&
       (process.env['GH_TOKEN'] || process.env['GITHUB_TOKEN']),
   );
-  run(`W1-W5: zizmor (${online ? 'online' : 'offline'})`, 'zizmor', [
-    ...(online ? [] : ['--offline']),
-    '--min-severity',
-    'low',
-    '--no-progress',
-    '.github',
-  ]);
-  run('S1: gitleaks (git history)', 'gitleaks', [
-    'git',
-    '--redact',
-    '--no-banner',
-    // gh-pages holds generated Pages/Storybook build artifacts, not source;
-    // its orphan history is pure noise for secret scanning (minified JS
-    // frequently trips entropy-based rules). Exclude it from source and
-    // remote-tracking refs alike; source branches stay fully scanned.
-    '--log-opts',
-    '--exclude=refs/heads/gh-pages --exclude=refs/remotes/*/gh-pages --all',
-    '.',
-  ]);
+  for (const { label, problems } of runScanners({
+    manifest,
+    manifestProblems,
+    platformKey: platform.key,
+    cwd: workspaceRoot,
+    online,
+  })) {
+    check(label, problems);
+  }
 }
 
 for (const warning of warnings) console.log(`⚠ ${warning}`);

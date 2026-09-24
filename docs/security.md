@@ -131,6 +131,13 @@ Nothing may be disabled, skipped or loosened inline without an entry here.
 `.security-bin/`, verifying each archive's SHA-256. A mismatch deletes the
 download and fails. There is no fallback to an unverified binary.
 
+- If `tools.json` fails validation (https URLs, 64-hex hashes, review age),
+  **nothing is downloaded or run** and the run fails.
+- Downloads are https-only, including redirects (`file://` is accepted only
+  by an explicit test-only option).
+- The verified archive stays in the cache; every run re-hashes it and
+  re-extracts the binary, so a tampered cached binary is never executed.
+
 - **Supported platforms:** glibc Linux and macOS, x64 and arm64. Alpine/musl and
   native Windows exit with `2` (not run). **On Windows, use WSL2.**
 - **Updating:** Dependabot can't update `tools.json`. Review it at least
