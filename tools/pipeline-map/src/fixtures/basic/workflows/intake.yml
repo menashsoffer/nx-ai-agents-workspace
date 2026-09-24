@@ -1,0 +1,9 @@
+# Quoted `on` key, event list, comments everywhere.
+name: Demo · Intake
+'on': [issues] # every issue event
+jobs:
+  intake:
+    runs-on: ubuntu-latest
+    steps:
+      # stage:ready is set by a human, never here
+      - run: node .github/scripts/pipeline.mjs set-stage "${{ github.event.issue.number }}" stage:new

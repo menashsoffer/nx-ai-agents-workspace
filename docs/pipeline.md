@@ -13,32 +13,14 @@ at a human. See [Router](#router).
 
 ## The flow
 
-```mermaid
-flowchart TD
-  A[Issue opened] -->|inbox.yml| B[stage:inbox]
-  B -->|human adds label| C[stage:qualified]
-  C -->|spec.yml: Gemini| D[stage:spec]
-  D -->|plan.yml: Claude CTO| F[stage:planned]
-  F -->|develop.yml: Claude| G[draft PR · stage:building]
-  G -->|ci.yml green| H[security.yml: Gemini · stage:reviewing]
-  H -->|blocking findings| I[fix.yml: Gemini · stage:fixing]
-  I -->|push, CI again| H
-  H -->|clean + no open threads| J[approval.yml: Copilot review]
-  J -->|comments| I
-  J -->|clean| K[stage:human-approval · PR ready · preview URL]
-  K -->|human approves + merges| L[done.yml: Project → Done]
+The full map (every stage, workflow, escalation and fix-loop path, plus
+computed findings) is generated from the workflows and `pipeline-lib.mjs`:
+see **[pipeline-map.md](pipeline-map.md)**. Regenerate it with
+`pnpm pipeline:map` after changing a workflow or `pipeline-lib.mjs`;
+`pnpm verify` fails while it is stale.
 
-  C & D & F & H & I & J -.->|problem: outcome note| R[stage:routing]
-  R -->|router.yml| Q{rules + caps + hard gates}
-  Q -->|re-spec| C
-  Q -->|re-plan| D
-  Q -->|re-develop| F
-  Q -->|retry fix| I
-  Q -->|human| X[stage:needs-attention]
-```
-
-Solid arrows are the fast path: each stage appends a success outcome note
-and sets the next label itself. Dotted arrows: a stage that hits a problem
+In the map, solid arrows are the fast path: each stage appends a success outcome note
+and sets the next label itself. Dashed red arrows: a stage that hits a problem
 appends a problem outcome note and sets `stage:routing`; only the router
 decides what happens next.
 

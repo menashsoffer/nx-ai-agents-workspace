@@ -36,6 +36,7 @@ tools/
   workspace-plugin/ local Nx generators (pnpm new:*)
   pages/           assembles + serves the Pages artifact (site at /, Storybook at /storybook/)
   security/        `pnpm security`: audit, exceptions, AI-config checks, pinned scanners
+  pipeline-map/    generates docs/pipeline-map.md from the pipeline workflows (`pnpm pipeline:map`)
   scripts/         one-off repo scripts (template-only; removed by template:init)
 docs/              architecture, conventions, decisions (ADRs); read before big changes
                    pipeline.md: the issue → PR multi-agent pipeline
@@ -60,11 +61,12 @@ Always run tasks through pnpm/Nx, never `npx vite`, `npx vitest`, etc.
 | E2E                                    | `pnpm e2e`                                                 |
 | E2E of the deployed artifact           | `pnpm e2e:pages`                                           |
 | Security gates                         | `pnpm security`                                            |
+| Regenerate the pipeline map            | `pnpm pipeline:map`                                        |
 | Format                                 | `pnpm format`                                              |
 | New app / lib / component / spike      | `pnpm new:app` · `new:lib` · `new:component` · `new:spike` |
 
 Project names are short: `site`, `site-e2e`, `pages-e2e`, `sandbox`, `ui`,
-`shared-utils`, `vite-config`, `workspace-plugin`, `pages`, `security`. List them with `pnpm nx show projects`.
+`shared-utils`, `vite-config`, `workspace-plugin`, `pages`, `security`, `pipeline-map`. List them with `pnpm nx show projects`.
 
 ## Definition of done
 

@@ -1262,3 +1262,88 @@ export function classifyFix({ fixResult, pushResult, patchRejected }) {
     ],
   };
 }
+
+// ---------------------------------------------------------------- effects
+
+/**
+ * What each `pipeline.mjs` command writes, for tools/pipeline-map. Only
+ * commands with an effect are listed. pipeline-lib.test.mjs scans the
+ * command bodies and fails when this table disagrees with them.
+ * - stages: stage labels the command may set;
+ * - problems: the subset that means "something went wrong" (the hand-off
+ *   to the router, or the router's hand-off to a human);
+ * - markers: MARKERS keys of comments it upserts (one per item, edited);
+ * - appends: MARKERS keys of notes, comments or reviews it adds (history);
+ * - emits: GitHub events it causes that can trigger workflows
+ *   (`pull_request_review` = review posted or Copilot requested,
+ *   `status` = commit status);
+ * - loops: fix-loop labels it manages;
+ * - args: effects taken from the command line, as positional index or flag
+ *   (`stage`: stage label, `marker`: MARKERS key to upsert).
+ */
+export const COMMAND_EFFECTS = {
+  'set-stage': {
+    stages: [],
+    markers: [],
+    appends: [],
+    emits: [],
+    args: { stage: 1 },
+  },
+  'edit-labels': {
+    stages: [],
+    markers: [],
+    appends: [],
+    emits: [],
+    args: { stage: '--add' },
+  },
+  outcome: {
+    stages: ['stage:routing'],
+    problems: ['stage:routing'],
+    markers: [],
+    appends: ['outcome'],
+    emits: [],
+  },
+  route: {
+    stages: [
+      ...new Set([
+        ...Object.values(TARGET_STAGE),
+        ...Object.values(RETRY_STAGE),
+      ]),
+    ].sort(),
+    problems: [TARGET_STAGE.human],
+    markers: [],
+    appends: ['route'],
+    emits: [],
+  },
+  'upsert-comment': {
+    stages: [],
+    markers: [],
+    appends: [],
+    emits: [],
+    args: { marker: 1 },
+  },
+  'init-state': { stages: [], markers: ['state'], appends: [], emits: [] },
+  'fix-adapter': {
+    stages: ['stage:fixing', 'stage:routing'],
+    problems: ['stage:routing'],
+    markers: ['state'],
+    appends: ['outcome'],
+    emits: [],
+    loops: [FIX_LOOP_1, FIX_LOOP_2],
+  },
+  'fix-reply': { stages: [], markers: [], appends: ['fixReply'], emits: [] },
+  'security-publish': {
+    stages: ['stage:reviewing', 'stage:routing'],
+    problems: ['stage:routing'],
+    markers: [],
+    appends: ['actionable', 'outcome', 'securityReview'],
+    emits: ['pull_request_review', 'status'],
+  },
+  approval: {
+    stages: ['stage:human-approval', 'stage:routing'],
+    problems: ['stage:routing'],
+    markers: ['humanApproval', 'state'],
+    appends: ['outcome'],
+    emits: ['pull_request_review'],
+  },
+};
