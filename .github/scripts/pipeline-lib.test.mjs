@@ -128,10 +128,17 @@ test('forbiddenPaths blocks pipeline and ownership files', () => {
     'diff --git a/apps/site/src/x.tsx b/apps/site/src/x.tsx',
     'diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml',
     'diff --git a/.github/CODEOWNERS b/.github/CODEOWNERS',
+    'diff --git a/.codex/config.toml b/.codex/config.toml',
+    'diff --git a/tools/security/tasks.json b/tools/security/tasks.json',
+    'diff --git a/tools/workspace-plugin/src/index.ts b/tools/workspace-plugin/src/index.ts',
+    'diff --git a/tools/vite-config/src/index.ts b/tools/vite-config/src/index.ts',
   ].join('\n');
   assert.deepEqual(forbiddenPaths(patchPaths(patch)), [
     '.github/workflows/ci.yml',
     '.github/CODEOWNERS',
+    '.codex/config.toml',
+    'tools/security/tasks.json',
+    'tools/workspace-plugin/src/index.ts',
   ]);
 });
 

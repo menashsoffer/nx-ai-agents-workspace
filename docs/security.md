@@ -74,18 +74,21 @@ Workflows install pnpm through corepack from the hash-pinned `packageManager`
 
 Every project inherits these files, so they are held to a higher bar.
 
-| #   | Requirement                                                                                                                                                                             | Enforced by     | Type   |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------ |
-| A1  | `.claude/settings.json` allow-list names specific subcommands only. Never `pnpm nx:*`, `pnpm exec:*`, `npx:*`, `Bash(*)`, or prefixes like `pnpm nx run` that also match `run-commands` | `pnpm security` | Gate   |
-| A2  | Plugins are enabled only from marketplaces pinned to a tag (`ref: "vX.Y.Z"`); otherwise the marketplace is listed but the plugin is off                                                 | `pnpm security` | Gate   |
-| A3  | MCP servers run from the lockfile (`pnpm exec …`): never `npx`/`dlx`/`@latest`, never remote URLs (`.mcp.json`, `.gemini/`, `.codex/`)                                                  | `pnpm security` | Gate   |
-| A4  | The SessionStart hook only runs the frozen install and writes env vars; no downloads besides packages, never `curl … \| sh`                                                             | review          | Review |
-| A5  | AGENTS.md forbids agents from changing workflows, `.claude/settings.json`, pnpm supply-chain settings or overrides without an explicit request                                          | review          | Review |
+| #   | Requirement                                                                                                                                                                                                                                                                                                                                                                                                                              | Enforced by     | Type   |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------ |
+| A1  | `.claude/settings.json` allow-list names specific subcommands only. Never `pnpm nx:*`, `pnpm exec:*`, `npx:*`, `Bash(*)`, or prefixes like `pnpm nx run` that also match `run-commands`. No wildcard on a task runner or generator (`pnpm nx test:*`, `run-many:*`, `affected:*`, `g …:*`, `pnpm <script>:*`): only fixed commands; `pnpm nx show/graph/format:*` may keep one                                                           | `pnpm security` | Gate   |
+| A2  | Plugins are enabled only from marketplaces pinned to a full 40-char commit SHA (`sha` or `ref`; tags can be moved); otherwise the marketplace is listed but the plugin is off                                                                                                                                                                                                                                                            | `pnpm security` | Gate   |
+| A3  | MCP servers run from the lockfile (`pnpm exec …`): never `npx`/`dlx`/`@latest`, never remote URLs (`.mcp.json`, `.gemini/`, `.codex/`)                                                                                                                                                                                                                                                                                                   | `pnpm security` | Gate   |
+| A4  | The SessionStart hook only runs the frozen install and writes env vars; no downloads besides packages, never `curl … \| sh`                                                                                                                                                                                                                                                                                                              | review          | Review |
+| A5  | AGENTS.md forbids agents from changing workflows, `.claude/settings.json`, pnpm supply-chain settings, overrides, `tools/security/` or `tools/workspace-plugin/` without an explicit request                                                                                                                                                                                                                                             | review          | Review |
+| A6  | No switch turns permission checks or hooks off: Claude `permissions.defaultMode` other than default/ask/plan/acceptEdits/dontAsk, `disableAllHooks`, `skipDangerousModePermissionPrompt` (also in a committed `settings.local.json`); Gemini MCP `trust`, `defaultApprovalMode: yolo`, `hooksConfig.enabled: false`, shell entries in `tools.allowed`; Codex `approval_policy = "never"`/granular, `sandbox_mode = "danger-full-access"` | `pnpm security` | Gate   |
+| A7  | Every task a pre-approved command can run is reviewed: all `package.json` scripts, `nx:run-commands`/`nx:run-script` targets (or targets with an unlisted executor, incl. `nx.json` `targetDefaults`) and Nx plugins match `tools/security/tasks.json` exactly                                                                                                                                                                           | `pnpm security` | Gate   |
 
 The Nx Claude plugin (`nx@nx-claude-plugins`) is listed but **not enabled**:
-its marketplace (`nrwl/nx-ai-agents-config`) publishes no tags to pin. To use
-it in a project, enable it in `.claude/settings.local.json` (personal, not
-committed), or pin the marketplace with `"ref": "<tag>"` once tags exist.
+its marketplace (`nrwl/nx-ai-agents-config`) can't be pinned to a commit. To
+use it in a project, enable it in `.claude/settings.local.json` (personal, not
+committed), or pin the marketplace to a full commit SHA once Claude Code
+accepts one for marketplace sources.
 
 ## 5. Shipped site
 
@@ -130,6 +133,13 @@ Nothing may be disabled, skipped or loosened inline without an entry here.
 [`tools/security/tools.json`](../tools/security/tools.json) into
 `.security-bin/`, verifying each archive's SHA-256. A mismatch deletes the
 download and fails. There is no fallback to an unverified binary.
+
+- If `tools.json` fails validation (https URLs, 64-hex hashes, review age),
+  **nothing is downloaded or run** and the run fails.
+- Downloads are https-only, including redirects (`file://` is accepted only
+  by an explicit test-only option).
+- The verified archive stays in the cache; every run re-hashes it and
+  re-extracts the binary, so a tampered cached binary is never executed.
 
 - **Supported platforms:** glibc Linux and macOS, x64 and arm64. Alpine/musl and
   native Windows exit with `2` (not run). **On Windows, use WSL2.**
