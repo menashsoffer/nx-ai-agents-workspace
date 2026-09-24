@@ -24,41 +24,72 @@ and sets the next label itself. Dashed red arrows: a stage that hits a problem
 appends a problem outcome note and sets `stage:routing`; only the router
 decides what happens next.
 
-| Stage label             | Set by         | Meaning / next step                                                                          |
-| ----------------------- | -------------- | -------------------------------------------------------------------------------------------- |
-| `stage:inbox`           | `inbox.yml`    | New issue. A maintainer triages it.                                                          |
-| `stage:qualified`       | **a human**    | Starts the spec agent.                                                                       |
-| `stage:spec`            | `spec.yml`     | Spec comment posted. Starts the plan agent.                                                  |
-| `stage:planned`         | `plan.yml`     | Plan comment posted. Starts the develop agent.                                               |
-| `stage:building`        | `develop.yml`  | Draft PR open (on the issue and the PR). CI runs.                                            |
-| `stage:reviewing`       | `security.yml` | Security review posted on the PR.                                                            |
-| `stage:fixing`          | `fix.yml`      | Fixer is applying review feedback.                                                           |
-| `stage:human-approval`  | `approval.yml` | Everything green. A human reviews the PR and the preview, then approves and merges.          |
-| `stage:routing`         | any step       | A stage reported a problem in an outcome note. `router.yml` decides the next step.           |
-| `stage:needs-attention` | `router.yml`   | The router handed off. Read its latest `pipeline:route` note and act.                        |
-| `fix-loop:1` / `:2`     | `fix.yml`      | Automated fix rounds used. At most two. Cleared on escalation and at `stage:human-approval`. |
+| Stage label             | Set by         | Meaning / next step                                                                               |
+| ----------------------- | -------------- | ------------------------------------------------------------------------------------------------- |
+| `stage:inbox`           | `inbox.yml`    | New issue. A maintainer triages it.                                                               |
+| `stage:qualified`       | **a human**    | Starts the spec agent.                                                                            |
+| `stage:spec`            | `spec.yml`     | Spec comment posted. Starts the plan agent.                                                       |
+| `stage:planned`         | `plan.yml`     | Plan comment posted. Starts the develop agent.                                                    |
+| `stage:building`        | `develop.yml`  | Draft PR open (on the issue and the PR). CI runs.                                                 |
+| `stage:reviewing`       | `security.yml` | Security review posted on the PR.                                                                 |
+| `stage:fixing`          | `fix.yml`      | Fixer is applying review feedback.                                                                |
+| `stage:human-approval`  | `approval.yml` | Everything green. A human reviews the PR and the preview, then approves and merges.               |
+| `stage:routing`         | any step       | A stage reported a problem in an outcome note. `router.yml` decides the next step.                |
+| `stage:needs-attention` | `router.yml`   | The router handed off. Read its latest `pipeline:route` note and act.                             |
+| `stage:done`            | `done.yml`     | The PR merged. Set on the PR and its issues; terminal. See [When a PR closes](#when-a-pr-closes). |
+| `fix-loop:1` / `:2`     | `fix.yml`      | Automated fix rounds used. At most two. Cleared on escalation and at `stage:human-approval`.      |
 
 From `stage:building` on, the **PR** carries the stage; the issue stays at
-`stage:building` until the PR merges and closes it.
+`stage:building` until the PR closes. Then both get `stage:done` (merged),
+or the issue goes to the router with `pr_closed` (closed without merging).
+
+### When a PR closes
+
+`done.yml` runs on every closed same-repo PR (fork PRs: nothing). It finds
+the linked issues from the PR's `closingIssuesReferences`; if there are
+none, from the head branch `issue-<n>-<slug>`, and only if issue `<n>`
+exists and is open or was closed by this merge. A PR with no linked issue
+(Dependabot, manual PRs) is left alone. It never checks out or runs PR
+code, and it writes with the pipeline App's token, so its notes are
+trusted by the router.
+
+- **Merged:** the PR and every linked issue get `stage:done`; every other
+  `stage:*` and every `fix-loop:*` label is removed. The router is not
+  involved. The Project cards move to **Done** (set directly by `done.yml`
+  when `PROJECT_URL` is set, and again by `project-sync.yml` from the label).
+- **Closed without merging:** no code may be silently abandoned. Each
+  linked issue that is still open gets an outcome note (stage `pr`,
+  problem `pr_closed`, with the PR number and who closed it) and
+  `stage:routing`; the router hands it to a human (`stage:needs-attention`).
+  An issue is skipped when another open PR is linked to it (a replacement
+  PR), or when it is already closed. The closed PR's `stage:*` and
+  `fix-loop:*` labels are cleared, so no stage picks it up again; its card
+  stays where it was (the Project's built-in "Item closed" workflow moves
+  it to Done if enabled).
+
+**Closed items stay done.** `project-sync.yml` ignores stage labels added
+to a closed issue or PR, except `stage:done`, so a late label cannot pull a
+card out of Done. The router ignores closed issues and PRs (label events
+and manual runs); an open issue whose PR was closed still routes.
 
 ## Workflows
 
-| Workflow           | Trigger                                              | Agent                          | Output                                                                    |
-| ------------------ | ---------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
-| `inbox.yml`        | issue opened                                         | none                           | `stage:inbox`, Project item in Inbox                                      |
-| `spec.yml`         | `stage:qualified` added                              | Gemini (`spec.md`)             | spec comment, `stage:spec`                                                |
-| `plan.yml`         | `stage:spec` added                                   | Claude (`plan.md`)             | plan comment, `stage:planned` (or an outcome note + `stage:routing`)      |
-| `develop.yml`      | `stage:planned` added                                | Claude (`develop.md`)          | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`         |
-| `router.yml`       | `stage:routing` added (issue or PR), or manual       | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)       |
-| `ci.yml`           | every PR                                             | none                           | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site) |
-| `security.yml`     | CI succeeded on a PR                                 | Gemini (`security-review.md`)  | PR review, `pipeline/security` status, `stage:reviewing`                  |
-| `security.yml`     | CI failed on a pipeline PR's head                    | none                           | outcome note `ci_failed` + `stage:routing` (router → human)               |
-| `fix.yml`          | review submitted, manual, or router retry            | Gemini (`fix.md`)              | one fix commit per round, replies on threads                              |
-| `approval.yml`     | `pipeline/security` status, review submitted, manual | none                           | Copilot review request, then `stage:human-approval` + preview comment     |
-| `preview.yml`      | PR opened/updated/closed                             | none                           | `https://<owner>.github.io/<repo>/pr-<n>/`, removed on close              |
-| `done.yml`         | PR merged                                            | none                           | PR and closed issues → Project **Done**                                   |
-| `project-sync.yml` | any `stage:*` label added                            | none                           | Project **Status** follows the label                                      |
-| `deploy.yml`       | push to `main`                                       | none                           | site at `/`, Storybook at `/storybook/`, keeps `pr-*/` previews           |
+| Workflow           | Trigger                                                     | Agent                          | Output                                                                                             |
+| ------------------ | ----------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `inbox.yml`        | issue opened                                                | none                           | `stage:inbox`, Project item in Inbox                                                               |
+| `spec.yml`         | `stage:qualified` added                                     | Gemini (`spec.md`)             | spec comment, `stage:spec`                                                                         |
+| `plan.yml`         | `stage:spec` added                                          | Claude (`plan.md`)             | plan comment, `stage:planned` (or an outcome note + `stage:routing`)                               |
+| `develop.yml`      | `stage:planned` added                                       | Claude (`develop.md`)          | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`                                  |
+| `router.yml`       | `stage:routing` added (open issue or PR), or manual         | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)                                |
+| `ci.yml`           | every PR                                                    | none                           | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site)                          |
+| `security.yml`     | CI succeeded on a PR                                        | Gemini (`security-review.md`)  | PR review, `pipeline/security` status, `stage:reviewing`                                           |
+| `security.yml`     | CI failed on a pipeline PR's head                           | none                           | outcome note `ci_failed` + `stage:routing` (router → human)                                        |
+| `fix.yml`          | review submitted, manual, or router retry                   | Gemini (`fix.md`)              | one fix commit per round, replies on threads                                                       |
+| `approval.yml`     | `pipeline/security` status, review submitted, manual        | none                           | Copilot review request, then `stage:human-approval` + preview comment                              |
+| `preview.yml`      | PR opened/updated/closed                                    | none                           | `https://<owner>.github.io/<repo>/pr-<n>/`, removed on close                                       |
+| `done.yml`         | PR closed                                                   | none                           | merged: `stage:done` + Project **Done**; unmerged: `pr_closed` note + `stage:routing` on the issue |
+| `project-sync.yml` | any `stage:*` label added (closed items: `stage:done` only) | none                           | Project **Status** follows the label                                                               |
+| `deploy.yml`       | push to `main`                                              | none                           | site at `/`, Storybook at `/storybook/`, keeps `pr-*/` previews                                    |
 
 Deterministic logic lives in `.github/scripts/pipeline-lib.mjs` (pure,
 unit-tested by `pnpm test:pipeline`, which CI runs) and
@@ -213,7 +244,8 @@ Nothing happens until these files are on `main`.
    | variable | `ROUTER_MODE`              | optional: `rules` (default when unset) or `external` ([Router](#router))                                                |
    | variable | `ROUTER_SHADOW`            | optional: `true` records the external brain's pick without using it                                                     |
 
-4. **Labels:** `tools/scripts/pipeline/setup-labels.sh`
+4. **Labels:** `tools/scripts/pipeline/setup-labels.sh` (re-run it after
+   upgrading to add new labels such as `stage:done`; it is idempotent)
 5. **Project:** `gh auth refresh -s project && tools/scripts/pipeline/setup-project.sh`,
    then enable the built-in workflows it prints (Item closed → Done,
    Pull request merged → Done, Item reopened → Inbox). Labels are the
@@ -251,7 +283,10 @@ Nothing happens until these files are on `main`.
 8. **You.** On `stage:human-approval` the PR is marked ready and you are
    requested as code owner. Check the diff and the preview, approve, merge.
    The branch must be up to date with `main` (the ruleset enforces it).
-9. **Done.** The issue closes and both cards move to Done.
+9. **Done.** The issue closes; the PR and the issue get `stage:done` and
+   both cards move to Done. If you close the PR without merging instead,
+   the issue gets a `pr_closed` note and comes back to you through the
+   router.
 
 ### When it stops at `stage:needs-attention`
 
@@ -272,6 +307,9 @@ questions / fix the cause and restart a stage:
   manually with the PR number;
 - failed CI (`ci_failed`): push a fix to the PR branch. The next green CI
   run starts the security review, which moves the PR to `stage:reviewing`;
+- closed PR (`pr_closed`, on the issue): reopen the PR, open a replacement
+  PR, restart the issue from a stage label (re-develop force-pushes its
+  `issue-<n>-` branch), or close the issue;
 - router: run **Pipeline · Router** manually with the item number to route
   the latest outcome note again (it goes to a human if that note was
   already routed).
@@ -286,7 +324,7 @@ fix-loop label, which resets the fix rounds.
 ### Outcome notes
 
 Every stage appends one comment per run to the issue (spec, plan,
-develop) or PR (security, fix, approval). It is never edited or upserted,
+develop, pr) or PR (security, fix, approval, ci). It is never edited or upserted,
 so the history stays readable:
 
 ````
@@ -302,7 +340,7 @@ so the history stays readable:
 ```
 ````
 
-`stage` is one of `spec`, `plan`, `develop`, `security`, `fix`, `approval`, `ci`;
+`stage` is one of `spec`, `plan`, `develop`, `security`, `fix`, `approval`, `ci`, `pr`;
 `result` is `success` or `problem`. On success the stage moves to its next
 label itself (no extra run). On a problem it sets `stage:routing`.
 `pipeline.mjs outcome <n> <file.json>` posts a note; `pipeline.mjs classify
@@ -324,6 +362,7 @@ forge a marker.
 | `budget_exhausted`       | fix                  | Both fix rounds used                                                                                        |
 | `copilot_request_failed` | approval             | The Copilot review could not be requested                                                                   |
 | `ci_failed`              | ci                   | CI failed on a pipeline PR's current head (`security.yml`'s `ci-failed` job)                                |
+| `pr_closed`              | pr                   | The issue's PR was closed without merging and no other open PR is linked (`done.yml`)                       |
 | `protected_surface`      | plan, develop        | **Gate.** Touches `tools/security/`, `.github/`, `CODEOWNERS`, supply-chain settings, any manifest/lockfile |
 | `needs_secrets_ci_infra` | plan, develop        | **Gate.** Needs secrets, CI/workflow changes, infra, a server                                               |
 | `scope_split`            | plan                 | **Gate.** Bigger than size L; split the issue                                                               |
@@ -345,6 +384,7 @@ forge a marker.
 | security | `invalid_output`                                        | human                                                       |
 | approval | `copilot_request_failed`                                | human                                                       |
 | ci       | `ci_failed`                                             | human (proposed later: one fixer retry with the CI log)     |
+| pr       | `pr_closed`                                             | human only; never retried (the close was deliberate)        |
 | any      | hard gate, anything unlisted, or no valid outcome note  | human                                                       |
 
 A re-spec shows the planner's questions in the route note; the spec prompt

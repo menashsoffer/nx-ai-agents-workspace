@@ -4,6 +4,8 @@ name: Pipeline · Project sync
 # PR sets the Project "Status" column to match (adding the item if needed).
 # stage:inbox is handled by inbox.yml. Moving cards by hand does not change
 # labels: change the label instead.
+# A closed issue or PR stays where it is (Done, via done.yml): only
+# stage:done may move it, so a late label cannot pull a card out of Done.
 on:
   issues:
     types: [labeled]
@@ -18,6 +20,7 @@ jobs:
       vars.PROJECT_URL != '' &&
       startsWith(github.event.label.name, 'stage:') &&
       github.event.label.name != 'stage:inbox' &&
+      ((github.event.issue.state || github.event.pull_request.state) != 'closed' || github.event.label.name == 'stage:done') &&
       (github.event_name == 'issues' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 5
