@@ -38,7 +38,7 @@ export function parseWorkflow(file, text) {
     triggers: parseTriggers(on),
     gates: sortGates(gates),
     calls,
-    events: uniqueBy(events, (e) => `${e.event}:${e.action}`),
+    events: uniqueBy(events, (e) => `${e.event}:${e.action}:${e.workflow}`),
   };
 }
 
@@ -171,6 +171,14 @@ export function shellEvents(run) {
       event: 'pull_request',
       action: 'synchronize',
       label: 'push',
+    });
+  for (const m of run.matchAll(
+    /\bgh\s+workflow\s+run\s+["']?([\w.-]+\.ya?ml)/g,
+  ))
+    events.push({
+      event: 'workflow_dispatch',
+      workflow: m[1],
+      label: 'dispatch',
     });
   return events;
 }

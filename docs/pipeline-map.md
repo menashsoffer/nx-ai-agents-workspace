@@ -17,7 +17,7 @@ flowchart TD
   g_project_sync_stage_>"any stage:* label except stage:inbox"]
   h_src_inbox(["👤 issues: opened"])
   h_stage_human_approval(["👤 Human reviews, approves, merges"])
-  h_stage_needs_attention(["👤 Human reads the notice, takes over"])
+  h_stage_needs_attention(["👤 Human reads the hand-off, takes over"])
   l_fix_loop_1{{"fix-loop:1"}}
   l_fix_loop_2{{"fix-loop:2"}}
   s_stage_building("stage:building")
@@ -28,6 +28,7 @@ flowchart TD
   s_stage_planned("stage:planned")
   s_stage_qualified("stage:qualified")
   s_stage_reviewing("stage:reviewing")
+  s_stage_routing("stage:routing")
   s_stage_spec("stage:spec")
   w_approval["approval.yml"]
   w_ci["ci.yml"]
@@ -37,6 +38,7 @@ flowchart TD
   w_plan["plan.yml"]
   w_preview["preview.yml"]
   w_project_sync["project-sync.yml"]
+  w_router["router.yml"]
   w_security["security.yml"]
   w_spec["spec.yml"]
   w_template_smoke["template-smoke.yml"]
@@ -47,12 +49,17 @@ flowchart TD
   g_project_sync_stage_ --> w_project_sync
   s_stage_planned --> w_develop
   s_stage_qualified --> w_spec
+  s_stage_routing --> w_router
   s_stage_spec --> w_plan
   w_approval --> s_stage_human_approval
   w_develop --> s_stage_building
   w_fix --> s_stage_fixing
   w_inbox --> s_stage_inbox
   w_plan --> s_stage_planned
+  w_router --> s_stage_fixing
+  w_router --> s_stage_planned
+  w_router --> s_stage_qualified
+  w_router --> s_stage_spec
   w_security --> s_stage_reviewing
   w_spec --> s_stage_spec
   w_approval -->|"review"| w_fix
@@ -63,83 +70,87 @@ flowchart TD
   w_fix -->|"push"| w_ci
   w_fix -->|"push"| w_preview
   w_fix -->|"push"| w_template_smoke
+  w_router -->|"dispatch"| w_fix
   w_security -->|"review / status"| w_approval
   w_security -->|"review"| w_fix
   l_fix_loop_1 -->|"round 2"| l_fix_loop_2
   w_fix -->|"round 1"| l_fix_loop_1
-  l_fix_loop_2 -.->|"budget spent"| s_stage_needs_attention
-  w_approval -.-> s_stage_needs_attention
-  w_develop -.-> s_stage_needs_attention
-  w_fix -.-> s_stage_needs_attention
-  w_plan -.-> s_stage_needs_attention
-  w_security -.-> s_stage_needs_attention
-  w_spec -.-> s_stage_needs_attention
+  l_fix_loop_2 -.->|"budget spent"| s_stage_routing
+  w_approval -.-> s_stage_routing
+  w_develop -.-> s_stage_routing
+  w_fix -.-> s_stage_routing
+  w_plan -.-> s_stage_routing
+  w_router -.-> s_stage_needs_attention
+  w_security -.-> s_stage_routing
+  w_spec -.-> s_stage_routing
   classDef stage fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
   classDef workflow fill:#f5f5f5,stroke:#616161,color:#212121
   classDef gate fill:#f5f5f5,stroke:#616161,color:#212121,stroke-dasharray:4 3
   classDef problem fill:#ffebee,stroke:#c62828,color:#b71c1c
   classDef human fill:#fff8e1,stroke:#ff8f00,color:#e65100
   classDef loop fill:#e0f2f1,stroke:#00897b,color:#004d40
-  class s_stage_building,s_stage_fixing,s_stage_human_approval,s_stage_inbox,s_stage_planned,s_stage_reviewing,s_stage_spec stage
-  class w_approval,w_ci,w_develop,w_fix,w_inbox,w_plan,w_preview,w_project_sync,w_security,w_spec,w_template_smoke workflow
+  class s_stage_building,s_stage_fixing,s_stage_human_approval,s_stage_inbox,s_stage_planned,s_stage_qualified,s_stage_reviewing,s_stage_spec stage
+  class w_approval,w_ci,w_develop,w_fix,w_inbox,w_plan,w_preview,w_project_sync,w_router,w_security,w_spec,w_template_smoke workflow
   class g_project_sync_stage_ gate
-  class s_stage_needs_attention problem
-  class h_src_inbox,h_stage_human_approval,h_stage_needs_attention,s_stage_qualified human
+  class s_stage_needs_attention,s_stage_routing problem
+  class h_src_inbox,h_stage_human_approval,h_stage_needs_attention human
   class l_fix_loop_1,l_fix_loop_2 loop
-  linkStyle 27,28,29,30,31,32,33 stroke:#c62828,stroke-width:2px
-  linkStyle 25,26 stroke:#00897b,stroke-width:2px
+  linkStyle 33,34,35,36,37,38,39,40 stroke:#c62828,stroke-width:2px
+  linkStyle 31,32 stroke:#00897b,stroke-width:2px
   linkStyle 0,1,2,3 stroke:#ff8f00
 ```
 
 ## Workflows
 
-| Workflow             | Trigger                                                         | Gate (job `if:`)                   | Stages set                                                   | Comment markers                          |
-| -------------------- | --------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------ | ---------------------------------------- |
-| `approval.yml`       | `pull_request_review: submitted`, `status`, `workflow_dispatch` | status `pipeline/security`         | `stage:human-approval`, `stage:needs-attention` (escalation) | `humanApproval`, `notice`, `state`       |
-| `ci.yml`             | `pull_request`, `workflow_call`, `workflow_dispatch`            | -                                  | -                                                            | -                                        |
-| `deploy.yml`         | `push: branches main`, `workflow_dispatch`                      | -                                  | -                                                            | -                                        |
-| `develop.yml`        | `issues: labeled`                                               | `stage:planned`                    | `stage:building`, `stage:needs-attention` (escalation)       | `notice`, `state`                        |
-| `done.yml`           | `pull_request: closed`                                          | -                                  | -                                                            | -                                        |
-| `fix.yml`            | `pull_request_review: submitted`, `workflow_dispatch`           | -                                  | `stage:fixing`, `stage:needs-attention` (escalation)         | `fixReply`, `notice`, `state`            |
-| `inbox.yml`          | `issues: opened`                                                | -                                  | `stage:inbox`                                                | -                                        |
-| `plan.yml`           | `issues: labeled`                                               | `stage:spec`                       | `stage:planned`, `stage:needs-attention` (escalation)        | `notice`, `plan`                         |
-| `preview.yml`        | `pull_request: opened/synchronize/reopened/closed`              | -                                  | -                                                            | `preview`                                |
-| `project-sync.yml`   | `issues: labeled`, `pull_request: labeled`                      | any `stage:*` except `stage:inbox` | -                                                            | -                                        |
-| `security.yml`       | `workflow_run: CI completed`                                    | run `success`                      | `stage:reviewing`, `stage:needs-attention` (escalation)      | `actionable`, `notice`, `securityReview` |
-| `spec.yml`           | `issues: labeled`                                               | `stage:qualified`                  | `stage:spec`, `stage:needs-attention` (escalation)           | `notice`, `spec`                         |
-| `template-smoke.yml` | `pull_request`, `workflow_dispatch`                             | -                                  | -                                                            | -                                        |
+| Workflow             | Trigger                                                         | Gate (job `if:`)                   | Stages set                                                                                             | Comment markers                           |
+| -------------------- | --------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| `approval.yml`       | `pull_request_review: submitted`, `status`, `workflow_dispatch` | status `pipeline/security`         | `stage:human-approval`, `stage:routing` (escalation)                                                   | `humanApproval`, `outcome`, `state`       |
+| `ci.yml`             | `pull_request`, `workflow_call`, `workflow_dispatch`            | -                                  | -                                                                                                      | -                                         |
+| `deploy.yml`         | `push: branches main`, `workflow_dispatch`                      | -                                  | -                                                                                                      | -                                         |
+| `develop.yml`        | `issues: labeled`                                               | `stage:planned`                    | `stage:building`, `stage:routing` (escalation)                                                         | `outcome`, `state`                        |
+| `done.yml`           | `pull_request: closed`                                          | -                                  | -                                                                                                      | -                                         |
+| `fix.yml`            | `pull_request_review: submitted`, `workflow_dispatch`           | -                                  | `stage:fixing`, `stage:routing` (escalation)                                                           | `fixReply`, `outcome`, `state`            |
+| `inbox.yml`          | `issues: opened`                                                | -                                  | `stage:inbox`                                                                                          | -                                         |
+| `plan.yml`           | `issues: labeled`                                               | `stage:spec`                       | `stage:planned`, `stage:routing` (escalation)                                                          | `outcome`, `plan`                         |
+| `preview.yml`        | `pull_request: opened/synchronize/reopened/closed`              | -                                  | -                                                                                                      | `preview`                                 |
+| `project-sync.yml`   | `issues: labeled`, `pull_request: labeled`                      | any `stage:*` except `stage:inbox` | -                                                                                                      | -                                         |
+| `router.yml`         | `issues: labeled`, `pull_request: labeled`, `workflow_dispatch` | `stage:routing`                    | `stage:fixing`, `stage:planned`, `stage:qualified`, `stage:spec`, `stage:needs-attention` (escalation) | `route`                                   |
+| `security.yml`       | `workflow_run: CI completed`                                    | run `success`                      | `stage:reviewing`, `stage:routing` (escalation)                                                        | `actionable`, `outcome`, `securityReview` |
+| `spec.yml`           | `issues: labeled`                                               | `stage:qualified`                  | `stage:spec`, `stage:routing` (escalation)                                                             | `outcome`, `spec`                         |
+| `template-smoke.yml` | `pull_request`, `workflow_dispatch`                             | -                                  | -                                                                                                      | -                                         |
 
 ## Comment markers
 
-| Marker                             | Key              | Written by (workflow, `pipeline.mjs` command)                                                                                                                                                                 |
-| ---------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<!-- pipeline:actionable -->`     | `actionable`     | `security.yml` (`security-publish`)                                                                                                                                                                           |
-| `<!-- pipeline:fix-reply -->`      | `fixReply`       | `fix.yml` (`fix-reply`)                                                                                                                                                                                       |
-| `<!-- pipeline:human-approval -->` | `humanApproval`  | `approval.yml` (`approval`)                                                                                                                                                                                   |
-| `<!-- pipeline:notice -->`         | `notice`         | `approval.yml` (`approval`), `develop.yml` (`upsert-comment`), `fix.yml` (`fix-adapter`, `upsert-comment`), `plan.yml` (`upsert-comment`), `security.yml` (`security-publish`), `spec.yml` (`upsert-comment`) |
-| `<!-- pipeline:plan -->`           | `plan`           | `plan.yml` (`upsert-comment`)                                                                                                                                                                                 |
-| `<!-- pipeline:preview -->`        | `preview`        | `preview.yml` (`upsert-comment`)                                                                                                                                                                              |
-| `pipeline:security-review`         | `securityReview` | `security.yml` (`security-publish`)                                                                                                                                                                           |
-| `<!-- pipeline:spec -->`           | `spec`           | `spec.yml` (`upsert-comment`)                                                                                                                                                                                 |
-| `<!-- pipeline-state -->`          | `state`          | `approval.yml` (`approval`), `develop.yml` (`init-state`), `fix.yml` (`fix-adapter`)                                                                                                                          |
+Upserted: one comment per item, edited in place. Appended: a new comment, note or review each time (history).
+
+| Marker                             | Key              | Upserted by (workflow, `pipeline.mjs` command)                                       | Appended by                                                                                                                                                                       |
+| ---------------------------------- | ---------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<!-- pipeline:actionable -->`     | `actionable`     | -                                                                                    | `security.yml` (`security-publish`)                                                                                                                                               |
+| `<!-- pipeline:fix-reply -->`      | `fixReply`       | -                                                                                    | `fix.yml` (`fix-reply`)                                                                                                                                                           |
+| `<!-- pipeline:human-approval -->` | `humanApproval`  | `approval.yml` (`approval`)                                                          | -                                                                                                                                                                                 |
+| `<!-- pipeline:outcome`            | `outcome`        | -                                                                                    | `approval.yml` (`approval`), `develop.yml` (`outcome`), `fix.yml` (`fix-adapter`, `outcome`), `plan.yml` (`outcome`), `security.yml` (`security-publish`), `spec.yml` (`outcome`) |
+| `<!-- pipeline:plan -->`           | `plan`           | `plan.yml` (`upsert-comment`)                                                        | -                                                                                                                                                                                 |
+| `<!-- pipeline:preview -->`        | `preview`        | `preview.yml` (`upsert-comment`)                                                     | -                                                                                                                                                                                 |
+| `<!-- pipeline:route`              | `route`          | -                                                                                    | `router.yml` (`route`)                                                                                                                                                            |
+| `pipeline:security-review`         | `securityReview` | -                                                                                    | `security.yml` (`security-publish`)                                                                                                                                               |
+| `<!-- pipeline:spec -->`           | `spec`           | `spec.yml` (`upsert-comment`)                                                        | -                                                                                                                                                                                 |
+| `<!-- pipeline-state -->`          | `state`          | `approval.yml` (`approval`), `develop.yml` (`init-state`), `fix.yml` (`fix-adapter`) | -                                                                                                                                                                                 |
 
 ## Stages with no label gate, by design
 
 From `EXPECTED_UNGATED` in `tools/pipeline-map/src/config.mjs`.
 
-| Stage                   | Kind   | Why nothing is gated on it                                      |
-| ----------------------- | ------ | --------------------------------------------------------------- |
-| `stage:building`        | event  | opening the PR (not the label) starts CI and the preview        |
-| `stage:fixing`          | event  | the fix push re-runs CI, which restarts the review              |
-| `stage:human-approval`  | human  | a human reviews the PR and the preview, approves and merges     |
-| `stage:inbox`           | triage | waits for a human to triage the issue and add `stage:qualified` |
-| `stage:needs-attention` | human  | the pipeline stopped; a human reads the notice and takes over   |
-| `stage:reviewing`       | event  | the review and commit status it posts drive the next step       |
+| Stage                   | Kind   | Why nothing is gated on it                                          |
+| ----------------------- | ------ | ------------------------------------------------------------------- |
+| `stage:building`        | event  | opening the PR (not the label) starts CI and the preview            |
+| `stage:fixing`          | event  | the fix push re-runs CI, which restarts the review                  |
+| `stage:human-approval`  | human  | a human reviews the PR and the preview, approves and merges         |
+| `stage:inbox`           | triage | waits for a human to triage the issue and add `stage:qualified`     |
+| `stage:needs-attention` | human  | the router handed over; a human reads the route note and takes over |
+| `stage:reviewing`       | event  | the review and commit status it posts drive the next step           |
 
 ## Findings
 
-- `<!-- pipeline:notice -->` is written by 6 workflows: `approval.yml`, `develop.yml`, `fix.yml`, `plan.yml`, `security.yml`, `spec.yml`.
-- `<!-- pipeline-state -->` is written by 3 workflows: `approval.yml`, `develop.yml`, `fix.yml`.
-- `stage:qualified` is never set by a workflow (a human adds it; it starts the pipeline).
+- `<!-- pipeline-state -->` is upserted by 3 workflows: `approval.yml`, `develop.yml`, `fix.yml`.
 - Every stage that is set is either gated or listed in `EXPECTED_UNGATED`.
-- 6 workflows escalate straight to `stage:needs-attention`: `approval.yml`, `develop.yml`, `fix.yml`, `plan.yml`, `security.yml`, `spec.yml`.
+- 1 workflow escalates straight to `stage:needs-attention`: `router.yml`.

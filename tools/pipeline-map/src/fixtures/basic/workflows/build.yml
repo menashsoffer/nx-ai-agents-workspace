@@ -2,6 +2,7 @@ name: Demo · Build
 on:
   issues:
     types: [labeled]
+  workflow_dispatch:
 jobs:
   build:
     if: ${{ github.event.label.name == 'stage:ready' && !github.event.issue.pull_request }}
@@ -14,5 +15,4 @@ jobs:
           node .github/scripts/pipeline.mjs set-stage "$N" stage:built
       - name: Needs help
         run: |
-          node .github/scripts/pipeline.mjs upsert-comment "$N" notice body.md
-          node .github/scripts/pipeline.mjs set-stage "$N" stage:help
+          node .github/scripts/pipeline.mjs outcome "$N" outcome.json

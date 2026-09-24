@@ -30,15 +30,21 @@ command shows up on the map as soon as the sources mention it. A new
 - **label → workflow:** `github.event.label.name == '<label>'` (or
   `startsWith(...)`) in a job's `if:`.
 - **workflow → stage:** `set-stage`/`edit-labels` arguments and
-  `COMMAND_EFFECTS[cmd].stages`. A write is an **escalation** (red, dashed)
-  when it comes right after a `notice` comment in the same step, or is listed
-  in `COMMAND_EFFECTS[cmd].problems`.
+  `COMMAND_EFFECTS[cmd].stages`. A write listed in
+  `COMMAND_EFFECTS[cmd].problems` is an **escalation** (red, dashed): today
+  every stage's hand-off to `stage:routing`, and the router's to
+  `stage:needs-attention`.
 - **workflow → workflow:** `gh pr create` / `git push` → workflows on
   `pull_request` (matching `types`); `COMMAND_EFFECTS[cmd].emits` →
-  workflows on that event; `workflow_run` by workflow name.
+  workflows on that event; `gh workflow run <file>` → that workflow;
+  `workflow_run` by workflow name.
 - **fix loop:** `COMMAND_EFFECTS[cmd].loops`, ending at the command's problem stage.
-- **humans:** a stage that is gated but never set is a human entry; `EXPECTED_UNGATED`
-  entries of kind `triage` lead into it and kind `human` lead out to a human.
+- **humans:** `EXPECTED_UNGATED` entries of kind `triage` lead to their
+  `next` stage, kind `human` lead out to a human; any other stage that is
+  gated but never set gets a human entry.
+- **markers:** `COMMAND_EFFECTS[cmd].markers` (and `upsert-comment`) are
+  upserted, one comment per item; `appends` are append-only history. Only a
+  marker upserted by several workflows is reported as a finding.
 
 ## Tests
 

@@ -82,15 +82,21 @@ function workflowTable(model) {
 }
 
 function markerTable(model) {
-  const rows = model.markerWriters.map(({ key, marker, writers }) => {
-    const by = writers.map(
-      ([file, cmds]) => `${code(file)} (${cmds.map(code).join(', ')})`,
+  const by = (writers) =>
+    cell(
+      writers.map(
+        ([file, cmds]) => `${code(file)} (${cmds.map(code).join(', ')})`,
+      ),
     );
-    return `| ${code(marker)} | ${code(key)} | ${cell(by)} |`;
-  });
+  const rows = model.markerWriters.map(
+    ({ key, marker, upserts, appends }) =>
+      `| ${code(marker)} | ${code(key)} | ${by(upserts)} | ${by(appends)} |`,
+  );
   return [
-    '| Marker | Key | Written by (workflow, `pipeline.mjs` command) |',
-    '| --- | --- | --- |',
+    'Upserted: one comment per item, edited in place. Appended: a new comment, note or review each time (history).',
+    '',
+    '| Marker | Key | Upserted by (workflow, `pipeline.mjs` command) | Appended by |',
+    '| --- | --- | --- | --- |',
     ...rows,
   ].join('\n');
 }

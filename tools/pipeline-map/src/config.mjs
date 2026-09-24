@@ -3,13 +3,14 @@
 /**
  * Stages that are set but have no workflow gated on their label, on purpose.
  * Anything set, ungated and missing here is reported as a finding.
- * - kind `triage`: waits for a human to add the next (human-set) stage;
+ * - kind `triage`: waits for a human to add the `next` stage;
  * - kind `event`: the next workflow reacts to a GitHub event, not the label;
  * - kind `human`: the pipeline hands over to a human (`human` is the map text).
  */
 export const EXPECTED_UNGATED = {
   'stage:inbox': {
     kind: 'triage',
+    next: 'stage:qualified',
     reason: 'waits for a human to triage the issue and add `stage:qualified`',
   },
   'stage:building': {
@@ -31,13 +32,11 @@ export const EXPECTED_UNGATED = {
   },
   'stage:needs-attention': {
     kind: 'human',
-    reason: 'the pipeline stopped; a human reads the notice and takes over',
-    human: 'Human reads the notice, takes over',
+    reason:
+      'the router handed over; a human reads the route note and takes over',
+    human: 'Human reads the hand-off, takes over',
   },
 };
-
-/** The MARKERS key a workflow writes right before it escalates. */
-export const NOTICE_MARKER = 'notice';
 
 /** Event actions GitHub assumes when a trigger lists no `types`. */
 export const DEFAULT_TYPES = {

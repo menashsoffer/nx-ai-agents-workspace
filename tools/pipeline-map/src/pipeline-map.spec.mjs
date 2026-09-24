@@ -15,7 +15,11 @@ import * as fakeLib from './fixtures/basic/pipeline-lib.mjs';
 
 const FIXTURE = join(import.meta.dirname, 'fixtures/basic');
 const EXPECTED_UNGATED = {
-  'stage:new': { kind: 'triage', reason: 'waits for a human' },
+  'stage:new': {
+    kind: 'triage',
+    next: 'stage:ready',
+    reason: 'waits for a human',
+  },
   'stage:help': {
     kind: 'human',
     reason: 'a human helps',
@@ -49,8 +53,9 @@ describe('fixture tree', () => {
     for (const line of [
       's_stage_ready --> w_build', // label gate
       'w_build --> s_stage_built', // stage write
-      'w_build -.-> s_stage_help', // set-stage right after the notice
-      'w_review -.-> s_stage_help', // COMMAND_EFFECTS problems
+      'w_build -.-> s_stage_help', // outcome: COMMAND_EFFECTS problems
+      'w_review -.-> s_stage_help',
+      'w_review -->|"dispatch"| w_build', // gh workflow run build.yml
       'w_build -->|"opens PR"| w_review', // gh pr create -> on: pull_request
       'w_review -->|"round 1"| l_fix_loop_1',
       'l_fix_loop_1 -.->|"budget spent"| s_stage_help',
@@ -66,8 +71,10 @@ describe('fixture tree', () => {
   it('reports shared markers and the other findings', () => {
     const texts = fixtureModel().findings.map((f) => f.text);
     expect(texts).toContain(
-      '`<!-- demo:result -->` is written by 2 workflows: `build.yml`, `review.yml`.',
+      '`<!-- demo:result -->` is upserted by 2 workflows: `build.yml`, `review.yml`.',
     );
+    // Appended notes are history, shared by design.
+    expect(texts.join('\n')).not.toContain('demo:note');
     expect(texts).toContain('Markers no workflow writes: `unused`.');
     expect(texts).toContain(
       '`stage:ready` is never set by a workflow (a human adds it; it starts the pipeline).',
@@ -187,7 +194,9 @@ describe('this repository', () => {
       's_stage_qualified --> w_spec',
       'w_develop -->|"opens PR"| w_ci',
       'w_ci -->|"on success"| w_security',
-      'w_fix -.-> s_stage_needs_attention',
+      'w_fix -.-> s_stage_routing',
+      's_stage_routing --> w_router',
+      'w_router -.-> s_stage_needs_attention',
     ])
       expect(md).toContain(`  ${line}\n`);
   });

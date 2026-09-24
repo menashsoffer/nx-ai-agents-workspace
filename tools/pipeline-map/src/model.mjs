@@ -1,11 +1,6 @@
 // Turns parsed workflows + pipeline-lib exports into a graph and findings.
 // Pure and deterministic: every list is sorted, nothing depends on time.
-import {
-  COMMAND_EVENTS,
-  DEFAULT_TYPES,
-  EXPECTED_UNGATED,
-  NOTICE_MARKER,
-} from './config.mjs';
+import { COMMAND_EVENTS, DEFAULT_TYPES, EXPECTED_UNGATED } from './config.mjs';
 import { triggerText } from './workflows.mjs';
 
 const byStr = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -76,6 +71,12 @@ export function buildModel({
       const labels = [];
       for (const e of a.emits)
         if (b.triggers.some((t) => triggerMatches(t, e))) labels.push(e.label);
+      for (const d of a.dispatches)
+        if (
+          d === b.file &&
+          b.triggers.some((t) => t.event === 'workflow_dispatch')
+        )
+          labels.push('dispatch');
       if (
         b.triggers.some(
           (t) => t.event === 'workflow_run' && t.workflows?.includes(a.name),
@@ -117,15 +118,17 @@ export function buildModel({
   const entryStages = gatedStages.filter(
     (s) => stages.includes(s) && !setStages.includes(s),
   );
-  const triage = setStages.filter((s) => expectedUngated[s]?.kind === 'triage');
-  for (const s of entryStages) {
-    if (triage.length)
-      for (const t of triage)
-        edge(stageId(t), stageId(s), 'human', 'human triage');
-    else {
-      addNode('h_entry', '👤 Human adds the label', 'human', 'stadium');
-      edge('h_entry', stageId(s), 'human');
-    }
+  const triageNext = [];
+  for (const s of setStages) {
+    const next =
+      expectedUngated[s]?.kind === 'triage' && expectedUngated[s].next;
+    if (!next || !stages.includes(next)) continue;
+    edge(stageId(s), labelNode(next), 'human', 'human triage');
+    triageNext.push(next);
+  }
+  for (const s of entryStages.filter((s) => !triageNext.includes(s))) {
+    addNode('h_entry', '👤 Human adds the label', 'human', 'stadium');
+    edge('h_entry', stageId(s), 'human');
   }
   for (const s of setStages) {
     const cfg = expectedUngated[s];
@@ -179,7 +182,10 @@ export function buildModel({
 export function resolveWorkflow(wf, effects, markers) {
   const writes = [];
   const markerWrites = [];
-  const emits = [...wf.events];
+  const emits = wf.events.filter((e) => e.event !== 'workflow_dispatch');
+  const dispatches = wf.events
+    .filter((e) => e.event === 'workflow_dispatch')
+    .map((e) => e.workflow);
   const loops = [];
   const loopProblems = [];
   const argAt = (call, at) =>
@@ -188,15 +194,9 @@ export function resolveWorkflow(wf, effects, markers) {
       : call.args.filter((_, i) => i > 0 && call.args[i - 1] === at);
   const literal = (v) => typeof v === 'string' && v && !/[$`]/.test(v);
 
-  wf.calls.forEach((call, i) => {
+  wf.calls.forEach((call) => {
     const fx = effects[call.command];
     if (!fx) return;
-    const prev = wf.calls[i - 1];
-    const prevMarker =
-      prev?.step === call.step &&
-      effects[prev.command]?.args?.marker !== undefined
-        ? prev.args[effects[prev.command].args.marker]
-        : undefined;
     for (const stage of fx.stages)
       writes.push({
         stage,
@@ -208,13 +208,15 @@ export function resolveWorkflow(wf, effects, markers) {
         writes.push({
           stage,
           command: call.command,
-          problem: prevMarker === NOTICE_MARKER,
+          problem: false,
         });
-    for (const key of fx.markers)
-      markerWrites.push({ key, command: call.command });
+    const write = (key, append) =>
+      markerWrites.push({ key, command: call.command, append });
+    for (const key of fx.markers) write(key, false);
+    for (const key of fx.appends ?? []) write(key, true);
     if (fx.args?.marker !== undefined)
       for (const key of argAt(call, fx.args.marker).filter(literal))
-        if (markers[key]) markerWrites.push({ key, command: call.command });
+        if (markers[key]) write(key, false);
     for (const event of fx.emits)
       emits.push({
         event,
@@ -230,6 +232,7 @@ export function resolveWorkflow(wf, effects, markers) {
     writes,
     markerWrites,
     emits,
+    dispatches,
     loops: [...new Set(loops)],
     loopProblems: sorted(loopProblems),
   };
@@ -271,18 +274,22 @@ function markerWriters(wfs, markers) {
   return Object.keys(markers)
     .sort(byStr)
     .map((key) => {
-      const writers = new Map();
-      for (const w of wfs)
-        for (const m of w.markerWrites)
-          if (m.key === key)
-            writers.set(
-              w.file,
-              sorted([...(writers.get(w.file) ?? []), m.command]),
-            );
+      const by = (append) => {
+        const writers = new Map();
+        for (const w of wfs)
+          for (const m of w.markerWrites)
+            if (m.key === key && m.append === append)
+              writers.set(
+                w.file,
+                sorted([...(writers.get(w.file) ?? []), m.command]),
+              );
+        return [...writers].sort(([a], [b]) => byStr(a, b));
+      };
       return {
         key,
         marker: markers[key],
-        writers: [...writers].sort(([a], [b]) => byStr(a, b)),
+        upserts: by(false),
+        appends: by(true),
       };
     });
 }
@@ -302,11 +309,13 @@ function findings({
   const code = (s) => `\`${s}\``;
   const files = (list) => list.map(code).join(', ');
 
-  for (const { marker, writers } of markerWriters(wfs, markers))
-    if (writers.length > 1)
+  // Append-only notes are shared by design; a comment several workflows
+  // upsert is one comment they keep overwriting.
+  for (const { marker, upserts } of markerWriters(wfs, markers))
+    if (upserts.length > 1)
       out.push({
         kind: 'shared-marker',
-        text: `${code(marker)} is written by ${writers.length} workflows: ${files(writers.map(([f]) => f))}.`,
+        text: `${code(marker)} is upserted by ${upserts.length} workflows: ${files(upserts.map(([f]) => f))}.`,
       });
 
   const unwritten = Object.keys(markers)

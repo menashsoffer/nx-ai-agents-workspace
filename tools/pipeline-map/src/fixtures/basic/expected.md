@@ -29,6 +29,7 @@ flowchart TD
   w_build --> s_stage_built
   w_intake --> s_stage_new
   w_build -->|"opens PR"| w_review
+  w_review -->|"dispatch"| w_build
   w_review -->|"round 1"| l_fix_loop_1
   l_fix_loop_1 -.->|"budget spent"| s_stage_help
   w_build -.-> s_stage_help
@@ -44,26 +45,28 @@ flowchart TD
   class s_stage_help problem
   class h_src_intake,h_stage_help,s_stage_ready human
   class l_fix_loop_1 loop
-  linkStyle 8,9,10 stroke:#c62828,stroke-width:2px
-  linkStyle 7 stroke:#00897b,stroke-width:2px
+  linkStyle 9,10,11 stroke:#c62828,stroke-width:2px
+  linkStyle 8 stroke:#00897b,stroke-width:2px
   linkStyle 0,1,2 stroke:#ff8f00
 ```
 
 ## Workflows
 
-| Workflow     | Trigger           | Gate (job `if:`) | Stages set                               | Comment markers    |
-| ------------ | ----------------- | ---------------- | ---------------------------------------- | ------------------ |
-| `build.yml`  | `issues: labeled` | `stage:ready`    | `stage:built`, `stage:help` (escalation) | `notice`, `result` |
-| `intake.yml` | `issues`          | -                | `stage:new`                              | -                  |
-| `review.yml` | `pull_request`    | -                | `stage:help` (escalation)                | `notice`, `result` |
+| Workflow     | Trigger                                | Gate (job `if:`) | Stages set                               | Comment markers  |
+| ------------ | -------------------------------------- | ---------------- | ---------------------------------------- | ---------------- |
+| `build.yml`  | `issues: labeled`, `workflow_dispatch` | `stage:ready`    | `stage:built`, `stage:help` (escalation) | `note`, `result` |
+| `intake.yml` | `issues`                               | -                | `stage:new`                              | -                |
+| `review.yml` | `pull_request`                         | -                | `stage:help` (escalation)                | `note`, `result` |
 
 ## Comment markers
 
-| Marker                 | Key      | Written by (workflow, `pipeline.mjs` command)                   |
-| ---------------------- | -------- | --------------------------------------------------------------- |
-| `<!-- demo:notice -->` | `notice` | `build.yml` (`upsert-comment`), `review.yml` (`review`)         |
-| `<!-- demo:result -->` | `result` | `build.yml` (`upsert-comment`), `review.yml` (`upsert-comment`) |
-| `<!-- demo:unused -->` | `unused` | -                                                               |
+Upserted: one comment per item, edited in place. Appended: a new comment, note or review each time (history).
+
+| Marker                 | Key      | Upserted by (workflow, `pipeline.mjs` command)                  | Appended by                                      |
+| ---------------------- | -------- | --------------------------------------------------------------- | ------------------------------------------------ |
+| `<!-- demo:note`       | `note`   | -                                                               | `build.yml` (`outcome`), `review.yml` (`review`) |
+| `<!-- demo:result -->` | `result` | `build.yml` (`upsert-comment`), `review.yml` (`upsert-comment`) | -                                                |
+| `<!-- demo:unused -->` | `unused` | -                                                               | -                                                |
 
 ## Stages with no label gate, by design
 
@@ -76,8 +79,7 @@ From `EXPECTED_UNGATED` in `tools/pipeline-map/src/config.mjs`.
 
 ## Findings
 
-- `<!-- demo:notice -->` is written by 2 workflows: `build.yml`, `review.yml`.
-- `<!-- demo:result -->` is written by 2 workflows: `build.yml`, `review.yml`.
+- `<!-- demo:result -->` is upserted by 2 workflows: `build.yml`, `review.yml`.
 - Markers no workflow writes: `unused`.
 - `stage:ready` is never set by a workflow (a human adds it; it starts the pipeline).
 - Set but never gated, and not in `EXPECTED_UNGATED`: `stage:built`. Nothing reacts to these labels.
