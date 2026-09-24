@@ -1,17 +1,26 @@
 name: Pipeline · Disposition
 
-# The repo owner's decision on a review finding. A comment whose whole body
-# is one or more lines of
+# The repo owner's decision on a review finding. A comment whose body is one
+# or more lines of
 #   /disposition <finding-id> <accepted-risk|false-positive|out-of-scope> <reason>
-# is checked (owner only, a human account, the finding must exist for the
-# PR's current head), the finding's review threads are resolved and the bot
-# appends a record note per finding. The record notes re-run approval.yml,
-# which sets the `pipeline/gates` commit status. Only newly created
-# comments count: an edit never re-runs this. docs/pipeline.md, "Review
-# gates and dispositions". The comment is data: it reaches the script
-# through the environment and is never executed.
+# (after an optional quote block: GitHub's "Quote reply"), or a reply inside
+# the finding's own review thread, `/disposition <kind> <reason>`, is checked
+# (owner only, a human account, the finding must exist for the PR's current
+# head), the finding's review threads are resolved and the bot appends a
+# record note per finding. The record notes re-run approval.yml, which sets
+# the `pipeline/gates` commit status. Only newly created comments count: an
+# edit never re-runs this. docs/pipeline.md, "Review gates and
+# dispositions". The comment is data: it reaches the script through the
+# environment and is never executed.
+#
+# Two events: issue_comment (a PR conversation comment) and
+# pull_request_review_comment (a comment in a review thread; same-repo PRs
+# only). The script is the real parser: the `if` only keeps out comments that
+# cannot be commands, so a misplaced /disposition gets an answer, not silence.
 on:
   issue_comment:
+    types: [created]
+  pull_request_review_comment:
     types: [created]
 
 permissions: {}
@@ -23,14 +32,17 @@ jobs:
     if: >-
       vars.PIPELINE_APP_CLIENT_ID != '' && vars.PIPELINE_BOT_LOGIN != '' &&
       vars.PIPELINE_OWNER_LOGIN != '' &&
-      github.event.issue.pull_request &&
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request ||
+       github.event_name == 'pull_request_review_comment' &&
+       github.event.pull_request.head.repo.full_name == github.repository) &&
       github.event.comment.user.login == vars.PIPELINE_OWNER_LOGIN &&
       github.event.comment.user.type == 'User' &&
-      startsWith(github.event.comment.body, '/disposition')
+      contains(github.event.comment.body, '/disposition')
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # One queue per PR for both events.
     concurrency:
-      group: pipeline-pr-${{ github.event.issue.number }}-disposition
+      group: pipeline-pr-${{ github.event.issue.number || github.event.pull_request.number }}-disposition
       cancel-in-progress: false
     permissions:
       contents: read
@@ -62,5 +74,7 @@ jobs:
           COMMENT_USER: ${{ github.event.comment.user.login }}
           COMMENT_USER_TYPE: ${{ github.event.comment.user.type }}
           COMMENT_ID: ${{ github.event.comment.id }}
-          N: ${{ github.event.issue.number }}
+          # `review` for a reply inside a review thread, `issue` otherwise.
+          COMMENT_KIND: ${{ github.event_name == 'pull_request_review_comment' && 'review' || 'issue' }}
+          N: ${{ github.event.issue.number || github.event.pull_request.number }}
         run: node .github/scripts/pipeline.mjs disposition "$N" "$COMMENT_ID"

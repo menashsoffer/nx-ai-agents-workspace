@@ -1,5 +1,5 @@
 ---
-version: 2
+version: 3
 agent: gemini
 stage: CI green -> stage:reviewing
 output: exactly one fenced ```json block (parsed and posted as a PR review by the workflow)
@@ -62,6 +62,8 @@ rejected and the PR goes to a human.
       "category": "security",
       "file": "apps/site/src/pages/HomePage.tsx",
       "line": 42,
+      "topic": "xss",
+      "evidence": "<div dangerouslySetInnerHTML={{ __html: html }} />",
       "title": "Short title",
       "detail": "What is wrong and why, citing the code.",
       "suggestion": "The concrete change to make."
@@ -72,3 +74,25 @@ rejected and the PR goes to a human.
 
 `line` is the line number in the **new** version of the file and must be a
 changed or context line in the diff. Use `"findings": []` when clean.
+
+Two more fields are required on every finding. Together with `file` they
+give the finding a stable identity: the owner's decision on a finding is
+remembered across rebases and re-reviews only if the same `file`, `topic` and
+`evidence` come back, so choose them carefully and consistently.
+
+- `topic`: exactly one value from this closed list, the one that best names
+  the problem: `xss`, `injection`, `secrets`, `authz`, `path-traversal`,
+  `ssrf`, `workflow-permissions`, `supply-chain`, `unsafe-eval`,
+  `error-handling`, `logic`, `other`. Use `other` only when none fits. Any
+  other value is discarded.
+- `evidence`: the **one exact line of code** the finding is about, copied
+  character for character from the **new** version of `file` (as it is in
+  the file, not with a leading `+`). Not a paraphrase, not several lines, not
+  a diff header. Pick the line that carries the problem, the same line every
+  time you report this same problem. If no single line carries it (a missing
+  file, an absent check), use the closest line of the file and still copy it
+  exactly.
+
+If `topic` is not on the list or `evidence` is not a line of the file, the
+finding still counts, but its id is derived from your wording and changes
+whenever you word it differently.

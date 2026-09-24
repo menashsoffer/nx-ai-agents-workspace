@@ -670,28 +670,68 @@ dispositions on record.
 
 ### Finding ids
 
-- Gemini findings: `S-<8 hex>` = first 8 hex of sha256(file, title, detail),
-  lower-cased, punctuation and whitespace collapsed. Line, severity and the
-  suggested fix are **not** part of it. The id is shown in the review
-  comment, in the inline thread's hidden marker and in the security outcome
-  note's `details[]` (`head=<sha> blocking=<n>`, then `S-… [severity] file:line title`).
+- Gemini findings: `S-<8 hex>` = first 8 hex of a sha256 of **file, topic and
+  the evidence line**. Every finding carries a `topic` (one value of the closed
+  list `FINDING_TOPICS` in `pipeline-lib.mjs`, repeated in
+  `.github/prompts/security-review.md`: `xss`, `injection`, `secrets`,
+  `authz`, `path-traversal`, `ssrf`, `workflow-permissions`, `supply-chain`,
+  `unsafe-eval`, `error-handling`, `logic`, `other`) and an `evidence`: the one
+  exact line of code it is about. The line is whitespace-collapsed and must
+  match a whole line of the file at the reviewed head (the publish step reads
+  the file at that commit, falling back to the PR's patch; only files the PR
+  changed). If the same line appears more than once in the file, the ordinal
+  of the copy nearest the reported line is part of the hash, so two identical
+  lines are two findings. Wording, line number, severity, category and the
+  suggested fix are **not** part of the id.
+- **Text fallback.** If `topic` or `evidence` is missing, unknown, not a
+  single line or not found in the file, the id is the older one: sha256 of
+  file, title and detail (lower-cased, punctuation and whitespace collapsed).
+  Such a finding is marked `idBasis: 'text'` and its review comment says the
+  id may change on re-review.
+- The id is shown in the review comment, in the inline thread's hidden marker
+  and in the security outcome note's `details[]` (`head=<sha> blocking=<n>`,
+  then `S-… [severity] file:line title`).
 - Copilot findings: `C-<n>`, `n` = database id of the thread's top comment,
   listed in the Review gates comment.
+- **One-time migration.** Ids from before this change (title/detail hashes)
+  do not match the new ones. A PR that is already open needs its findings
+  dispositioned once more after its next review. There is no compatibility
+  shim.
 
 ### `/disposition` (owner only)
 
-Post a comment whose **whole body** is one or more lines of exactly:
+Three ways to post it, all the owner's **new** comments (never an edit):
 
-```
-/disposition <finding-id> <accepted-risk|false-positive|out-of-scope> <reason, at least 10 characters>
-```
+1. **A top-level PR comment** whose body is one or more lines of exactly
+
+   ```
+   /disposition <finding-id> <accepted-risk|false-positive|out-of-scope> <reason, at least 10 characters>
+   ```
+
+2. **A quote reply.** GitHub's "Quote reply" puts the quoted text (`> ...`
+   lines) first. A quote block at the top of the body, and blank lines, are
+   ignored; the command follows it. A quote in the middle or at the end is
+   not.
+3. **A reply inside the finding's own review thread** (the inline thread the
+   security review opened, or a Copilot thread). The short form leaves the id
+   out, because the thread names it: `/disposition <kind> <reason>`. The long
+   form works too, but its id must be the thread's. One command per reply. In a
+   thread that is not a finding thread the command is refused. The bot answers
+   in the thread (`Recorded: see <link>` or the `Not recorded: ...` reason) and
+   writes the record note in the PR conversation, where `approval.yml` reads it.
+
+The only comment that does not count is an edit of an existing one.
 
 - Every line must be valid, or the comment is rejected as a whole with one
   short bot reply giving the reason. Prose around the command is a rejection.
-- Only **new** comments count (`issue_comment: created`); an edit never runs.
+  A comment where `/disposition` starts a line but something other than a
+  quote block comes before it is answered with "the command must be the first
+  thing in the comment ... Post it again as a new comment", never silence. A
+  mention in backticks or in the middle of a sentence is ordinary discussion
+  and is ignored.
 - Accepted only from `vars.PIPELINE_OWNER_LOGIN` and only from a `User`
   account. Not `author_association`, not the PR author. Unset variable: nobody.
-  Others' comments are ignored without a reply.
+  Others' comments are ignored without a reply. Same-repo branches only.
 - The id must be a blocking finding of the **current head's** security review,
   or an open Copilot thread on the PR.
 - On acceptance the bot resolves the finding's review thread (Copilot threads
@@ -699,19 +739,28 @@ Post a comment whose **whole body** is one or more lines of exactly:
   thread-resolution requirement is met), then appends one record note per
   finding: `<!-- pipeline:disposition id=… kind=… head=<sha> by=<login> comment=<id> -->`
   with the reason in a fenced block. The notes re-run `approval.yml`.
+- The owner's `/disposition` reply in a thread, and the bot's answer, are not
+  feedback for the fixer (replying in a thread submits a review, which would
+  otherwise run it).
 
 ### How dispositions bind to SHAs
 
-A record names the head the owner saw. Ids are content-based, so **after a
-push, a finding that was not fixed has the same id on the new head and is
-still covered**: the security review does not open a new thread for it, the
-gate counts it as dispositioned, and the fix loop skips it. A finding that is
-fixed disappears from the next review (that is "fixed"). A finding the
-reviewer re-words enough to change file, title or detail gets a new id and
-needs a new decision. Only records made by the owner count, and only the bot's
-own notes are read. Limit: Gemini is not deterministic, so an unfixed finding
-may come back worded differently; that shows up as a new id, which is safe
-(fails toward asking again).
+A record names the head the owner saw. Ids are anchored on the code, not on
+the reviewer's wording, so **after a push or a rebase, a finding with the same
+file, topic and evidence line has the same id on the new head and is still
+covered**: the security review does not open a new thread for it, the gate
+counts it as dispositioned, and the fix loop skips it. A finding that is fixed
+disappears from the next review (that is "fixed").
+
+This is intentional, and the limit of it: **a changed evidence line is a new
+id, a new finding and a new decision.** So is another topic, another file, or
+a second copy of the same line. The other side of the same rule: a
+disposition also covers the finding when something _around_ the unchanged
+line changes (its inputs, its callers). That is not detected; the reason
+recorded with the disposition is what the owner accepted. Findings that fall
+back to the text id (see above) may come back with a new id when the reviewer
+re-words them; that fails toward asking again. Only records made by the owner
+count, and only the bot's own notes are read.
 
 ### Fix loop
 

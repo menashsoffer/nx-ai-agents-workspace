@@ -85,6 +85,11 @@ import {
   renderDispositionNote,
   parseDispositionNotes,
   parseDispositionComment,
+  DISPOSITION_MISPLACED,
+  DISPOSITION_NOT_A_FINDING,
+  FINDING_TOPICS,
+  patchNewLines,
+  threadOfComment,
   inlineFindingId,
   findingId,
   evaluateGates,
@@ -5368,4 +5373,575 @@ test('restart.yml: owner command, env-only inputs, fail-closed conditions', () =
   assert.ok(wf.jobs.hint.if.includes("github.event.sender.type == 'User'"));
   // every downstream label event uses a token that triggers workflows
   assert.ok(wf.jobs.restart.steps.some((s) => s.id === 'app'));
+});
+
+// ---------------------------------------------------------------- disposition: quote reply, threads
+
+const LONG = '/disposition S-1a2b3c4d accepted-risk The href is a constant.';
+
+test('parseDispositionComment: a quote block above the command is fine', () => {
+  const quoted = `> **[high] security: Unsafe href** · \`S-1a2b3c4d\`\n>\n> A user-controlled URL reaches href.\n\n${LONG}`;
+  const ok = parseDispositionComment(quoted);
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.commands, [
+    {
+      id: 'S-1a2b3c4d',
+      kind: 'accepted-risk',
+      reason: 'The href is a constant.',
+    },
+  ]);
+  // CRLF, several quote blocks separated by blank lines, and indentation up to 3.
+  assert.equal(
+    parseDispositionComment(`> a\r\n\r\n   > b\r\n\r\n${LONG}\r\n`).ok,
+    true,
+  );
+  // More commands after the quote still count, all of them.
+  const two = parseDispositionComment(
+    `> q\n${LONG}\n/disposition C-12 false-positive Copilot is wrong here.`,
+  );
+  assert.deepEqual(
+    two.commands.map((c) => c.id),
+    ['S-1a2b3c4d', 'C-12'],
+  );
+});
+
+test('parseDispositionComment: a misplaced command is an error, not silence', () => {
+  const misplaced = { ok: false, error: DISPOSITION_MISPLACED };
+  assert.match(DISPOSITION_MISPLACED, /must be the first thing/);
+  assert.match(DISPOSITION_MISPLACED, /quote block above it is fine/);
+  assert.match(DISPOSITION_MISPLACED, /Post it again as a new comment/);
+  // Prose first, then the command on line 2 (or after a quote and prose).
+  assert.deepEqual(
+    parseDispositionComment(`Thanks for the review.\n${LONG}`),
+    misplaced,
+  );
+  assert.deepEqual(
+    parseDispositionComment(`> quoted\nI agree.\n${LONG}`),
+    misplaced,
+  );
+  // Text on the same line before the command is discussion, not a command.
+  assert.deepEqual(parseDispositionComment(`ok: ${LONG}`), {
+    ok: false,
+    ignore: true,
+  });
+  // A quote block that is not at the top does not count as one.
+  const after = parseDispositionComment(`${LONG}\n> a quote`);
+  assert.equal(after.ok, false);
+  assert.equal(after.ignore, undefined);
+  assert.match(after.error, /^line 2: expected/);
+  const middle = parseDispositionComment(
+    `${LONG}\n> a quote\n/disposition C-12 false-positive Copilot is wrong here.`,
+  );
+  assert.equal(middle.ok, false);
+  assert.match(middle.error, /^line 2:/);
+});
+
+test('parseDispositionComment: mentions are discussion, and quotes alone are nothing', () => {
+  for (const text of [
+    `Please use \`${LONG}\``,
+    `use \`/disposition S-1a2b3c4d accepted-risk why\` to record it`,
+    'the /disposition command is documented',
+    '> just a quote\n> of a review',
+    `> ${LONG}`,
+    `> quoted\n\n> ${LONG}`,
+    '`/disposition`',
+    'no /dispositions here',
+  ])
+    assert.deepEqual(
+      parseDispositionComment(text),
+      { ok: false, ignore: true },
+      text,
+    );
+});
+
+test('parseDispositionComment in a thread: the short form takes its id from the thread', () => {
+  const thread = { id: 'S-1a2b3c4d' };
+  const ok = parseDispositionComment(
+    '/disposition false-positive The value is a static string.',
+    { thread },
+  );
+  assert.deepEqual(ok, {
+    ok: true,
+    commands: [
+      {
+        id: 'S-1a2b3c4d',
+        kind: 'false-positive',
+        reason: 'The value is a static string.',
+      },
+    ],
+  });
+  // The long form works when its id is the thread's; a quote block is fine.
+  assert.equal(parseDispositionComment(LONG, { thread }).ok, true);
+  assert.equal(
+    parseDispositionComment(`> quoted\n${LONG}`, { thread }).ok,
+    true,
+  );
+  // A Copilot thread is C-<top comment id>.
+  const copilotThread = { id: copilotThreadId(4242) };
+  assert.deepEqual(
+    parseDispositionComment(
+      '/disposition out-of-scope Generated code, not ours.',
+      {
+        thread: copilotThread,
+      },
+    ).commands,
+    [
+      {
+        id: 'C-4242',
+        kind: 'out-of-scope',
+        reason: 'Generated code, not ours.',
+      },
+    ],
+  );
+  // The same validation as everywhere else.
+  for (const bad of [
+    '/disposition false-positive short',
+    '/disposition nonsense The value is a static string.',
+    '/disposition false-positive',
+  ])
+    assert.equal(parseDispositionComment(bad, { thread }).ok, false, bad);
+});
+
+test('parseDispositionComment in a thread: another finding, one command, no finding', () => {
+  const thread = { id: 'S-1a2b3c4d' };
+  const other = parseDispositionComment(
+    '/disposition S-99999999 accepted-risk The href is a constant.',
+    { thread },
+  );
+  assert.deepEqual(other, {
+    ok: false,
+    error: 'this thread is S-1a2b3c4d; the command names S-99999999',
+  });
+  // Two commands in one thread reply.
+  assert.match(
+    parseDispositionComment(`${LONG}\n${LONG}`, { thread }).error,
+    /one command per reply/,
+  );
+  // A thread that is not a finding.
+  const none = parseDispositionComment(
+    '/disposition false-positive The value is a static string.',
+    { thread: { id: null } },
+  );
+  assert.deepEqual(none, { ok: false, error: DISPOSITION_NOT_A_FINDING });
+  assert.match(DISPOSITION_NOT_A_FINDING, /use a top-level PR comment/);
+  // Discussion in any thread stays discussion, and a misplaced command is still refused.
+  for (const t of [thread, { id: null }]) {
+    assert.deepEqual(
+      parseDispositionComment('looks fine to me', { thread: t }),
+      {
+        ok: false,
+        ignore: true,
+      },
+    );
+    assert.deepEqual(parseDispositionComment(`fine.\n${LONG}`, { thread: t }), {
+      ok: false,
+      error: DISPOSITION_MISPLACED,
+    });
+  }
+});
+
+test('parseDispositionComment: the short form outside a thread says where it works', () => {
+  const r = parseDispositionComment(
+    '/disposition false-positive The value is a static string.',
+  );
+  assert.equal(r.ok, false);
+  assert.match(r.error, /inside a finding's review thread/);
+});
+
+test('parseDispositionComment errors never repeat the comment body', () => {
+  for (const body of [
+    'secret text\n/disposition S-1a2b3c4d accepted-risk hunter2 hunter2',
+    '/disposition hunter2 accepted-risk hunter2 hunter2 hunter2',
+    '/disposition S-1a2b3c4d nope hunter2 hunter2 hunter2 hunter2',
+  ])
+    for (const thread of [undefined, { id: 'S-1a2b3c4d' }]) {
+      const r = parseDispositionComment(body, { thread });
+      assert.equal(r.ok, false);
+      assert.ok(!/hunter2|secret text/.test(r.error ?? ''), r.error);
+    }
+});
+
+test('threadOfComment finds a comment by id, else by the comment it replies to', () => {
+  const t = (id, commentIds) => ({ id, thread: { commentIds } });
+  const threads = [t('S-00000001', [11, 12]), t('C-22', [22])];
+  assert.equal(threadOfComment(threads, { commentId: 12 }).id, 'S-00000001');
+  assert.equal(threadOfComment(threads, { commentId: 22 }).id, 'C-22');
+  // A thread whose comment list was cut short: the reply target locates it.
+  assert.equal(
+    threadOfComment(threads, { commentId: 99, inReplyTo: 22 }).id,
+    'C-22',
+  );
+  assert.equal(threadOfComment(threads, { commentId: 99 }), null);
+  assert.equal(
+    threadOfComment(threads, { commentId: 99, inReplyTo: 98 }),
+    null,
+  );
+});
+
+test('selectActionable: a /disposition reply in a thread is bookkeeping, not feedback', () => {
+  const at = '2026-01-03T00:00:00Z';
+  const owner = { login: 'menashsoffer', type: 'User' };
+  const input = {
+    botLogin: BOT,
+    ownerLogin: 'menashsoffer',
+    reviewComments: [
+      comment(1, at, {
+        user: owner,
+        body: '/disposition false-positive A static string.',
+        in_reply_to_id: 9,
+      }),
+      comment(2, at, {
+        user: owner,
+        body: `> quoted finding\n${LONG}`,
+        in_reply_to_id: 9,
+      }),
+      comment(3, at, {
+        user: bot,
+        body: `${MARKERS.dispositionReply}\nRecorded: see https://example.test/1`,
+        in_reply_to_id: 9,
+      }),
+      comment(4, at, { user: owner, body: 'Please rename this variable.' }),
+      comment(5, at, {
+        user: alice,
+        body: '/disposition false-positive A static string.',
+      }),
+    ],
+  };
+  const keys = (extra) =>
+    selectActionable({ ...input, ...extra }).actionable.map((a) => a.key);
+  assert.deepEqual(keys({}), ['c4', 'c5']);
+  // Without an owner configured nothing is skipped as a command, except the bot's reply.
+  assert.deepEqual(keys({ ownerLogin: '' }), ['c1', 'c2', 'c4', 'c5']);
+});
+
+test('workflows: disposition.yml also listens to review-thread replies, same repo, one queue', () => {
+  const src = readFileSync(
+    new URL('../workflows/disposition.yml', import.meta.url),
+    'utf8',
+  );
+  const wf = parseYaml(src);
+  assert.deepEqual(wf.on.issue_comment.types, ['created']);
+  assert.deepEqual(wf.on.pull_request_review_comment.types, ['created']);
+  assert.deepEqual(Object.keys(wf.on).sort(), [
+    'issue_comment',
+    'pull_request_review_comment',
+  ]);
+  const job = wf.jobs.disposition;
+  // Every earlier condition is kept; the script is the real parser.
+  for (const needle of [
+    "vars.PIPELINE_APP_CLIENT_ID != ''",
+    "vars.PIPELINE_BOT_LOGIN != ''",
+    "vars.PIPELINE_OWNER_LOGIN != ''",
+    'github.event.comment.user.login == vars.PIPELINE_OWNER_LOGIN',
+    "github.event.comment.user.type == 'User'",
+    "contains(github.event.comment.body, '/disposition')",
+    "github.event_name == 'issue_comment' && github.event.issue.pull_request",
+    'github.event.pull_request.head.repo.full_name == github.repository',
+  ])
+    assert.ok(job.if.includes(needle), needle);
+  assert.ok(!job.if.includes('startsWith'));
+  // One queue per PR for both events, and the event kind reaches the script by env.
+  assert.ok(
+    job.concurrency.group.includes(
+      'github.event.issue.number || github.event.pull_request.number',
+    ),
+  );
+  assert.equal(job.concurrency['cancel-in-progress'], false);
+  const step = job.steps.find((x) => x.name === 'Record the disposition');
+  assert.match(step.env.COMMENT_KIND, /pull_request_review_comment/);
+  assert.match(step.env.COMMENT_KIND, /'review'/);
+  assert.match(step.env.N, /github\.event\.pull_request\.number/);
+  assert.ok(!step.run.includes('${{'));
+});
+
+// ---------------------------------------------------------------- stable finding ids
+
+const FILE_LINES = [
+  'export function Card({ html }) {',
+  '  return (',
+  '    <div dangerouslySetInnerHTML={{ __html: html }} />',
+  '  );',
+  '}',
+];
+const readFrom = (files) => (file) => files[file] ?? null;
+const anchored = (extra = {}) =>
+  finding({
+    file: 'src/a.ts',
+    line: 3,
+    topic: 'xss',
+    evidence: '<div dangerouslySetInnerHTML={{ __html: html }} />',
+    ...extra,
+  });
+const reportOf = (findings) =>
+  '```json\n' + JSON.stringify({ summary: 's', findings }) + '\n```';
+const parseWith = (findings, files = { 'src/a.ts': FILE_LINES }) =>
+  parseSecurityReport(reportOf(findings), { readLines: readFrom(files) });
+
+test('finding ids anchor on file, topic and the evidence line, not on the wording', () => {
+  const [a] = parseWith([anchored()]).findings;
+  assert.match(a.id, /^S-[0-9a-f]{8}$/);
+  assert.equal(a.idBasis, 'evidence');
+  assert.equal(a.topic, 'xss');
+  // Title, detail, suggestion, severity, category and line are not in it.
+  const [b] = parseWith([
+    anchored({
+      title: 'Raw HTML from props',
+      detail: 'Completely different words.',
+      suggestion: 'Sanitise it.',
+      severity: 'critical',
+      category: 'correctness',
+      line: 4,
+    }),
+  ]).findings;
+  assert.equal(b.id, a.id);
+  // Whitespace in the evidence and in the file does not matter, nor does topic case.
+  const [c] = parseWith(
+    [
+      anchored({
+        topic: 'XSS',
+        evidence: '  <div   dangerouslySetInnerHTML={{ __html: html }}  />  ',
+      }),
+    ],
+    { 'src/a.ts': FILE_LINES.map((l) => l.replace(/^ +/, '\t')) },
+  ).findings;
+  assert.equal(c.id, a.id);
+  // A rebase that moves the line (or reformats the file around it) keeps the id.
+  const moved = ['// header', '', ...FILE_LINES];
+  assert.equal(
+    parseWith([anchored({ line: 5 })], { 'src/a.ts': moved }).findings[0].id,
+    a.id,
+  );
+});
+
+test('a different evidence line, topic or file is a different finding', () => {
+  const files = {
+    'src/a.ts': [...FILE_LINES, 'window.location = target;'],
+    'src/b.ts': FILE_LINES,
+  };
+  const ids = parseWith(
+    [
+      anchored(),
+      anchored({ evidence: 'window.location = target;', line: 6 }),
+      anchored({ topic: 'logic' }),
+      anchored({ file: 'src/b.ts' }),
+    ],
+    files,
+  ).findings.map((f) => f.id);
+  assert.equal(new Set(ids).size, 4);
+  for (const id of ids) assert.match(id, /^S-[0-9a-f]{8}$/);
+});
+
+test('evidence that is not a line of the file, or a bad topic, falls back to the text id', () => {
+  const text = finding();
+  const textId = findingId(text);
+  const cases = {
+    'not in the file': anchored({ evidence: 'const nowhere = 1;' }),
+    'only part of a line': anchored({ evidence: 'dangerouslySetInnerHTML' }),
+    'several lines': anchored({
+      evidence: `${FILE_LINES[1]}\n${FILE_LINES[2]}`,
+    }),
+    'empty evidence': anchored({ evidence: '  ' }),
+    'no evidence': anchored({ evidence: undefined }),
+    'unknown topic': anchored({ topic: 'vibes' }),
+    'no topic': anchored({ topic: undefined }),
+    'non-string evidence': anchored({ evidence: 7 }),
+    'file the PR does not have': anchored({ file: 'src/z.ts' }),
+  };
+  for (const [name, f] of Object.entries(cases)) {
+    const [r] = parseWith([f]).findings;
+    assert.equal(r.idBasis, 'text', name);
+    assert.equal(r.id, findingId({ ...text, file: f.file }), name);
+    assert.equal(r.topic === null || FINDING_TOPICS.includes(r.topic), true);
+  }
+  assert.equal(
+    parseWith([anchored({ evidence: 'nope' })]).findings[0].id,
+    textId,
+  );
+  // No way to read files at all: every finding falls back.
+  const blind = parseSecurityReport(reportOf([anchored()]));
+  assert.equal(blind.findings[0].idBasis, 'text');
+  assert.equal(blind.findings[0].id, textId);
+  // Old-style output without topic and evidence is the old id, flagged the same way.
+  const old = parseSecurityReport(reportOf([finding()]));
+  assert.equal(old.findings[0].id, textId);
+  assert.equal(old.findings[0].idBasis, 'text');
+});
+
+test('the same evidence line twice in a file is two findings, told apart by occurrence', () => {
+  const dup = ['<Link to={url} />', 'x', '<Link to={url} />'];
+  const [first, second] = parseWith(
+    [
+      anchored({ evidence: '<Link to={url} />', line: 1 }),
+      anchored({ evidence: '<Link to={url} />', line: 3 }),
+    ],
+    { 'src/a.ts': dup },
+  ).findings;
+  assert.equal(first.idBasis, 'evidence');
+  assert.equal(second.idBasis, 'evidence');
+  assert.notEqual(first.id, second.id);
+  assert.equal(first.occurrence, 1);
+  assert.equal(second.occurrence, 2);
+  // The copy nearest the reported line is chosen; with no line, the first.
+  const [near] = parseWith(
+    [anchored({ evidence: '<Link to={url} />', line: 2 })],
+    { 'src/a.ts': dup },
+  ).findings;
+  assert.equal(near.occurrence, 1);
+  const [noLine] = parseWith(
+    [anchored({ evidence: '<Link to={url} />', line: undefined })],
+    { 'src/a.ts': dup },
+  ).findings;
+  assert.equal(noLine.occurrence, 1);
+  // Once the line is unique the id is a third one: a decision made while it
+  // had a twin does not silently cover it.
+  const [unique] = parseWith(
+    [anchored({ evidence: '<Link to={url} />', line: 1 })],
+    { 'src/a.ts': ['<Link to={url} />', 'x'] },
+  ).findings;
+  assert.ok(![first.id, second.id].includes(unique.id));
+  assert.equal(unique.occurrence, undefined);
+});
+
+test('the same anchored finding reported twice is one finding, the more severe wins', () => {
+  const r = parseWith([
+    anchored({ severity: 'low', title: 'First wording' }),
+    anchored({ severity: 'critical', title: 'Second wording', line: 3 }),
+    anchored({ evidence: FILE_LINES[3], line: 4 }),
+  ]);
+  assert.equal(r.findings.length, 2);
+  assert.equal(r.findings[0].severity, 'critical');
+  assert.equal(r.findings[0].title, 'Second wording');
+});
+
+test('text-based findings say that their id may change; anchored ones do not', () => {
+  const [a, t] = parseWith([
+    anchored(),
+    anchored({ evidence: 'not in the file', title: 'Other', line: 3 }),
+  ]).findings;
+  const files = [
+    { filename: 'src/a.ts', patch: '@@ -1,1 +1,5 @@\n+x\n+x\n+x\n+x\n+x' },
+  ];
+  const review = buildSecurityReview({
+    report: { summary: '', findings: [a, t] },
+    sha: HEAD_A,
+    files,
+    promptVer: '3',
+  });
+  const [ca, ct] = review.comments.map((c) => c.body);
+  assert.ok(!ca.includes('may change on re-review'));
+  assert.ok(ct.includes('may change on re-review'));
+  assert.ok(review.fallbackBody.includes('may change on re-review'));
+});
+
+test('a disposition follows the same finding across a rebase and a re-worded review', () => {
+  const [before] = parseWith([anchored()]).findings;
+  const note = {
+    user: bot,
+    body: renderDispositionNote({
+      id: before.id,
+      kind: 'false-positive',
+      head: HEAD_A,
+      by: OWNER_LOGIN,
+      commentId: 1,
+      reason: 'A static string in a demo component.',
+    }),
+  };
+  const kinds = dispositionKinds({
+    records: parseDispositionNotes([note], BOT),
+    ownerLogin: OWNER_LOGIN,
+  });
+  // After the rebase: another head, the line moved, the reviewer's words changed.
+  const [after] = parseWith(
+    [
+      anchored({
+        line: 6,
+        title: 'Unsanitised HTML injected via a prop',
+        detail: 'The prop html reaches innerHTML unchanged.',
+      }),
+    ],
+    { 'src/a.ts': ['// new first line', ...FILE_LINES] },
+  ).findings;
+  assert.equal(after.id, before.id);
+  const files = [
+    { filename: 'src/a.ts', patch: '@@ -1,1 +1,6 @@\n+x\n+x\n+x\n+x\n+x\n+x' },
+  ];
+  const r = buildSecurityReview({
+    report: { summary: '', findings: [after] },
+    sha: HEAD_B,
+    files,
+    promptVer: '3',
+    dispositioned: kinds,
+  });
+  assert.equal(r.dispositionedCount, 1);
+  assert.equal(r.comments.length, 0);
+  assert.ok(r.body.includes('Already dispositioned'));
+  // The security outcome note round-trips the id, so the gate matches it.
+  const outcome = {
+    user: bot,
+    body: renderOutcome({
+      stage: 'security',
+      result: 'success',
+      summary: 's',
+      details: securityOutcomeDetails({
+        sha: HEAD_B,
+        findings: r.blockingFindings,
+      }),
+    }),
+  };
+  const ids = securityIdsForHead({
+    comments: [outcome],
+    botLogin: BOT,
+    sha: HEAD_B,
+  });
+  assert.deepEqual(ids.ids, [before.id]);
+  // If the evidence line itself changes, it is a new finding and is not covered.
+  const [changed] = parseWith(
+    [anchored({ evidence: FILE_LINES[3], line: 4 })],
+    { 'src/a.ts': FILE_LINES },
+  ).findings;
+  assert.notEqual(changed.id, before.id);
+  assert.equal(kinds.has(changed.id), false);
+  // And a finding the reviewer only worded differently, without a usable
+  // anchor, is a new id too (fails toward asking again).
+  const [text] = parseWith([finding({ title: 'Different words' })]).findings;
+  assert.equal(kinds.has(text.id), false);
+});
+
+test('patchNewLines reads the new side of a patch, added and context lines', () => {
+  const patch = [
+    '@@ -1,3 +1,4 @@',
+    ' keep one',
+    '-gone',
+    '+added',
+    '+  indented',
+    ' keep two',
+    '\\ No newline at end of file',
+    '@@ -20,2 +30,2 @@ function x() {',
+    ' tail',
+    '+more',
+  ].join('\n');
+  assert.deepEqual(patchNewLines(patch), [
+    'keep one',
+    'added',
+    '  indented',
+    'keep two',
+    'tail',
+    'more',
+  ]);
+  assert.deepEqual(patchNewLines(undefined), []);
+  assert.deepEqual(patchNewLines('not a patch'), []);
+});
+
+test('the reviewer prompt and the code agree on the topic list and the version', () => {
+  const prompt = readFileSync(
+    new URL('../prompts/security-review.md', import.meta.url),
+    'utf8',
+  );
+  for (const topic of FINDING_TOPICS)
+    assert.ok(prompt.includes(`\`${topic}\``), topic);
+  const listed = [...prompt.matchAll(/`([a-z][a-z-]*)`/g)].map((m) => m[1]);
+  assert.ok(FINDING_TOPICS.every((t) => listed.includes(t)));
+  assert.ok(prompt.includes('"topic"') && prompt.includes('"evidence"'));
+  // The finding format changed: the recorded prompt version moved with it.
+  assert.equal(promptVersion(prompt), '3');
 });

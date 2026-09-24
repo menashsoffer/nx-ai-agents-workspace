@@ -48,6 +48,7 @@ import {
   parseRequireCopilot,
   parseSecurityReport,
   parseState,
+  patchNewLines,
   planPrClosed,
   planRoute,
   prClosedOutcome,
@@ -72,6 +73,7 @@ import {
   securityOutcomeDetails,
   selectActionable,
   stageTransition,
+  threadOfComment,
   threadsToResolve,
   validateDispositions,
 } from './pipeline-lib.mjs';
@@ -512,6 +514,7 @@ const commands = {
       botLogin: bot,
       onlyKeys: retry ? new Set(state.lastBatch) : null,
       dispositioned,
+      ownerLogin: ownerLogin(),
     });
     const decision = retry
       ? decideFixRetry({ labels, batch: actionable })
@@ -611,7 +614,37 @@ const commands = {
           description: description.slice(0, 140),
         },
       });
-    const report = parseSecurityReport(readFileSync(responseFile, 'utf8'));
+    // Finding ids anchor on a code line the reviewer quotes; parseSecurityReport
+    // checks that it is a line of the file at the reviewed head. Only files the
+    // PR changed are read (the path comes from reviewer output). The file's
+    // content at `sha` is the source; the PR patch (added and context lines)
+    // is the fallback when it cannot be read.
+    const files = list(`pulls/${n}/files`);
+    const lineCache = new Map();
+    const readLines = (file) => {
+      if (lineCache.has(file)) return lineCache.get(file);
+      const changed = files.find(
+        (f) => f.filename === file && f.status !== 'removed',
+      );
+      let lines = null;
+      if (changed) {
+        try {
+          const c = api(`contents/${encodeURI(file)}?ref=${sha}`);
+          if (c?.encoding === 'base64' && typeof c.content === 'string')
+            lines = Buffer.from(c.content, 'base64')
+              .toString('utf8')
+              .split(/\r?\n/);
+        } catch {
+          // fall back to the patch
+        }
+        lines ??= changed.patch ? patchNewLines(changed.patch) : null;
+      }
+      lineCache.set(file, lines);
+      return lines;
+    };
+    const report = parseSecurityReport(readFileSync(responseFile, 'utf8'), {
+      readLines,
+    });
     if (!report.ok) {
       status('error', report.error);
       writeOutcome(n, {
@@ -630,7 +663,7 @@ const commands = {
     const review = buildSecurityReview({
       report,
       sha,
-      files: list(`pulls/${n}/files`),
+      files,
       promptVer,
       dispositioned,
     });
@@ -846,14 +879,19 @@ const commands = {
     );
   },
 
-  // /disposition <finding-id> <kind> <reason> from the pipeline owner
-  // (disposition.yml, issue_comment created). The comment arrives through
-  // the environment, as data: COMMENT_BODY, COMMENT_USER, COMMENT_USER_TYPE.
-  // Invalid commands get one short reply. Valid ones resolve the findings'
-  // review threads first and then append one record note each; the notes
-  // trigger approval.yml, which re-evaluates the gates.
+  // /disposition from the pipeline owner (disposition.yml): a top-level PR
+  // comment or quote reply (issue_comment created) or a reply inside a
+  // finding's review thread (pull_request_review_comment created,
+  // COMMENT_KIND=review). The comment arrives through the environment, as
+  // data: COMMENT_BODY, COMMENT_USER, COMMENT_USER_TYPE. Invalid commands get
+  // one short reply, in the thread for a thread reply. Valid ones resolve the
+  // findings' review threads first and then append one record note per
+  // finding to the PR conversation; the notes trigger approval.yml, which
+  // re-evaluates the gates.
   disposition([pr, commentId]) {
     const n = num(pr);
+    const cid = num(commentId);
+    const inThread = process.env.COMMENT_KIND === 'review';
     const owner = ownerLogin();
     if (!owner) throw new Error('PIPELINE_OWNER_LOGIN is not set');
     const author = checkDispositionAuthor({
@@ -865,27 +903,54 @@ const commands = {
       console.log(`disposition: ignored (${author.reason})`);
       return;
     }
-    const parsed = parseDispositionComment(process.env.COMMENT_BODY);
+    let parsed = parseDispositionComment(process.env.COMMENT_BODY);
     if (parsed.ignore) {
       console.log('disposition: not a command');
       return;
     }
+    const bot = botLogin();
+    let threads = null;
+    // Where the answer goes: the thread for a thread reply, else the PR.
+    let replyTo = null;
+    if (inThread) {
+      threads = classifyThreads(reviewThreads(n), bot);
+      const c = api(`pulls/comments/${cid}`);
+      const entry = threadOfComment(threads, {
+        commentId: cid,
+        inReplyTo: c.in_reply_to_id,
+      });
+      replyTo = entry?.thread.first?.id ?? c.in_reply_to_id ?? cid;
+      parsed = parseDispositionComment(process.env.COMMENT_BODY, {
+        thread: { id: entry?.id ?? null },
+      });
+    }
+    const tell = (text) => {
+      if (!inThread) return postComment(n, text);
+      try {
+        return api(`pulls/${n}/comments/${replyTo}/replies`, {
+          method: 'POST',
+          body: { body: `${MARKERS.dispositionReply}\n${text}` },
+        });
+      } catch (e) {
+        console.error(e.stack ?? e);
+        return postComment(n, text);
+      }
+    };
     const reject = (why) => {
       console.log(`disposition: rejected (${why})`);
-      postComment(n, `Not recorded: ${why}.`);
+      tell(`Not recorded: ${why}.`);
     };
     if (!parsed.ok) return reject(parsed.error);
     const p = api(`pulls/${n}`);
     if (p.state !== 'open' || p.head.repo?.full_name !== `${OWNER}/${NAME}`)
       return reject('the pull request is closed or from a fork');
-    const bot = botLogin();
     const head = p.head.sha;
     const security = securityIdsForHead({
       comments: list(`issues/${n}/comments`),
       botLogin: bot,
       sha: head,
     });
-    const threads = classifyThreads(reviewThreads(n), bot);
+    threads ??= classifyThreads(reviewThreads(n), bot);
     const checked = validateDispositions({
       commands: parsed.commands,
       geminiIds: new Set(security?.ids),
@@ -899,6 +964,7 @@ const commands = {
 
     // Validation passed: a failure from here on must not leave the owner
     // without any reply. Tell them once, then fail the job.
+    let noteUrl = null;
     try {
       // Resolve first: the record notes are what re-run the gates.
       for (const { id } of parsed.commands)
@@ -906,21 +972,22 @@ const commands = {
           (t) => t.id === id && !t.thread.isResolved,
         ))
           resolveThread(t.thread.id);
-      for (const c of parsed.commands)
-        postComment(
+      for (const c of parsed.commands) {
+        const note = postComment(
           n,
           renderDispositionNote({
             ...c,
             head,
             by: process.env.COMMENT_USER,
-            commentId: num(commentId),
+            commentId: cid,
           }),
         );
+        noteUrl ??= note?.html_url ?? null;
+      }
     } catch (e) {
       const url = runUrl();
       try {
-        postComment(
-          n,
+        tell(
           `Not recorded: the bot hit an error${url ? `; see ${url}` : ''}. Nothing was changed; post the command again after a fix.`,
         );
       } catch (postError) {
@@ -931,6 +998,14 @@ const commands = {
     console.log(
       `disposition: recorded ${parsed.commands.map((c) => c.id).join(', ')} at ${head.slice(0, 7)}`,
     );
+    if (inThread) {
+      // The record is written; a failed courtesy reply must not undo it.
+      try {
+        tell(`Recorded${noteUrl ? `: see ${noteUrl}` : ''}.`);
+      } catch (e) {
+        console.error(e.stack ?? e);
+      }
+    }
   },
 
   // The owner's /restart <stage> <reason> on an ISSUE (restart.yml,
