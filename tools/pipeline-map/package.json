@@ -1,0 +1,25 @@
+{
+  "name": "@starter/pipeline-map",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./generate": "./src/generate.mjs",
+    "./package.json": "./package.json"
+  },
+  "nx": {
+    "name": "pipeline-map",
+    "tags": [
+      "type:tooling",
+      "scope:shared"
+    ],
+    "targets": {
+      "generate": {
+        "command": "node tools/pipeline-map/src/cli.mjs"
+      },
+      "check": {
+        "command": "node tools/pipeline-map/src/cli.mjs --check"
+      }
+    }
+  }
+}

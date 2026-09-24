@@ -26,6 +26,9 @@
     },
     {
       "path": "./apps/pages-e2e"
+    },
+    {
+      "path": "./tools/pipeline-map"
     }
   ]
 }
