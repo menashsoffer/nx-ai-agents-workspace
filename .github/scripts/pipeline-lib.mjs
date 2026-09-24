@@ -11,6 +11,7 @@ export const STAGES = [
   'stage:reviewing',
   'stage:fixing',
   'stage:human-approval',
+  'stage:routing',
   'stage:needs-attention',
 ];
 
@@ -27,6 +28,7 @@ export const STAGE_STATUS = {
   'stage:reviewing': 'Reviewing',
   'stage:fixing': 'Fixing',
   'stage:human-approval': 'Human approval',
+  'stage:routing': 'Routing',
   'stage:needs-attention': 'Needs attention',
 };
 
@@ -36,7 +38,10 @@ export const MARKERS = {
   plan: '<!-- pipeline:plan -->',
   preview: '<!-- pipeline:preview -->',
   humanApproval: '<!-- pipeline:human-approval -->',
-  notice: '<!-- pipeline:notice -->',
+  // Outcome and route notes carry attributes, so these are prefixes. Both
+  // are append-only history: never upserted, never edited.
+  outcome: '<!-- pipeline:outcome',
+  route: '<!-- pipeline:route',
   fixReply: '<!-- pipeline:fix-reply -->',
   securityReview: 'pipeline:security-review',
   // A pipeline-authored review body that the fixer must act on.
@@ -189,6 +194,9 @@ export function emptyState() {
   return {
     watermark: null,
     handled: [],
+    // Keys of the review items the latest fix round was started for, so a
+    // routed retry can replay that round (see decideFixRetry).
+    lastBatch: [],
     copilotRequestedFor: null,
     humanApprovalFor: null,
   };
@@ -230,7 +238,8 @@ const hasPipelineMarker = (body) => /<!-- pipeline[-:]/.test(body ?? '');
  * bodies that are (a) newer than the state watermark, (b) not already
  * handled (deduped by id), (c) not in a resolved thread, (d) not pipeline
  * bookkeeping. Returns `{ actionable, watermark }`, where `watermark` is the
- * newest timestamp seen in this scan.
+ * newest timestamp seen in this scan. With `onlyKeys` (a routed retry),
+ * (a) and (b) are replaced by "key is in onlyKeys".
  */
 export function selectActionable({
   reviews = [],
@@ -238,10 +247,12 @@ export function selectActionable({
   resolvedCommentIds = new Set(),
   state = emptyState(),
   ignoreLogins = ['github-actions[bot]'],
+  onlyKeys = null,
 }) {
   const handled = new Set(state.handled);
   const since = state.watermark ? Date.parse(state.watermark) : -Infinity;
-  const isNew = (key, at) => !handled.has(key) && Date.parse(at) >= since;
+  const isNew = (key, at) =>
+    onlyKeys ? onlyKeys.has(key) : !handled.has(key) && Date.parse(at) >= since;
   const ignored = (login) => ignoreLogins.includes(login);
   let watermark = state.watermark;
   const bump = (at) => {
@@ -291,20 +302,16 @@ export function selectActionable({
 
 /**
  * The fix-loop state machine. No new feedback -> noop (idempotent reruns).
- * none -> fix-loop:1 -> fix-loop:2 -> stage:needs-attention (stop).
+ * none -> fix-loop:1 -> fix-loop:2 -> escalate (an outcome note with
+ * `budget_exhausted`; the router hands it to a human).
  */
 export function decideFix({ labels, actionable }) {
-  if (labels.includes('stage:needs-attention'))
-    return { action: 'noop', reason: 'PR is parked in stage:needs-attention' };
+  const parked = parkedIn(labels);
+  if (parked) return { action: 'noop', reason: `PR is parked in ${parked}` };
   if (actionable.length === 0)
     return { action: 'noop', reason: 'no new actionable review comments' };
   if (labels.includes(FIX_LOOP_2))
-    return {
-      action: 'escalate',
-      reason: 'fix loop budget (2) exhausted',
-      add: ['stage:needs-attention'],
-      remove: [],
-    };
+    return { action: 'escalate', reason: 'fix loop budget (2) exhausted' };
   if (labels.includes(FIX_LOOP_1))
     return {
       action: 'fix',
@@ -318,6 +325,32 @@ export function decideFix({ labels, actionable }) {
     add: [FIX_LOOP_1, 'stage:fixing'],
     remove: [],
   };
+}
+
+/**
+ * A routed retry of a fix round whose agent failed: replay the same batch
+ * (state.lastBatch) under the current fix-loop label. It never consumes a
+ * new round, so the fix-loop budget stays exactly as decideFix defines it.
+ */
+export function decideFixRetry({ labels, batch }) {
+  const parked = parkedIn(labels);
+  if (parked) return { action: 'noop', reason: `PR is parked in ${parked}` };
+  const loop = labels.includes(FIX_LOOP_2)
+    ? 2
+    : labels.includes(FIX_LOOP_1)
+      ? 1
+      : 0;
+  if (!loop) return { action: 'noop', reason: 'no fix round to retry' };
+  if (batch.length === 0)
+    return { action: 'noop', reason: 'the last fix batch has no open items' };
+  return { action: 'fix', loop, retry: true };
+}
+
+// Stages in which automation must leave a PR alone.
+function parkedIn(labels) {
+  return ['stage:needs-attention', 'stage:routing'].find((l) =>
+    labels.includes(l),
+  );
 }
 
 // ---------------------------------------------------------------- security
@@ -452,8 +485,8 @@ export function evaluateApproval({
   state,
 }) {
   if (prState !== 'open') return { action: 'noop', reason: 'PR is not open' };
-  if (labels.includes('stage:needs-attention'))
-    return { action: 'noop', reason: 'PR is in stage:needs-attention' };
+  const parked = parkedIn(labels);
+  if (parked) return { action: 'noop', reason: `PR is in ${parked}` };
   if (ciConclusion !== 'success')
     return { action: 'wait', reason: `ci is ${ciConclusion ?? 'missing'}` };
   if (securityState !== 'success')
@@ -478,4 +511,754 @@ export function evaluateApproval({
   )
     return { action: 'noop', reason: 'already handed to human approval' };
   return { action: 'human-approval' };
+}
+
+// ---------------------------------------------------------------- outcomes
+
+/** Stages that leave outcome notes. */
+export const OUTCOME_STAGES = [
+  'spec',
+  'plan',
+  'develop',
+  'security',
+  'fix',
+  'approval',
+];
+
+/** Closed set of problem codes an outcome note may carry. */
+export const PROBLEMS = [
+  'none', // success
+  'invalid_output', // the agent answered, but not in the required shape
+  'agent_error', // the agent run failed (API, quota, timeout, no changes)
+  'spec_missing', // plan: no spec comment
+  'spec_questions', // plan: the spec has blocking open questions
+  'untestable_criteria', // plan: criteria untestable or contradictory
+  'verify_failed', // develop: `pnpm verify` could not be made green
+  'plan_gap', // develop: the plan is wrong or incomplete
+  'budget_exhausted', // fix: both fix rounds used
+  'copilot_request_failed', // approval: could not request Copilot
+  // Hard gates (HARD_GATES): always a human.
+  'protected_surface',
+  'needs_secrets_ci_infra',
+  'scope_split',
+  'embedded_instructions',
+  'forbidden_path',
+];
+
+/**
+ * Problems no automation may route around, whatever the mode, caps or
+ * brain: protected files (AGENTS.md "Protected files"), secrets/CI/infra or
+ * a backend, work bigger than size L, instructions embedded in the issue,
+ * and patches that check-patch rejected.
+ */
+export const HARD_GATES = [
+  'protected_surface',
+  'needs_secrets_ci_infra',
+  'scope_split',
+  'embedded_instructions',
+  'forbidden_path',
+];
+
+const OUTCOME_VERSION = 1;
+const MAX_LIST = 20;
+
+/** Single-line, bounded, marker-free text for notes built from agent output. */
+function clean(text, max = 500) {
+  return String(text ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/<!--/g, '&lt;!--')
+    .trim()
+    .slice(0, max);
+}
+
+const cleanList = (list) =>
+  (Array.isArray(list) ? list : [])
+    .filter((x) => typeof x === 'string' && x.trim())
+    .slice(0, MAX_LIST)
+    .map((x) => clean(x));
+
+const runId = (url) => /\/runs\/(\d+)/.exec(url ?? '')?.[1] ?? '-';
+
+/**
+ * Coerces a workflow-built outcome into a valid one. Unknown problem codes
+ * (e.g. from an agent) become `invalid_output` with a detail line, so a
+ * broken note can never block the item.
+ */
+export function normalizeOutcome(input) {
+  const o = input ?? {};
+  if (!OUTCOME_STAGES.includes(o.stage))
+    throw new Error(`Unknown outcome stage: ${o.stage}`);
+  const details = cleanList(o.details);
+  const result = o.result === 'success' ? 'success' : 'problem';
+  let problem = 'none';
+  if (result === 'problem') {
+    if (PROBLEMS.includes(o.problem) && o.problem !== 'none')
+      problem = o.problem;
+    else {
+      problem = 'invalid_output';
+      details.push(clean(`Unknown problem code "${o.problem ?? ''}".`));
+    }
+  }
+  const item = Number(o.item);
+  return {
+    v: OUTCOME_VERSION,
+    stage: o.stage,
+    result,
+    problem,
+    summary: clean(o.summary, 300) || defaultSummary(o.stage, problem),
+    questions: cleanList(o.questions),
+    details: details.slice(0, MAX_LIST),
+    run_url: clean(o.run_url, 300),
+    prompt_version: clean(o.prompt_version, 100),
+    item: Number.isInteger(item) && item > 0 ? item : null,
+  };
+}
+
+const STAGE_TITLE = {
+  spec: 'Spec',
+  plan: 'Plan',
+  develop: 'Development',
+  security: 'Security review',
+  fix: 'Fix',
+  approval: 'Approval',
+};
+
+const PROBLEM_TEXT = {
+  invalid_output: 'the agent output is invalid',
+  agent_error: 'the agent run failed',
+  spec_missing: 'there is no spec',
+  spec_questions: 'the spec has open questions',
+  untestable_criteria: 'the acceptance criteria are not testable',
+  verify_failed: '`pnpm verify` does not pass',
+  plan_gap: 'the plan is wrong or incomplete',
+  budget_exhausted: 'the fix-loop budget (2 rounds) is used up',
+  copilot_request_failed: 'the Copilot review could not be requested',
+  protected_surface: 'the work touches protected files',
+  needs_secrets_ci_infra:
+    'the work needs secrets, CI, infrastructure or a server',
+  scope_split: 'the work is too big and should be split',
+  embedded_instructions: 'the issue contains instructions aimed at the agents',
+  forbidden_path: 'the patch touches protected paths',
+};
+
+function defaultSummary(stage, problem) {
+  return problem === 'none'
+    ? `${STAGE_TITLE[stage]} done.`
+    : `${STAGE_TITLE[stage]} stopped: ${PROBLEM_TEXT[problem]}.`;
+}
+
+/** Renders an outcome note (a new comment; never upserted). */
+export function renderOutcome(input) {
+  const o = normalizeOutcome(input);
+  const lines = [
+    `${MARKERS.outcome} stage=${o.stage} result=${o.result} problem=${o.problem} run=${runId(o.run_url)} -->`,
+    `**${o.summary}**`,
+  ];
+  const bullets = [
+    ...o.details.map((d) => `- ${d}`),
+    ...o.questions.map((q) => `- Question: ${q}`),
+  ];
+  if (o.run_url) bullets.push(`- Run: ${o.run_url}`);
+  if (bullets.length) lines.push('', ...bullets);
+  lines.push('', '```json', JSON.stringify(o), '```');
+  return lines.join('\n');
+}
+
+function lastJsonFence(body) {
+  const fences = [...String(body).matchAll(/```json\n(.*)\n```/g)];
+  if (!fences.length) return { error: 'no json block' };
+  try {
+    return { value: JSON.parse(fences.at(-1)[1]) };
+  } catch {
+    return { error: 'json block does not parse' };
+  }
+}
+
+const attrs = (header) =>
+  Object.fromEntries(
+    [...header.matchAll(/(\w+)=(\S+)/g)].map((m) => [m[1], m[2]]),
+  );
+
+/** Strictly parses an outcome note. `{ ok: false, error }` on anything off. */
+export function parseOutcome(body) {
+  const text = String(body ?? '');
+  const header = /^<!-- pipeline:outcome ([^\n]*?) -->\n/.exec(text);
+  if (!header) return { ok: false, error: 'not an outcome note' };
+  const { value: o, error } = lastJsonFence(text);
+  if (error) return { ok: false, error };
+  if (!o || typeof o !== 'object') return { ok: false, error: 'not an object' };
+  if (o.v !== OUTCOME_VERSION)
+    return { ok: false, error: `unsupported version ${o.v}` };
+  if (!OUTCOME_STAGES.includes(o.stage))
+    return { ok: false, error: `unknown stage ${o.stage}` };
+  if (o.result !== 'success' && o.result !== 'problem')
+    return { ok: false, error: `unknown result ${o.result}` };
+  if (!PROBLEMS.includes(o.problem))
+    return { ok: false, error: `unknown problem ${o.problem}` };
+  if ((o.result === 'success') !== (o.problem === 'none'))
+    return { ok: false, error: 'result and problem disagree' };
+  const a = attrs(header[1]);
+  if (a.stage !== o.stage || a.result !== o.result || a.problem !== o.problem)
+    return { ok: false, error: 'marker and json disagree' };
+  if (typeof o.summary !== 'string')
+    return { ok: false, error: 'summary missing' };
+  for (const key of ['questions', 'details'])
+    if (o[key] !== undefined && !Array.isArray(o[key]))
+      return { ok: false, error: `${key} is not a list` };
+  return { ok: true, outcome: normalizeOutcome(o) };
+}
+
+// ---------------------------------------------------------------- router
+
+/** Where the router can send work next. Never `stage:routing` itself. */
+export const ROUTE_TARGETS = [
+  'respec',
+  'replan',
+  'redevelop',
+  'retry',
+  'human',
+];
+
+/** Loop budgets per target, and in total, counted per item (see routeWindow). */
+export const ROUTER_CAPS = Object.freeze({
+  respec: 2,
+  replan: 1,
+  redevelop: 1,
+  retry: 1,
+  global: 5,
+});
+
+/** An external brain's pick is used only at or above this confidence. */
+export const EXTERNAL_MIN_CONFIDENCE = 0.8;
+
+/** Stage label each target sets. `retry` re-runs the stage that failed. */
+export const TARGET_STAGE = {
+  respec: 'stage:qualified',
+  replan: 'stage:spec',
+  redevelop: 'stage:planned',
+  human: 'stage:needs-attention',
+};
+export const RETRY_STAGE = { fix: 'stage:fixing' };
+
+export function targetStage(target, fromStage) {
+  const stage =
+    target === 'retry' ? RETRY_STAGE[fromStage] : TARGET_STAGE[target];
+  return stage ?? TARGET_STAGE.human;
+}
+
+// The rules table (docs/pipeline.md "Router"). Anything not listed: human.
+const RULES = [
+  {
+    stage: 'spec',
+    problems: ['invalid_output'],
+    target: 'respec',
+    reason: 'the spec is missing required sections',
+  },
+  {
+    stage: 'spec',
+    problems: ['agent_error'],
+    target: 'human',
+    reason: 'Gemini call failed (quota?), see run',
+  },
+  {
+    stage: 'plan',
+    problems: ['spec_missing', 'spec_questions', 'untestable_criteria'],
+    target: 'respec',
+    reason: 'the planner needs a better spec',
+  },
+  {
+    stage: 'plan',
+    problems: ['agent_error', 'invalid_output'],
+    target: 'replan',
+    reason: 'the planner failed or returned invalid output',
+  },
+  {
+    stage: 'develop',
+    problems: ['verify_failed', 'agent_error'],
+    target: 'redevelop',
+    reason: 'the developer failed or could not make `pnpm verify` pass',
+  },
+  {
+    stage: 'develop',
+    problems: ['plan_gap'],
+    target: 'replan',
+    reason: 'the developer found a gap in the plan',
+  },
+  {
+    stage: 'fix',
+    problems: ['agent_error'],
+    target: 'retry',
+    reason: 'the fixer failed',
+  },
+  {
+    stage: 'fix',
+    problems: ['budget_exhausted'],
+    target: 'human',
+    reason: 'both automated fix rounds are used',
+  },
+  {
+    stage: 'security',
+    problems: ['invalid_output'],
+    target: 'human',
+    reason: 'the security review could not be parsed',
+  },
+  {
+    stage: 'approval',
+    problems: ['copilot_request_failed'],
+    target: 'human',
+    reason:
+      'the Copilot review could not be requested (is Copilot code review enabled, and does COPILOT_REVIEW_TOKEN have access?)',
+  },
+];
+
+const ruleFor = (stage, problem) =>
+  RULES.find((r) => r.stage === stage && r.problems.includes(problem));
+
+/** Legal targets for one (stage, problem). An external brain picks from these. */
+export function allowedTargets(stage, problem) {
+  if (HARD_GATES.includes(problem)) return ['human'];
+  const rule = ruleFor(stage, problem);
+  return [...new Set([rule?.target ?? 'human', 'human'])];
+}
+
+/** The deterministic brain: one row of the rules table. */
+export function decideByRules({ outcome }) {
+  if (!outcome || outcome.result !== 'problem')
+    return { target: 'human', reason: 'no problem to route', questions: [] };
+  const questions = outcome.questions ?? [];
+  if (HARD_GATES.includes(outcome.problem))
+    return {
+      target: 'human',
+      reason: `hard gate: ${PROBLEM_TEXT[outcome.problem]}`,
+      questions,
+    };
+  const rule = ruleFor(outcome.stage, outcome.problem);
+  if (!rule)
+    return {
+      target: 'human',
+      reason: `no rule for ${outcome.stage}/${outcome.problem}`,
+      questions,
+    };
+  return { target: rule.target, reason: rule.reason, questions };
+}
+
+/**
+ * Route notes that count against the caps: those after the latest route to
+ * a human. Only a person moves an item out of stage:needs-attention, so a
+ * human restart opens a fresh budget.
+ */
+export function routeWindow(routes = []) {
+  const last = routes.findLastIndex((r) => r.target === 'human');
+  return routes.slice(last + 1);
+}
+
+/**
+ * Caps and hard gates, applied after any brain. Nothing bypasses this.
+ * `facts.openPullRequest`: an open PR already exists for the issue's
+ * branch; develop.yml then publishes nothing, so re-develop is unsafe.
+ */
+export function clampDecision({
+  decision,
+  outcome,
+  history = {},
+  caps = ROUTER_CAPS,
+  facts = {},
+}) {
+  const window = routeWindow(history.routes);
+  const questions = decision?.questions ?? outcome?.questions ?? [];
+  const human = (reason, clamped = true) => ({
+    target: 'human',
+    reason,
+    questions,
+    round: window.length,
+    cap: caps.global,
+    clamped,
+  });
+  if (!outcome || outcome.result !== 'problem')
+    return human(decision?.reason ?? 'no problem to route');
+  if (HARD_GATES.includes(outcome.problem))
+    return human(`hard gate: ${PROBLEM_TEXT[outcome.problem]}`);
+  const target = decision?.target;
+  const allowed = allowedTargets(outcome.stage, outcome.problem);
+  if (!allowed.includes(target))
+    return human(
+      `"${target}" is not an allowed target for ${outcome.stage}/${outcome.problem}`,
+    );
+  if (target === 'human') return human(decision.reason, false);
+  if (window.length >= caps.global)
+    return human(
+      `wanted ${TARGET_TEXT[target]}, but the global cap is reached (${window.length}/${caps.global} routed rounds)`,
+    );
+  const used = window.filter((r) => r.target === target).length;
+  if (used >= caps[target])
+    return human(
+      `wanted ${TARGET_TEXT[target]}, but its cap is reached (${used}/${caps[target]})`,
+    );
+  if (target === 'redevelop' && facts.openPullRequest)
+    return human(
+      'wanted re-develop, but an open PR already exists for this issue (develop.yml would publish nothing)',
+    );
+  return {
+    target,
+    reason: decision.reason,
+    questions,
+    round: used + 1,
+    cap: caps[target],
+    clamped: false,
+  };
+}
+
+/**
+ * Picks between the rules and an external brain. Shadow mode (or any mode
+ * but `external`) only records the external pick. In `external` mode the
+ * pick is used only if it is allowed and confident; otherwise rules decide.
+ * The result still goes through clampDecision.
+ */
+export function chooseDecision({ mode, shadow, rules, external, allowed }) {
+  const pick =
+    external &&
+    typeof external.target === 'string' &&
+    typeof external.confidence === 'number' &&
+    Number.isFinite(external.confidence)
+      ? { target: external.target, confidence: external.confidence }
+      : null;
+  const record = pick ? { ...pick, accepted: false } : null;
+  if (shadow || mode !== 'external')
+    return {
+      decision: rules,
+      mode: shadow ? 'shadow' : 'rules',
+      external: record,
+    };
+  if (
+    pick &&
+    allowed.includes(pick.target) &&
+    pick.confidence >= EXTERNAL_MIN_CONFIDENCE
+  )
+    return {
+      decision: {
+        target: pick.target,
+        reason: `external brain chose ${TARGET_TEXT[pick.target] ?? pick.target} (p=${pick.confidence})`,
+        questions: rules.questions,
+      },
+      mode: 'external',
+      external: { ...record, accepted: true },
+    };
+  const why = !pick
+    ? 'no external pick'
+    : !allowed.includes(pick.target)
+      ? `external pick "${pick.target}" is not allowed`
+      : `external confidence ${pick.confidence} < ${EXTERNAL_MIN_CONFIDENCE}`;
+  return {
+    decision: { ...rules, reason: `${rules.reason} (rules; ${why})` },
+    mode: 'external',
+    external: record,
+  };
+}
+
+/** Strictly parses a route note. */
+export function parseRoute(body) {
+  const text = String(body ?? '');
+  const header = /^<!-- pipeline:route ([^\n]*?) -->\n/.exec(text);
+  if (!header) return { ok: false, error: 'not a route note' };
+  const { value: r, error } = lastJsonFence(text);
+  if (error) return { ok: false, error };
+  if (!r || r.v !== OUTCOME_VERSION)
+    return { ok: false, error: 'unsupported version' };
+  if (!ROUTE_TARGETS.includes(r.target) || attrs(header[1]).target !== r.target)
+    return { ok: false, error: `bad target ${r.target}` };
+  if (!Number.isInteger(r.round) || r.round < 0)
+    return { ok: false, error: 'bad round' };
+  return {
+    ok: true,
+    route: {
+      target: r.target,
+      round: r.round,
+      from_stage: OUTCOME_STAGES.includes(r.from_stage) ? r.from_stage : null,
+      problem: PROBLEMS.includes(r.problem) ? r.problem : null,
+      reason: clean(r.reason),
+      questions: cleanList(r.questions),
+    },
+  };
+}
+
+/**
+ * Reads the router's input from an item's comments (oldest first). Only
+ * notes authored by `botLogin` count: the repo is public and anyone can
+ * comment. The latest outcome note must parse and be newer than the latest
+ * route note; otherwise `error` says why and the router goes to a human.
+ */
+export function collectRouterInput({ comments = [], botLogin }) {
+  const history = { outcomes: [], routes: [] };
+  if (!botLogin)
+    return {
+      outcome: null,
+      history,
+      error: 'PIPELINE_BOT_LOGIN is not set, so no note can be trusted',
+    };
+  let latest = null;
+  let latestIndex = -1;
+  let lastRouteIndex = -1;
+  comments.forEach((c, i) => {
+    if (c.user?.login !== botLogin) return;
+    const body = c.body ?? '';
+    if (body.startsWith(MARKERS.outcome)) {
+      const parsed = parseOutcome(body);
+      if (parsed.ok) history.outcomes.push(parsed.outcome);
+      latest = parsed;
+      latestIndex = i;
+    } else if (body.startsWith(MARKERS.route)) {
+      const parsed = parseRoute(body);
+      if (parsed.ok) {
+        history.routes.push(parsed.route);
+        lastRouteIndex = i;
+      }
+    }
+  });
+  const fail = (error) => ({ outcome: null, history, error });
+  if (!latest) return fail('no outcome note from the pipeline bot');
+  if (!latest.ok)
+    return fail(`the latest outcome note is unparseable (${latest.error})`);
+  if (lastRouteIndex > latestIndex)
+    return fail('no new outcome note since the last route note');
+  if (latest.outcome.result !== 'problem')
+    return fail('the latest outcome is a success; there is nothing to route');
+  return { outcome: latest.outcome, history, error: null };
+}
+
+const TARGET_TEXT = {
+  respec: 're-spec',
+  replan: 're-plan',
+  redevelop: 're-develop',
+  retry: 'retry',
+  human: 'a human',
+};
+
+/** Renders the route note, with a full hand-off summary for a human. */
+export function renderRoute({ final, outcome, history = {}, mode, external }) {
+  const json = {
+    v: OUTCOME_VERSION,
+    from_stage: outcome?.stage ?? null,
+    problem: outcome?.problem ?? null,
+    target: final.target,
+    reason: clean(final.reason),
+    round: final.round,
+    cap: final.cap,
+    mode,
+    external: external ?? null,
+    questions: cleanList(final.questions),
+  };
+  const stage = targetStage(final.target, outcome?.stage);
+  const lines = [
+    `${MARKERS.route} target=${final.target} round=${final.round} -->`,
+  ];
+  if (final.target === 'human') {
+    lines.push(
+      `**Routed to a human (\`${stage}\`), because:** ${clean(final.reason)}`,
+    );
+    const window = routeWindow(history.routes);
+    const tried = [
+      ...window.map(
+        (r, i) =>
+          `- Round ${i + 1}: ${r.from_stage ?? '?'} reported \`${r.problem ?? '?'}\`; routed to ${TARGET_TEXT[r.target]}.`,
+      ),
+    ];
+    if (outcome)
+      tried.push(
+        `- Now: ${outcome.stage} reported \`${outcome.problem}\`: ${outcome.summary}${outcome.run_url ? ` (${outcome.run_url})` : ''}`,
+      );
+    if (tried.length) lines.push('', '#### What was tried', ...tried);
+    const open = [
+      ...new Set([
+        ...window.flatMap((r) => r.questions),
+        ...cleanList(final.questions),
+      ]),
+    ];
+    if (open.length)
+      lines.push('', '#### Open questions', ...open.map((q) => `- ${q}`));
+    lines.push(
+      '',
+      'Answer or fix the cause, then restart the stage (see docs/pipeline.md, "When it stops at stage:needs-attention"). A restart opens a fresh loop budget.',
+    );
+  } else {
+    lines.push(
+      `**Routed to ${TARGET_TEXT[final.target]} (\`${stage}\`), round ${final.round}/${final.cap}, because:** ${clean(final.reason)}`,
+    );
+    const qs = cleanList(final.questions);
+    if (qs.length)
+      lines.push('', 'Questions to answer:', ...qs.map((q) => `- ${q}`));
+  }
+  lines.push('', '```json', JSON.stringify(json), '```');
+  return lines.join('\n').slice(0, 60_000);
+}
+
+/**
+ * The whole routing decision, pure: input -> rules (+ external) -> clamp ->
+ * note. `external` is the (untrusted) pick from the external brain job.
+ */
+export function planRoute({
+  comments,
+  botLogin,
+  mode = 'rules',
+  shadow = false,
+  external = null,
+  facts = {},
+  caps = ROUTER_CAPS,
+}) {
+  const { outcome, history, error } = collectRouterInput({
+    comments,
+    botLogin,
+  });
+  const allowed = outcome
+    ? allowedTargets(outcome.stage, outcome.problem)
+    : ['human'];
+  const rules = error
+    ? { target: 'human', reason: error, questions: [] }
+    : decideByRules({ outcome, history });
+  const chosen = chooseDecision({
+    mode,
+    shadow,
+    rules,
+    external,
+    allowed,
+  });
+  const final = clampDecision({
+    decision: chosen.decision,
+    outcome,
+    history,
+    caps,
+    facts,
+  });
+  return {
+    final,
+    stage: targetStage(final.target, outcome?.stage),
+    outcome,
+    allowed,
+    body: renderRoute({
+      final,
+      outcome,
+      history,
+      mode: chosen.mode,
+      external: chosen.external,
+    }),
+  };
+}
+
+// ---------------------------------------------------------------- classify
+
+/** Spec step: agent failure vs. malformed output vs. success. */
+export function classifySpec({ jobResult, spec }) {
+  if (jobResult !== 'success' || !String(spec ?? '').trim())
+    return {
+      stage: 'spec',
+      result: 'problem',
+      problem: 'agent_error',
+      summary: 'Spec stopped: Gemini call failed (quota?), see run.',
+      details: [
+        `Agent job result: ${jobResult}; output was ${String(spec ?? '').trim() ? 'present' : 'empty'}.`,
+      ],
+    };
+  const v = validateSpec(spec);
+  if (!v.ok)
+    return {
+      stage: 'spec',
+      result: 'problem',
+      problem: 'invalid_output',
+      summary: 'Spec stopped: the output is missing required sections.',
+      details: [`Missing: ${v.missing.join(', ')}.`],
+    };
+  return { stage: 'spec', result: 'success', summary: 'Spec posted.' };
+}
+
+const parseJson = (raw) => {
+  try {
+    const v = JSON.parse(String(raw ?? ''));
+    return v && typeof v === 'object' ? v : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Plan step: the planner's JSON (status planned | problem) -> outcome. */
+export function classifyPlan({ jobResult, raw }) {
+  const r = parseJson(raw);
+  if (jobResult !== 'success' && !r)
+    return {
+      stage: 'plan',
+      result: 'problem',
+      problem: 'agent_error',
+      details: [`Agent job result: ${jobResult}.`],
+    };
+  if (!r)
+    return { stage: 'plan', result: 'problem', problem: 'invalid_output' };
+  if (r.status === 'planned' && typeof r.plan === 'string' && r.plan.trim())
+    return { stage: 'plan', result: 'success', summary: 'Plan posted.' };
+  if (r.status === 'problem')
+    return {
+      stage: 'plan',
+      result: 'problem',
+      problem: r.problem,
+      questions: r.questions,
+      details: r.details,
+    };
+  return {
+    stage: 'plan',
+    result: 'problem',
+    problem: 'invalid_output',
+    details: ['The planner returned no plan.'],
+  };
+}
+
+/** Develop step: agent JSON, job results and the patch check -> outcome. */
+export function classifyDevelop({
+  implementResult,
+  publishResult,
+  raw,
+  patchRejected,
+}) {
+  const r = parseJson(raw);
+  if (patchRejected)
+    return {
+      stage: 'develop',
+      result: 'problem',
+      problem: 'forbidden_path',
+      details: ['check-patch rejected the patch: it touches protected paths.'],
+    };
+  if (r?.status === 'blocked')
+    return {
+      stage: 'develop',
+      result: 'problem',
+      problem: r.problem && r.problem !== 'none' ? r.problem : 'agent_error',
+      details: [r.blocked_reason || 'The developer stopped without a reason.'],
+    };
+  if (implementResult === 'success' && publishResult === 'success')
+    return { stage: 'develop', result: 'success', summary: 'Draft PR opened.' };
+  return {
+    stage: 'develop',
+    result: 'problem',
+    problem: 'agent_error',
+    details: [
+      `Implement job: ${implementResult}; publish job: ${publishResult}.`,
+    ],
+  };
+}
+
+/** Fix step (the fixer or its push failed). */
+export function classifyFix({ fixResult, pushResult, patchRejected }) {
+  if (patchRejected)
+    return {
+      stage: 'fix',
+      result: 'problem',
+      problem: 'forbidden_path',
+      details: ['check-patch rejected the fix: it touches protected paths.'],
+    };
+  if (fixResult === 'success' && pushResult === 'success')
+    return { stage: 'fix', result: 'success', summary: 'Fix pushed.' };
+  return {
+    stage: 'fix',
+    result: 'problem',
+    problem: 'agent_error',
+    details: [
+      `Fixer job: ${fixResult}; push job: ${pushResult}. The fixer made no usable change, or the branch moved.`,
+    ],
+  };
 }

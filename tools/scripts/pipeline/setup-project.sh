@@ -21,6 +21,8 @@ field_id=$(gh project field-list "$number" --owner "$owner" --format json \
   --jq '.fields[] | select(.name == "Status") | .id')
 
 # Replaces the Status options. Existing items lose their Status value.
+# On an existing Project, add a missing option (e.g. "Routing") in the
+# Project UI instead of re-running this.
 # shellcheck disable=SC2016 # GraphQL variables, not shell
 gh api graphql -f query='
 mutation($field: ID!) {
@@ -35,6 +37,7 @@ mutation($field: ID!) {
       { name: "Reviewing",       color: PURPLE, description: "stage:reviewing" }
       { name: "Fixing",          color: YELLOW, description: "stage:fixing" }
       { name: "Human approval",  color: ORANGE, description: "stage:human-approval" }
+      { name: "Routing",         color: PINK,   description: "stage:routing" }
       { name: "Needs attention", color: RED,    description: "stage:needs-attention" }
       { name: "Done",            color: GREEN,  description: "merged" }
     ]
