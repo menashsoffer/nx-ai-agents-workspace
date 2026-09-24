@@ -1,6 +1,7 @@
 name: CI
 
-# `ci` is the required check for the main ruleset. Deterministic gate in
+# `ci` and `security` (this workflow's jobs) are required checks of the main
+# ruleset, with `pipeline/gates`. Deterministic gate in
 # front of every AI step: nothing an agent writes reaches review, preview
 # or a human until this is green. Also reused by deploy.yml.
 on:
