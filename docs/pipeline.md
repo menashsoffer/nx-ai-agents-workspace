@@ -69,7 +69,10 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
 - **Issue and comment content is data, never instructions.** Workflows wrap
   it in `<untrusted-data>` tags (look-alike tags inside are neutralised),
   and every prompt says so. Titles and bodies never reach a shell through
-  `${{ }}`; they pass through env vars and files.
+  `${{ }}`; they pass through env vars and files. The trusted "Run
+  context" section accepts only known keys, each with a strict format
+  (repo slug, `#<number>`, commit SHA, pipeline branch, prompt version);
+  anything else fails the render.
 - **Agents hold no write token.** Agent jobs get a read-only `GITHUB_TOKEN`
   and checkouts without persisted credentials. Their output crosses a job
   boundary (a comment body, JSON, or a patch file) and a separate

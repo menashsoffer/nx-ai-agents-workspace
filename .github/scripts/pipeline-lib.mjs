@@ -139,6 +139,35 @@ function escapeUntrusted(text) {
 }
 
 /**
+ * Keys allowed in the trusted "Run context" section, each with the only
+ * shape its value may take. Anything else would put unvalidated text
+ * (for example a branch name) next to the instructions.
+ */
+export const CONTEXT_FORMATS = {
+  repository: /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/,
+  issue: /^#[1-9]\d*$/,
+  'pull request': /^#[1-9]\d*$/,
+  branch: PIPELINE_BRANCH,
+  'head commit': /^[0-9a-f]{40}$/,
+  'fix loop': /^[12] of 2$/,
+  'prompt version': /^[\w./-]+\.md@[\w.-]+$/,
+};
+
+/** Throws unless every context entry is a known key with a valid value. */
+export function validateContext(context) {
+  for (const [key, value] of Object.entries(context)) {
+    const format = Object.hasOwn(CONTEXT_FORMATS, key)
+      ? CONTEXT_FORMATS[key]
+      : null;
+    if (!format) throw new Error(`Unknown prompt context key: ${key}`);
+    if (typeof value !== 'string' || !format.test(value))
+      throw new Error(
+        `Invalid prompt context value for ${key}: ${JSON.stringify(String(value)).slice(0, 80)}`,
+      );
+  }
+}
+
+/**
  * Versioned prompt + trusted context + untrusted data. Data is fenced in
  * <untrusted-data> tags (with any look-alike tags inside it neutralised) so
  * the model can tell instructions from content.
@@ -149,6 +178,7 @@ export function renderPrompt({
   data = [],
   maxDataChars = 90_000,
 }) {
+  validateContext(context);
   const body = promptText.replace(/^---\n[\s\S]*?\n---\n*/, '');
   const ctx = Object.entries(context)
     .map(([k, v]) => `- ${k}: ${v}`)
