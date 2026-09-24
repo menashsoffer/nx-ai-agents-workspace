@@ -1,9 +1,13 @@
 name: Pipeline · Plan
 
-# stage:spec -> Claude (CTO) writes an implementation plan against this Nx
-# workspace -> comment + outcome note -> stage:planned. When it cannot plan
-# (spec problems, hard gates, a failed run) it appends an outcome note and
-# sets stage:routing instead. The agent is read-only; a deterministic job posts.
+# stage:qualified -> one Claude run (read-only) writes a spec AND an
+# implementation plan against this Nx workspace. A deterministic job runs the
+# auto-approval checks (pipeline-lib evaluatePlanApproval: schema, testable
+# criteria, scope, size, no embedded instructions). All pass: it posts the
+# two comments (pipeline:spec, pipeline:plan), appends a success outcome
+# note and sets stage:planned. Any check fails, or the agent reports a
+# problem or the run fails: it appends a problem outcome note and sets
+# stage:routing instead. (This replaces the old Gemini spec.yml.)
 on:
   issues:
     types: [labeled]
@@ -12,7 +16,7 @@ permissions: {}
 
 jobs:
   plan:
-    if: ${{ github.event.label.name == 'stage:spec' && !github.event.issue.pull_request && github.event.issue.state == 'open' }}
+    if: ${{ github.event.label.name == 'stage:qualified' && !github.event.issue.pull_request && github.event.issue.state == 'open' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
@@ -29,8 +33,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # The spec comes only from the pipeline bot's marker comment.
-      - name: Collect issue, spec and comments (untrusted data)
+      # Earlier spec/plan come only from the pipeline bot's marker comments.
+      - name: Collect issue, earlier spec/plan and comments (untrusted data)
         env:
           GH_TOKEN: ${{ github.token }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
@@ -62,7 +66,7 @@ jobs:
             --max-turns 40
             --allowedTools "Read,Glob,Grep"
             --disallowedTools "Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch"
-            --json-schema '{"type":"object","additionalProperties":false,"required":["status","plan","problem","questions","details"],"properties":{"status":{"type":"string","enum":["planned","problem"]},"plan":{"type":"string"},"problem":{"type":"string","enum":["none","spec_missing","spec_questions","untestable_criteria","protected_surface","needs_secrets_ci_infra","scope_split","embedded_instructions"]},"questions":{"type":"array","items":{"type":"string"}},"details":{"type":"array","items":{"type":"string"}}}}'
+            --json-schema '{"type":"object","additionalProperties":false,"required":["status","problem","questions","details","signals","spec","plan"],"properties":{"status":{"type":"string","enum":["planned","problem"]},"problem":{"type":"string","enum":["none","spec_questions","scope_split","protected_surface","needs_secrets_ci_infra","embedded_instructions"]},"questions":{"type":"array","items":{"type":"string"}},"details":{"type":"array","items":{"type":"string"}},"signals":{"type":"object","additionalProperties":false,"required":["embedded_instructions","needs_secrets_ci_infra"],"properties":{"embedded_instructions":{"type":"boolean"},"needs_secrets_ci_infra":{"type":"boolean"}}},"spec":{"type":"object","additionalProperties":false,"required":["goal","acceptance_criteria","rtl_accessibility","test_plan","out_of_scope","assumptions"],"properties":{"goal":{"type":"string"},"acceptance_criteria":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["text","testable"],"properties":{"text":{"type":"string"},"testable":{"type":"boolean"}}}},"rtl_accessibility":{"type":"string"},"test_plan":{"type":"string"},"out_of_scope":{"type":"string"},"assumptions":{"type":"string"}}},"plan":{"type":"object","additionalProperties":false,"required":["approach","changes","tests","risks","definition_of_done"],"properties":{"approach":{"type":"string"},"changes":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["project","file","change","lines"],"properties":{"project":{"type":"string"},"file":{"type":"string"},"change":{"type":"string"},"lines":{"type":"integer","minimum":0}}}},"tests":{"type":"string"},"risks":{"type":"string"},"definition_of_done":{"type":"string"}}}}}'
 
   publish:
     needs: plan
@@ -95,19 +99,18 @@ jobs:
         run: |
           printf '%s' "$RESULT" > result.json
           node .github/scripts/pipeline.mjs classify plan --job-result "$JOB_RESULT" \
-            --result result.json --prompt-version "plan.md@${VERSION:-unknown}" --out outcome.json
+            --result result.json --prompt-version "plan.md@${VERSION:-unknown}" --out outcome.json \
+            --spec-out spec-comment.md --plan-out plan-comment.md
 
-      - name: Post plan and move to stage:planned
+      - name: Post spec and plan, then move to stage:planned
         if: ${{ steps.classify.outputs.result == 'success' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ github.event.issue.number }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
-          VERSION: ${{ needs.plan.outputs.prompt_version }}
         run: |
-          { echo "### Implementation plan"; echo; jq -r '.plan' result.json; echo;
-            echo "<sub>Generated by Claude with prompt plan.md@$VERSION. Development starts automatically (stage:planned).</sub>"; } > body.md
-          node .github/scripts/pipeline.mjs upsert-comment "$N" plan body.md
+          node .github/scripts/pipeline.mjs upsert-comment "$N" spec spec-comment.md
+          node .github/scripts/pipeline.mjs upsert-comment "$N" plan plan-comment.md
           node .github/scripts/pipeline.mjs outcome "$N" outcome.json
           node .github/scripts/pipeline.mjs set-stage "$N" stage:planned
 

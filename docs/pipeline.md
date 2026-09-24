@@ -7,7 +7,7 @@ write. **No agent can merge.** Only a code owner's approval on a green PR
 unlocks the merge button.
 
 Every stage leaves an **outcome note** (success or problem). A problem goes
-to one **router** that decides where the work goes next: re-spec, re-plan,
+to one **router** that decides where the work goes next: re-plan,
 re-develop, retry, or a human. Loops are bounded; hard gates always stop
 at a human. See [Router](#router).
 
@@ -24,20 +24,20 @@ and sets the next label itself. Dashed red arrows: a stage that hits a problem
 appends a problem outcome note and sets `stage:routing`; only the router
 decides what happens next.
 
-| Stage label             | Set by         | Meaning / next step                                                                               |
-| ----------------------- | -------------- | ------------------------------------------------------------------------------------------------- |
-| `stage:inbox`           | `inbox.yml`    | New issue. A maintainer triages it.                                                               |
-| `stage:qualified`       | **a human**    | Starts the spec agent.                                                                            |
-| `stage:spec`            | `spec.yml`     | Spec comment posted. Starts the plan agent.                                                       |
-| `stage:planned`         | `plan.yml`     | Plan comment posted. Starts the develop agent.                                                    |
-| `stage:building`        | `develop.yml`  | Draft PR open (on the issue and the PR). CI runs.                                                 |
-| `stage:reviewing`       | `security.yml` | Security review posted on the PR.                                                                 |
-| `stage:fixing`          | `fix.yml`      | Fixer is applying review feedback.                                                                |
-| `stage:human-approval`  | `approval.yml` | Everything green. A human reviews the PR and the preview, then approves and merges.               |
-| `stage:routing`         | any step       | A stage reported a problem in an outcome note. `router.yml` decides the next step.                |
-| `stage:needs-attention` | `router.yml`   | The router handed off. Read its latest `pipeline:route` note and act.                             |
-| `stage:done`            | `done.yml`     | The PR merged. Set on the PR and its issues; terminal. See [When a PR closes](#when-a-pr-closes). |
-| `fix-loop:1` / `:2`     | `fix.yml`      | Automated fix rounds used. At most two. Cleared on escalation and at `stage:human-approval`.      |
+| Stage label             | Set by         | Meaning / next step                                                                                         |
+| ----------------------- | -------------- | ----------------------------------------------------------------------------------------------------------- |
+| `stage:inbox`           | `inbox.yml`    | New issue. A maintainer triages it.                                                                         |
+| `stage:qualified`       | **a human**    | Starts the planning agent (`plan.yml`): one Claude run writes the spec **and** the plan.                    |
+| `stage:spec`            | _nothing_      | **Deprecated.** No workflow sets it or starts a stage on it. It stays so old items keep their board column. |
+| `stage:planned`         | `plan.yml`     | Spec and plan comments posted and auto-approved. Starts the develop agent.                                  |
+| `stage:building`        | `develop.yml`  | Draft PR open (on the issue and the PR). CI runs.                                                           |
+| `stage:reviewing`       | `security.yml` | Security review posted on the PR.                                                                           |
+| `stage:fixing`          | `fix.yml`      | Fixer is applying review feedback.                                                                          |
+| `stage:human-approval`  | `approval.yml` | Everything green. A human reviews the PR and the preview, then approves and merges.                         |
+| `stage:routing`         | any step       | A stage reported a problem in an outcome note. `router.yml` decides the next step.                          |
+| `stage:needs-attention` | `router.yml`   | The router handed off. Read its latest `pipeline:route` note and act.                                       |
+| `stage:done`            | `done.yml`     | The PR merged. Set on the PR and its issues; terminal. See [When a PR closes](#when-a-pr-closes).           |
+| `fix-loop:1` / `:2`     | `fix.yml`      | Automated fix rounds used. At most two. Cleared on escalation and at `stage:human-approval`.                |
 
 From `stage:building` on, the **PR** carries the stage; the issue stays at
 `stage:building` until the PR closes. Then both get `stage:done` (merged),
@@ -77,8 +77,7 @@ and manual runs); an open issue whose PR was closed still routes.
 | Workflow           | Trigger                                                     | Agent                          | Output                                                                                             |
 | ------------------ | ----------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------- |
 | `inbox.yml`        | issue opened                                                | none                           | `stage:inbox`, Project item in Inbox                                                               |
-| `spec.yml`         | `stage:qualified` added                                     | Gemini (`spec.md`)             | spec comment, `stage:spec`                                                                         |
-| `plan.yml`         | `stage:spec` added                                          | Claude (`plan.md`)             | plan comment, `stage:planned` (or an outcome note + `stage:routing`)                               |
+| `plan.yml`         | `stage:qualified` added                                     | Claude (`plan.md`)             | spec + plan comments, `stage:planned` (or an outcome note + `stage:routing`)                       |
 | `develop.yml`      | `stage:planned` added                                       | Claude (`develop.md`)          | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`                                  |
 | `router.yml`       | `stage:routing` added (open issue or PR), or manual         | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)                                |
 | `ci.yml`           | every PR                                                    | none                           | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site)                          |
@@ -108,8 +107,9 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   and checkouts without persisted credentials. Their output crosses a job
   boundary (a comment body, JSON, or a patch file) and a separate
   deterministic job validates it before anything is written:
-  - spec: required headings present;
-  - plan / develop: JSON schema (`--json-schema`), status and `problem` fields decide the outcome;
+  - plan: JSON schema (`--json-schema`) with two parts, `spec` and `plan`, then the
+    auto-approval checks below;
+  - develop: JSON schema (`--json-schema`), status and `problem` fields decide the outcome;
   - security review: exactly one fenced `json` block, parsed and normalised
     (zero or several blocks fail the review: `pipeline/security` = error,
     outcome note `invalid_output` → router → human); unknown severities
@@ -123,8 +123,8 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
     cannot parse. So
     **agents cannot add or change dependencies, scripts or projects**: a
     task that needs that stops at CI or review and a human finishes it.
-- **Minimal tools.** Spec and security review: Gemini read-only file tools.
-  Plan: Claude `Read, Glob, Grep`. Develop: file edits, `pnpm` and local
+- **Minimal tools.** Security review: Gemini read-only file tools.
+  Plan (spec + plan): Claude `Read, Glob, Grep`. Develop: file edits, `pnpm` and local
   `git add/commit` only; no push, `gh`, `curl` or web. Fix: file edits only,
   **no shell**; a separate job with no secrets formats the patch and runs
   `pnpm verify` before the push job.
@@ -150,7 +150,7 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   token can post a passing one). There are no bypass actors. The pipeline App has no `workflows` or `administration`
   permission. `GITHUB_TOKEN` cannot approve PRs.
 - **Bounded loops.** Two automated fix rounds per PR. Router loops per item:
-  re-spec 2, re-plan 1, re-develop 1, fix retry 1, and 5 routed rounds in
+  re-plan 2, re-develop 1, fix retry 1, and 5 routed rounds in
   total (`ROUTER_CAPS`); after that, a human. See [Router](#router).
 - **Notes are trusted by author.** The router reads only outcome and route
   notes written by `PIPELINE_BOT_LOGIN`; anyone can comment on a public repo.
@@ -267,23 +267,24 @@ Nothing happens until these files are on `main`.
 1. **New issue → Task.** Fill in goal, acceptance criteria, size, area.
    `inbox.yml` labels it `stage:inbox` and adds it to the Project.
 2. **Triage.** If it is ready, add `stage:qualified`.
-3. **Spec** (~1 min). Gemini posts a spec comment and the label moves to
-   `stage:spec`. Edit the comment if needed.
-4. **Plan** (~2 min). Claude posts a plan and labels `stage:planned`. If
-   the spec has gaps, it reports them as questions and the router sends
-   the issue back to the spec writer (up to twice) before asking you.
-5. **Develop** (5 to 30 min). Claude implements on `issue-<n>-<slug>`, runs
+3. **Spec and plan** (~2 min). One Claude run writes both and the
+   workflow posts two comments (`<!-- pipeline:spec -->` and
+   `<!-- pipeline:plan -->`). If every [auto-approval check](#spec-and-plan-auto-approval)
+   passes, the label moves straight to `stage:planned` and development
+   starts. If one fails, the item goes to the router (an unclear issue or
+   a plan that is too big goes to you).
+4. **Develop** (5 to 30 min). Claude implements on `issue-<n>-<slug>`, runs
    `pnpm verify`, and the workflow opens a **draft PR** linked to the issue.
-6. **CI, preview, review.** `ci` must pass. The preview comment links
+5. **CI, preview, review.** `ci` must pass. The preview comment links
    `https://<owner>.github.io/<repo>/pr-<n>/`. Gemini's security review
    follows. Blocking findings become threads and trigger up to two fix rounds.
-7. **Copilot.** With CI green, the security status clean and no open
+6. **Copilot.** With CI green, the security status clean and no open
    threads, the pipeline requests Copilot. Its comments go through the same
    fix loop.
-8. **You.** On `stage:human-approval` the PR is marked ready and you are
+7. **You.** On `stage:human-approval` the PR is marked ready and you are
    requested as code owner. Check the diff and the preview, approve, merge.
    The branch must be up to date with `main` (the ruleset enforces it).
-9. **Done.** The issue closes; the PR and the issue get `stage:done` and
+8. **Done.** The issue closes; the PR and the issue get `stage:done` and
    both cards move to Done. If you close the PR without merging instead,
    the issue gets a `pr_closed` note and comes back to you through the
    router.
@@ -297,8 +298,9 @@ question in one place. The outcome notes above it have the details. Then
 either finish the PR by hand (you are the reviewer anyway), or answer the
 questions / fix the cause and restart a stage:
 
-- spec / plan / develop: add the stage's trigger label (`stage:qualified`,
-  `stage:spec`, `stage:planned`). The stage's own label change then clears
+- spec + plan / develop: add the stage's trigger label (`stage:qualified`,
+  `stage:planned`; an old item stuck in the deprecated `stage:spec` restarts
+  with `stage:qualified`). The stage's own label change then clears
   `stage:needs-attention`;
 - fix loop: remove `stage:needs-attention` (escalation already cleared
   `fix-loop:*`, so the PR gets two fresh rounds), then run **Pipeline ·
@@ -319,6 +321,50 @@ latest route to a human, so a restart after a hand-off always starts with
 the full budget. There is nothing else to reset: escalation clears the
 fix-loop label, which resets the fix rounds.
 
+## Spec and plan (auto-approval)
+
+`plan.yml` replaced the old two-stage flow (a Gemini spec, then a Claude
+plan). One read-only Claude run (`plan.md`, JSON schema) returns two
+separate artifacts, and a deterministic job posts each as its own bot
+comment under the same markers as before (`<!-- pipeline:spec -->`,
+`<!-- pipeline:plan -->`), so develop, fix and the pipeline map read
+exactly what they used to:
+
+- `spec`: goal, acceptance criteria (each with a `testable` flag), RTL &
+  accessibility, test plan, out of scope, assumptions;
+- `plan`: approach, changes (`project`, `file`, `change`, estimated `lines`
+  per file), tests, risks, definition of done.
+
+Nothing waits for a human. The item moves straight to `stage:planned` only
+if **all** of these hold (`evaluatePlanApproval` in `pipeline-lib.mjs`):
+
+| Check                                                                    | On failure                                   |
+| ------------------------------------------------------------------------ | -------------------------------------------- |
+| Both parts present, every required section non-empty, every change valid | `invalid_output` → re-plan                   |
+| Every acceptance criterion non-empty and marked testable                 | `spec_questions` → human                     |
+| No planned file matches `FORBIDDEN_PATH_PATTERNS`                        | `protected_surface` → human (hard gate)      |
+| The planner reports no need for secrets, CI or infrastructure            | `needs_secrets_ci_infra` → human (hard gate) |
+| At most `PLAN_MAX_FILES` (10) files and `PLAN_MAX_LINES` (400) lines     | `scope_split` → human                        |
+| The planner reports no instructions embedded in the issue                | `embedded_instructions` → human (hard gate)  |
+
+The two size limits are constants at the top of the plan section of
+`pipeline-lib.mjs`, set for a two-week trial: tune them there. When several
+checks fail, the note carries every reason and the highest-priority code
+(gates first). The planner may also report a problem itself (`status:
+"problem"`); `agent_error` and `invalid_output` are only ever assigned by
+the workflow.
+
+**Old items in `stage:spec`.** Nothing sets `stage:spec` or starts a stage
+on it any more, so an item that was already there (its Gemini spec comment
+stays; the Project card stays in **Spec**) does not move by itself. Add
+`stage:qualified` to run the combined stage: it takes the old spec as an
+earlier version, overwrites both comments and continues to `stage:planned`.
+(A plan run that was already in flight when this changed still finishes the
+old way.) If the item already has both a spec and a plan comment you trust,
+`stage:planned` develops from them as they are. Old
+`spec`-stage outcome notes and `respec` route notes still parse: see
+[Router](#router).
+
 ## Router
 
 ### Outcome notes
@@ -329,18 +375,18 @@ so the history stays readable:
 
 ````
 <!-- pipeline:outcome stage=plan result=problem problem=spec_questions run=123456 -->
-**Plan stopped: the spec has open questions.**
+**Plan stopped: the issue is unclear or its criteria are not testable.**
 
 - details, one per line
 - Question: questions for the next stage
 - Run: https://github.com/<owner>/<repo>/actions/runs/123456
 
 ```json
-{"v":1,"stage":"plan","result":"problem","problem":"spec_questions","summary":"...","questions":["..."],"details":["..."],"run_url":"...","prompt_version":"plan.md@2","item":22}
+{"v":1,"stage":"plan","result":"problem","problem":"spec_questions","summary":"...","questions":["..."],"details":["..."],"run_url":"...","prompt_version":"plan.md@4","item":22}
 ```
 ````
 
-`stage` is one of `spec`, `plan`, `develop`, `security`, `fix`, `approval`, `ci`, `pr`;
+`stage` is one of `spec` (legacy: notes written before spec and plan merged), `plan`, `develop`, `security`, `fix`, `approval`, `ci`, `pr`;
 `result` is `success` or `problem`. On success the stage moves to its next
 label itself (no extra run). On a problem it sets `stage:routing`.
 `pipeline.mjs outcome <n> <file.json>` posts a note; `pipeline.mjs classify
@@ -350,46 +396,48 @@ forge a marker.
 
 ### Problem codes (`PROBLEMS`)
 
-| Code                     | Reported by          | Meaning                                                                                                     |
-| ------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `invalid_output`         | spec, plan, security | The agent answered, but not in the required shape                                                           |
-| `agent_error`            | spec, plan, dev, fix | The run failed: API/quota/timeout, empty output, no changes                                                 |
-| `spec_missing`           | plan                 | No spec comment                                                                                             |
-| `spec_questions`         | plan                 | The spec's open questions block planning                                                                    |
-| `untestable_criteria`    | plan                 | Acceptance criteria untestable or contradictory                                                             |
-| `verify_failed`          | develop, fix         | `pnpm verify` could not be made green (fix: the secret-free verify job failed on the patch)                 |
-| `plan_gap`               | develop              | The plan is wrong or incomplete                                                                             |
-| `budget_exhausted`       | fix                  | Both fix rounds used                                                                                        |
-| `copilot_request_failed` | approval             | The Copilot review could not be requested                                                                   |
-| `ci_failed`              | ci                   | CI failed on a pipeline PR's current head (`security.yml`'s `ci-failed` job)                                |
-| `pr_closed`              | pr                   | The issue's PR was closed without merging and no other open PR is linked (`done.yml`)                       |
-| `protected_surface`      | plan, develop        | **Gate.** Touches `tools/security/`, `.github/`, `CODEOWNERS`, supply-chain settings, any manifest/lockfile |
-| `needs_secrets_ci_infra` | plan, develop        | **Gate.** Needs secrets, CI/workflow changes, infra, a server                                               |
-| `scope_split`            | plan                 | **Gate.** Bigger than size L; split the issue                                                               |
-| `embedded_instructions`  | plan                 | **Gate.** The issue contains instructions aimed at the agents                                               |
-| `forbidden_path`         | develop, fix         | **Gate.** `check-patch` rejected the patch                                                                  |
+| Code                     | Reported by    | Meaning                                                                                                     |
+| ------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------- |
+| `invalid_output`         | plan, security | The agent answered, but not in the required shape (plan: a required spec or plan section is missing)        |
+| `agent_error`            | plan, dev, fix | The run failed: API/quota/timeout, empty output, no changes                                                 |
+| `spec_missing`           | _legacy_       | Old plan-stage note: no spec comment. Still read, no longer written                                         |
+| `spec_questions`         | plan           | The issue is unclear (blocking questions), or a criterion is not testable                                   |
+| `untestable_criteria`    | _legacy_       | Old plan-stage note: criteria untestable. Still read, no longer written                                     |
+| `verify_failed`          | develop, fix   | `pnpm verify` could not be made green (fix: the secret-free verify job failed on the patch)                 |
+| `plan_gap`               | develop        | The plan is wrong or incomplete                                                                             |
+| `budget_exhausted`       | fix            | Both fix rounds used                                                                                        |
+| `copilot_request_failed` | approval       | The Copilot review could not be requested                                                                   |
+| `ci_failed`              | ci             | CI failed on a pipeline PR's current head (`security.yml`'s `ci-failed` job)                                |
+| `pr_closed`              | pr             | The issue's PR was closed without merging and no other open PR is linked (`done.yml`)                       |
+| `protected_surface`      | plan, develop  | **Gate.** Touches `tools/security/`, `.github/`, `CODEOWNERS`, supply-chain settings, any manifest/lockfile |
+| `needs_secrets_ci_infra` | plan, develop  | **Gate.** Needs secrets, CI/workflow changes, infra, a server                                               |
+| `scope_split`            | plan           | Bigger than size L, or over the auto-approval size limits; split the issue (routes to a human)              |
+| `embedded_instructions`  | plan           | **Gate.** The issue contains instructions aimed at the agents                                               |
+| `forbidden_path`         | develop, fix   | **Gate.** `check-patch` rejected the patch                                                                  |
 
 ### Rules table (`decideByRules`)
 
-| Stage    | Problem                                                 | Target                                                      |
-| -------- | ------------------------------------------------------- | ----------------------------------------------------------- |
-| spec     | `invalid_output`                                        | re-spec (`stage:qualified`)                                 |
-| spec     | `agent_error`                                           | human: "Gemini call failed (quota?), see run"; no loop used |
-| plan     | `spec_missing`, `spec_questions`, `untestable_criteria` | re-spec, carrying the planner's questions                   |
-| plan     | `agent_error`, `invalid_output`                         | re-plan (`stage:spec`)                                      |
-| develop  | `verify_failed`, `agent_error`                          | re-develop (`stage:planned`)                                |
-| develop  | `plan_gap`                                              | re-plan                                                     |
-| fix      | `agent_error`                                           | retry: `fix.yml` with `retry: true`                         |
-| fix      | `budget_exhausted`                                      | human                                                       |
-| security | `invalid_output`                                        | human                                                       |
-| approval | `copilot_request_failed`                                | human                                                       |
-| ci       | `ci_failed`                                             | human (proposed later: one fixer retry with the CI log)     |
-| pr       | `pr_closed`                                             | human only; never retried (the close was deliberate)        |
-| any      | hard gate, anything unlisted, or no valid outcome note  | human                                                       |
+| Stage    | Problem                                                | Target                                                      |
+| -------- | ------------------------------------------------------ | ----------------------------------------------------------- |
+| spec     | `invalid_output`                                       | re-plan (legacy note; `stage:qualified`)                    |
+| spec     | `agent_error`                                          | human: "Gemini call failed (quota?), see run"; no loop used |
+| plan     | `agent_error`, `invalid_output`                        | re-plan (`stage:qualified`)                                 |
+| plan     | `spec_questions`, `scope_split`                        | human                                                       |
+| plan     | `spec_missing`, `untestable_criteria`                  | re-plan (legacy notes only)                                 |
+| develop  | `verify_failed`, `agent_error`                         | re-develop (`stage:planned`)                                |
+| develop  | `plan_gap`                                             | re-plan (`stage:qualified`)                                 |
+| fix      | `agent_error`                                          | retry: `fix.yml` with `retry: true`                         |
+| fix      | `budget_exhausted`                                     | human                                                       |
+| security | `invalid_output`                                       | human                                                       |
+| approval | `copilot_request_failed`                               | human                                                       |
+| ci       | `ci_failed`                                            | human (proposed later: one fixer retry with the CI log)     |
+| pr       | `pr_closed`                                            | human only; never retried (the close was deliberate)        |
+| any      | hard gate, anything unlisted, or no valid outcome note | human                                                       |
 
-A re-spec shows the planner's questions in the route note; the spec prompt
-answers them from the issue, human comments and the repo, and lists what
-it still cannot answer under "Open questions".
+There is no re-spec target any more: one stage writes both artifacts.
+A leftover `respec` route note in an issue's history is read as a re-plan
+(and counts against the re-plan cap), and an old `spec`-stage outcome note
+routes by the legacy rows above.
 
 ### Caps and hard gates (`clampDecision`)
 
@@ -399,8 +447,8 @@ After any brain decides, `clampDecision` applies, and nothing bypasses it:
   caps or brain.
 - The target must be in `allowedTargets(stage, problem)` (that row's
   target, or human).
-- **Caps** (`ROUTER_CAPS`): re-spec 2 (shared by every row that re-specs),
-  re-plan 1, re-develop 1, retry 1, and 5 routed rounds in total per item.
+- **Caps** (`ROUTER_CAPS`): re-plan 2 (shared by every row that re-plans),
+  re-develop 1, retry 1, and 5 routed rounds in total per item.
   Rounds are counted from the bot's route notes after the latest route to
   a human.
 - **Re-develop safety:** `develop.yml` publishes nothing when an open PR
@@ -412,11 +460,11 @@ the bot (none, unparseable, already routed, or a success) it goes to a
 human and says why. Every decision appends a route note:
 
 ````
-<!-- pipeline:route target=respec round=1 -->
-**Routed to re-spec (`stage:qualified`), round 1/2, because:** the planner needs a better spec
+<!-- pipeline:route target=replan round=1 -->
+**Routed to re-plan (`stage:qualified`), round 1/2, because:** the planner failed or returned invalid output
 
 ```json
-{"v":1,"from_stage":"plan","problem":"spec_questions","target":"respec","reason":"...","round":1,"cap":2,"mode":"rules","external":null,"questions":["..."]}
+{"v":1,"from_stage":"plan","problem":"invalid_output","target":"replan","reason":"...","round":1,"cap":2,"mode":"rules","external":null,"questions":["..."]}
 ```
 ````
 

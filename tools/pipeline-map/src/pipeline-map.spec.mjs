@@ -191,7 +191,8 @@ describe('this repository', () => {
   it('maps the real pipeline from the real sources', async () => {
     const md = await generate(defaultPaths());
     for (const line of [
-      's_stage_qualified --> w_spec',
+      's_stage_qualified --> w_plan', // one Claude stage writes spec + plan
+      's_stage_planned --> w_develop',
       'w_develop -->|"opens PR"| w_ci',
       'w_ci -->|"on failure/success"| w_security', // failure: ci_failed
       'w_fix -.-> s_stage_routing',

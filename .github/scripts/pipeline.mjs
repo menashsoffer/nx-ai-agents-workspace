@@ -17,7 +17,6 @@ import {
   classifyDevelop,
   classifyFix,
   classifyPlan,
-  classifySpec,
   collectRouterInput,
   decideCiFailed,
   decideFix,
@@ -36,7 +35,9 @@ import {
   previewUrl,
   promptVersion,
   renderOutcome,
+  renderPlanComment,
   renderPrompt,
+  renderSpecComment,
   renderState,
   resetFixLoop,
   routerSkip,
@@ -44,7 +45,6 @@ import {
   selectActionable,
   stageTransition,
   threadsToResolve,
-  validateSpec,
 } from './pipeline-lib.mjs';
 import { decideExternal } from './router-external.mjs';
 import {
@@ -148,8 +148,6 @@ const readIf = (path) => (path ? readFileSync(path, 'utf8') : '');
 
 // Per-stage classifiers: workflow job results + agent output -> outcome.
 const classifiers = {
-  spec: (f) =>
-    classifySpec({ jobResult: f['job-result'], spec: readIf(f.output) }),
   plan: (f) =>
     classifyPlan({ jobResult: f['job-result'], raw: readIf(f.result) }),
   develop: (f) =>
@@ -217,6 +215,13 @@ const commands = {
       prompt_version: f['prompt-version'] ?? '',
     });
     writeFileSync(f.out, JSON.stringify(outcome));
+    // An approved plan run also yields its two comment bodies.
+    if (stage === 'plan' && outcome.result === 'success') {
+      const result = JSON.parse(readIf(f.result));
+      const version = f['prompt-version'] ?? undefined;
+      writeFileSync(f['spec-out'], renderSpecComment(result, version));
+      writeFileSync(f['plan-out'], renderPlanComment(result, version));
+    }
     setOutput('result', outcome.result);
     setOutput('problem', outcome.problem);
   },
@@ -311,12 +316,6 @@ const commands = {
 
   'branch-name'([number]) {
     setOutput('branch', branchName(num(number), process.env.ISSUE_TITLE ?? ''));
-  },
-
-  'validate-spec'([file]) {
-    const res = validateSpec(readFileSync(file, 'utf8'));
-    setOutput('ok', String(res.ok));
-    setOutput('missing', res.missing.join(', '));
   },
 
   'check-patch'([file]) {
