@@ -4,8 +4,8 @@ name: Pipeline · Approval
 # evaluates the gates (CI, the Gemini security review clean or every finding
 # dispositioned, review threads resolved, the Copilot review when it is
 # required, and for a pipeline PR with protected paths the owner's approval
-# of this head) and sets the `pipeline/gates` commit status, which the main
-# ruleset requires. When CI is green, the security review passes and no
+# of this head) and sets the `pipeline/gates` commit status, a required check
+# of the main ruleset. When CI is green, the security review passes and no
 # review thread is open, and once every gate holds: label
 # stage:human-approval, mark the PR ready (this requests CODEOWNERS) and
 # comment the preview URL.

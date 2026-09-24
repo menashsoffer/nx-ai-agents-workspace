@@ -156,11 +156,15 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   reviews load prompts and scripts from the default branch, not from the PR.
   Fork PRs never reach an agent.
 - **No merge path for bots.** The ruleset needs a code-owner approval after
-  the last push, resolved conversations, and two green, up-to-date status
-  checks: `ci` (GitHub Actions) and `pipeline/security` (the security
-  review verdict, accepted **only from the pipeline App**, so no other
-  token can post a passing one). There are no bypass actors. The pipeline App has no `workflows` or `administration`
-  permission. `GITHUB_TOKEN` cannot approve PRs.
+  the last push, resolved conversations, and three green, up-to-date status
+  checks: `ci` and `security` (the two jobs of `ci.yml`, from GitHub
+  Actions) and `pipeline/gates` (the sum of every review gate, accepted
+  **only from the pipeline App**, so no other token can post a passing
+  one). The only bypass actor is the repo owner (`PIPELINE_OWNER_LOGIN`),
+  and only inside a PR (bypass mode "pull request"): nobody can push to
+  `main`, and no bot or App can bypass anything. The pipeline App has no
+  `workflows` or `administration` permission. `GITHUB_TOKEN` cannot approve
+  PRs.
 - **Bounded loops.** Two automated fix rounds per PR. Router loops per item:
   re-plan 2, re-develop 1, fix retry 1, and 5 routed rounds in
   total (`ROUTER_CAPS`); after that, a human. See [Router](#router).
@@ -279,9 +283,16 @@ Nothing happens until these files are on `main`.
 7. **Copilot code review** (optional; needs a Copilot licence): enable it for the repo
    (Settings → Copilot → Code review) only if you turn on `REQUIRE_COPILOT`.
 8. **Ruleset** (after everything above is merged): `tools/scripts/pipeline/setup-ruleset.sh`.
-   It pins `pipeline/security` to the App's ID, found from
-   `PIPELINE_BOT_LOGIN` (or pass `PIPELINE_APP_ID=<App ID>`). Re-run it if
-   you replace the App.
+   It creates or updates the ruleset "main protection (pipeline)" so it is
+   exactly what the "No merge path for bots" guardrail (see [Guardrails](#guardrails)) describes: required
+   checks `ci` and `security` (GitHub Actions) and `pipeline/gates` (pinned
+   to the pipeline App's ID), and the owner as the only bypass actor, in PRs
+   only. Prerequisites: the repo variable `PIPELINE_OWNER_LOGIN` (it fails
+   without it) and the App's ID. The App is private, so `apps/<slug>` returns
+   404: set `PIPELINE_APP_ID=<App ID>` (App settings → App ID) when you run
+   it, or let it read the ID off a recent comment the App wrote (found from
+   `PIPELINE_BOT_LOGIN`). Run it with `DRY_RUN=1` first to print the JSON it
+   would send. Re-run it if you replace the App.
 
 ## Running one task through it
 
@@ -594,8 +605,8 @@ The Gemini security review (and the Copilot review, when
 [`REQUIRE_COPILOT`](#copilot-review-is-optional) is on) are **required gates on the
 PR's head commit**. Every finding is either fixed or explicitly dispositioned
 by the repo owner, and one commit status, **`pipeline/gates`**, sums it all up
-for that exact SHA. The main ruleset requires it (see the follow-up command in
-the PR that added it). This is a two-week trial.
+for that exact SHA. The main ruleset requires it, pinned to the pipeline App
+(`tools/scripts/pipeline/setup-ruleset.sh`). This is a two-week trial.
 
 ### The gates
 
@@ -829,19 +840,20 @@ data, never instructions.
 - Gemini tool names in the workflow `settings` follow the current Gemini
   CLI (`read_file`, `glob`, `search_file_content`, `write_file`, `replace`,
   `run_shell_command`). Check them when bumping `run-gemini-cli`.
-- As sole code owner you cannot approve your own PRs, and the ruleset has
-  no bypass. Pipeline PRs are authored by the App, so this only affects PRs
-  you open yourself. Add yourself as a bypass actor (pull requests only) if
-  you need to.
+- As sole code owner you cannot approve your own PRs. The ruleset lets you
+  (`PIPELINE_OWNER_LOGIN`) bypass it, but only inside a PR (bypass mode "pull
+  request"): you still cannot push to `main`. Bots and Apps have no bypass. Pipeline PRs are authored by
+  the App, so this only affects PRs you open yourself.
 - The pipeline's own files (`.github/**`) cannot be changed by the pipeline.
   Change them in a normal PR.
-- **Every PR to `main` needs `pipeline/security` = success**, including
+- **Every PR to `main` needs `pipeline/gates` = success** (the security
+  review is clean, or every finding is dispositioned), including
   PRs you open yourself. `security.yml` reviews every same-repo PR after
   green CI, but the fix loop only runs on pipeline PRs, so fix blocking
   findings on your own PRs by hand (the next push gets a fresh review). If
   the review errored (quota, invalid output), re-run **Pipeline · Security
   Review** from the Actions tab. A status you post yourself does not count.
-- **Dependabot and fork PRs get no `pipeline/security` status**, so they
+- **Dependabot and fork PRs get no `pipeline/gates` status**, so they
   cannot merge as they are. Fork PRs are never reviewed (on purpose: no
   secrets for fork code). Runs triggered by Dependabot see only
   _Dependabot_ secrets, so neither Gemini nor the App token is available.
