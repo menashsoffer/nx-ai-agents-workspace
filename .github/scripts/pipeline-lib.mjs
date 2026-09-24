@@ -60,6 +60,9 @@ export const MARKERS = {
   // `disposition` is the bot's record of an owner's /disposition command.
   finding: '<!-- pipeline:finding',
   disposition: '<!-- pipeline:disposition',
+  // The bot's one-line answer inside a review thread where the owner posted
+  // /disposition. Never feedback for the fixer (see selectActionable).
+  dispositionReply: '<!-- pipeline:disposition-reply -->',
   // Prefixes with attributes. `protectedApproval` is the bot's approval
   // request on an issue (one per pushed head); `protectedApproved` is its
   // record of the owner's /approve-protected, written on the PR.
@@ -768,6 +771,7 @@ export function selectActionable({
   ignoreLogins = ['github-actions[bot]'],
   onlyKeys = null,
   dispositioned = new Set(),
+  ownerLogin = '',
 }) {
   const handled = new Set(state.handled);
   const since = state.watermark ? Date.parse(state.watermark) : -Infinity;
@@ -809,6 +813,16 @@ export function selectActionable({
       if (ignored(c) || dismissed.has(c.pull_request_review_id)) return null;
       const body = (c.body ?? '').trim();
       if (body.includes(MARKERS.fixReply)) return null;
+      // An owner's /disposition reply in a finding's thread (and the bot's
+      // answer to it) is bookkeeping: replying in a thread submits a review,
+      // which runs the fixer before the thread is resolved.
+      if (body.includes(MARKERS.dispositionReply)) return null;
+      if (
+        ownerLogin &&
+        sameLogin(c.user?.login, ownerLogin) &&
+        !parseDispositionComment(body).ignore
+      )
+        return null;
       if (dispositioned.size) {
         const own = sameLogin(c.user?.login, botLogin)
           ? inlineFindingId(body)
@@ -977,7 +991,7 @@ function parkedIn(labels) {
  * content could append a clean report after the real one. Zero or several
  * blocks is an error, which the workflow treats as a failed review.
  */
-export function parseSecurityReport(text) {
+export function parseSecurityReport(text, { readLines } = {}) {
   const src = String(text ?? '');
   const opens = src.match(/```[ \t]*json\b/gi) ?? [];
   const fences = [...src.matchAll(/```json[ \t]*\r?\n([\s\S]*?)\r?\n```/g)];
@@ -1007,7 +1021,21 @@ export function parseSecurityReport(text) {
       detail: String(f.detail ?? '').slice(0, 4000),
       suggestion: String(f.suggestion ?? '').slice(0, 4000),
     };
-    return { id: findingId(finding), ...finding };
+    const anchor = verifiedAnchor(
+      {
+        file: finding.file,
+        line: finding.line,
+        topic: f.topic,
+        evidence: f.evidence,
+      },
+      readLines,
+    );
+    const withAnchor = { ...finding, ...anchor };
+    return {
+      id: findingId(withAnchor),
+      ...withAnchor,
+      idBasis: hasEvidenceId(withAnchor) ? 'evidence' : 'text',
+    };
   });
   // The same finding reported twice is one finding (one id, one thread);
   // the more severe copy wins.
@@ -1028,22 +1056,113 @@ export function parseSecurityReport(text) {
 }
 
 /**
- * Stable id of a Gemini finding: `S-` + 8 hex of sha256(file, title,
- * detail). Content-based on purpose: the line, severity, category and
- * suggested fix are left out, and the text is lower-cased with punctuation
- * and whitespace collapsed, so a finding that is not fixed keeps its id
- * when the diff moves or the reviewer re-words a sentence's punctuation.
- * A finding whose title or detail the reviewer really rewrites gets a new
- * id; that is a new finding to fix or disposition again.
+ * The closed list of finding topics. The reviewer picks one per finding
+ * (security-review.md lists the same values); it is one third of a finding's
+ * stable id, so it must not be free text.
  */
-export function findingId({ file, title, detail }) {
+export const FINDING_TOPICS = [
+  'xss',
+  'injection',
+  'secrets',
+  'authz',
+  'path-traversal',
+  'ssrf',
+  'workflow-permissions',
+  'supply-chain',
+  'unsafe-eval',
+  'error-handling',
+  'logic',
+  'other',
+];
+
+/** A code line with whitespace collapsed, for comparing and hashing. */
+export const normalizeLine = (t) =>
+  String(t ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/**
+ * The `topic` and `evidence` a finding may use for its id, after checking
+ * them against the file at the reviewed head. `readLines(file)` returns the
+ * file's lines (null: unreadable). A topic outside FINDING_TOPICS, missing,
+ * multi-line or empty evidence, or evidence that is not a whole line of the
+ * file gives `{ topic: null, evidence: null }`: the id then falls back to
+ * the finding's text. When the line occurs several times in the file,
+ * `occurrence` is the 1-based ordinal of the copy nearest the reported line,
+ * so two identical lines are two findings, not one.
+ */
+function verifiedAnchor({ file, line, topic, evidence }, readLines) {
+  const none = { topic: null, evidence: null };
+  const t = String(topic ?? '')
+    .trim()
+    .toLowerCase();
+  if (!FINDING_TOPICS.includes(t)) return none;
+  const raw = String(evidence ?? '').trim();
+  const norm = normalizeLine(raw);
+  if (!file || !norm || /[\r\n]/.test(raw)) return none;
+  const lines = readLines?.(file);
+  if (!Array.isArray(lines)) return none;
+  const at = lines.flatMap((l, i) =>
+    normalizeLine(l) === norm ? [i + 1] : [],
+  );
+  if (!at.length) return none;
+  if (at.length === 1) return { topic: t, evidence: norm };
+  const nearest = line
+    ? at.reduce((a, b) => (Math.abs(b - line) < Math.abs(a - line) ? b : a))
+    : at[0];
+  return { topic: t, evidence: norm, occurrence: at.indexOf(nearest) + 1 };
+}
+
+const hasEvidenceId = ({ topic, evidence }) =>
+  FINDING_TOPICS.includes(topic) && Boolean(normalizeLine(evidence));
+
+/**
+ * Stable id of a Gemini finding: `S-` + 8 hex of a sha256.
+ *
+ * With a topic and an evidence line (parseSecurityReport checked them
+ * against the file), the hash covers file, topic and the whitespace-collapsed
+ * evidence line, plus the occurrence ordinal when that line appears more
+ * than once in the file. Wording, line number, severity, category and the
+ * suggested fix are not part of it, so the same problem keeps its id when
+ * the reviewer re-words it or a rebase moves the line; a different line or
+ * topic is a different finding and needs its own decision.
+ *
+ * Without them it falls back to the text: file, title and detail, lower-cased
+ * with punctuation and whitespace collapsed. That id changes when the
+ * reviewer re-words the finding (`idBasis: 'text'`, flagged in the review).
+ */
+export function findingId(f) {
+  const { file, title, detail } = f;
   const norm = (t) =>
     String(t ?? '')
       .toLowerCase()
       .replace(/[^\p{L}\p{N}]+/gu, ' ')
       .trim();
-  const key = [String(file ?? ''), norm(title), norm(detail)].join('\n');
-  return `S-${createHash('sha256').update(key).digest('hex').slice(0, 8)}`;
+  const key = hasEvidenceId(f)
+    ? [
+        'evidence',
+        String(file ?? ''),
+        f.topic,
+        normalizeLine(f.evidence),
+        f.occurrence ? String(f.occurrence) : '',
+      ]
+    : [String(file ?? ''), norm(title), norm(detail)];
+  return `S-${createHash('sha256').update(key.join('\n')).digest('hex').slice(0, 8)}`;
+}
+
+/** The lines of the new version of a file that a patch shows (added and context). */
+export function patchNewLines(patch) {
+  const out = [];
+  let inHunk = false;
+  for (const row of String(patch ?? '').split('\n')) {
+    if (/^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/.test(row)) {
+      inHunk = true;
+      continue;
+    }
+    if (!inHunk || row.startsWith('-') || row.startsWith('\\')) continue;
+    out.push(row.slice(1));
+  }
+  return out;
 }
 
 export const isBlocking = (f) => BLOCKING_SEVERITIES.has(f.severity);
@@ -1069,6 +1188,9 @@ function findingMarkdown(f, idAtEnd = true) {
     `**[${f.severity}] ${f.category}: ${f.title}**${idAtEnd ? ` · \`${f.id}\`` : ''}`,
     f.detail,
     f.suggestion ? `**Suggested fix:** ${f.suggestion}` : '',
+    f.idBasis === 'text'
+      ? '_No stable code anchor: this id may change on re-review._'
+      : '',
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -1218,43 +1340,91 @@ const FINDING_ID = /^(?:S-[0-9a-f]{8}|C-\d{1,15})$/;
 /** Id of a Copilot review thread: `C-` + its top comment's database id. */
 export const copilotThreadId = (topCommentId) => `C-${topCommentId}`;
 
+const QUOTE_LINE = /^ {0,3}>/;
+const COMMAND_LINE = /^[ \t]{0,3}\/disposition(?:\s|$)/m;
+
+/** Why a /disposition that is not the first thing in a comment is refused. */
+export const DISPOSITION_MISPLACED =
+  'the command must be the first thing in the comment (a quote block above it is fine). Post it again as a new comment';
+
+/** Why a /disposition inside a thread that is not a finding is refused. */
+export const DISPOSITION_NOT_A_FINDING =
+  'this thread is not a review finding; use a top-level PR comment';
+
 /**
- * Parses a comment as a /disposition command. The whole body must be one or
- * more lines of exactly
+ * Parses a comment as a /disposition command. A quote block at the top of
+ * the body (lines starting with `>`, as GitHub's "Quote reply" writes them)
+ * and blank lines around it are dropped first. The rest must be one or more
+ * lines of exactly
  *   /disposition <finding-id> <accepted-risk|false-positive|out-of-scope> <reason, 10+ characters>
- * and one bad line rejects all of them. A comment that does not start with
- * /disposition is `{ ok: false, ignore: true }` (ordinary discussion). The
- * body is data: nothing from it is executed, and error texts never repeat
- * it, except for ids that already matched the id format.
+ * and one bad line rejects all of them. A comment that has no such line is
+ * `{ ok: false, ignore: true }` (ordinary discussion, also a mention in
+ * backticks or mid-sentence); one where a line starts with /disposition but
+ * something else comes before it is an error, so the owner is told instead
+ * of left with silence.
+ *
+ * `thread` is set for a reply inside a review thread: `{ id }` is the id of
+ * the finding the thread is about, or null when it is not a finding thread.
+ * There the id may be left out (`/disposition <kind> <reason>`), a given id
+ * must be the thread's, and there is one command per reply.
+ *
+ * The body is data: nothing from it is executed, and error texts never
+ * repeat it, except for ids that already matched the id format.
  */
-export function parseDispositionComment(body) {
-  const text = String(body ?? '')
+export function parseDispositionComment(body, { thread } = {}) {
+  const all = String(body ?? '')
     .replace(/\r\n?/g, '\n')
-    .trim();
-  if (!/^\/disposition(?:\s|$)/.test(text)) return { ok: false, ignore: true };
+    .split('\n');
+  let start = 0;
+  while (
+    start < all.length &&
+    (all[start].trim() === '' || QUOTE_LINE.test(all[start]))
+  )
+    start++;
+  const text = all.slice(start).join('\n').trim();
+  if (!/^\/disposition(?:\s|$)/.test(text))
+    return COMMAND_LINE.test(text)
+      ? { ok: false, error: DISPOSITION_MISPLACED }
+      : { ok: false, ignore: true };
+  if (thread && !thread.id)
+    return { ok: false, error: DISPOSITION_NOT_A_FINDING };
   const lines = text.split('\n').map((l) => l.trimEnd());
   if (lines.length > DISPOSITION_MAX_LINES)
     return {
       ok: false,
       error: `at most ${DISPOSITION_MAX_LINES} commands per comment`,
     };
+  if (thread && lines.length > 1)
+    return { ok: false, error: 'one command per reply in a review thread' };
   const fail = (i, why) => ({
     ok: false,
     error: lines.length > 1 ? `line ${i + 1}: ${why}` : why,
   });
   const commands = [];
   for (const [i, line] of lines.entries()) {
-    const m = /^\/disposition[ \t]+(\S+)[ \t]+(\S+)[ \t]+(\S[\s\S]*)$/.exec(
-      line,
-    );
+    const short = new RegExp(
+      `^/disposition[ \\t]+(${DISPOSITION_KINDS.join('|')})[ \\t]+(\\S[\\s\\S]*)$`,
+    ).exec(line);
+    if (short && !thread)
+      return fail(
+        i,
+        "the short form without an id works only as a reply inside a finding's review thread",
+      );
+    const m = short
+      ? [line, thread.id, short[1], short[2]]
+      : /^\/disposition[ \t]+(\S+)[ \t]+(\S+)[ \t]+(\S[\s\S]*)$/.exec(line);
     if (!m)
       return fail(
         i,
-        'expected `/disposition <finding-id> <accepted-risk|false-positive|out-of-scope> <reason>`',
+        thread
+          ? 'expected `/disposition <accepted-risk|false-positive|out-of-scope> <reason>`'
+          : 'expected `/disposition <finding-id> <accepted-risk|false-positive|out-of-scope> <reason>`',
       );
     const [, id, kind, reason] = m;
     if (!FINDING_ID.test(id))
       return fail(i, 'the finding id must look like S-1a2b3c4d or C-123456');
+    if (thread && id !== thread.id)
+      return fail(i, `this thread is ${thread.id}; the command names ${id}`);
     if (!DISPOSITION_KINDS.includes(kind))
       return fail(i, `the kind must be one of ${DISPOSITION_KINDS.join(', ')}`);
     if ([...reason].length < DISPOSITION_MIN_REASON)
@@ -1272,6 +1442,20 @@ export function parseDispositionComment(body) {
     commands.push({ id, kind, reason });
   }
   return { ok: true, commands };
+}
+
+/**
+ * The review thread a comment belongs to: the one listing the comment, else
+ * (a thread whose comment list was cut short) the one whose comments include
+ * the comment it replies to. `threads` are classifyThreads entries.
+ */
+export function threadOfComment(threads, { commentId, inReplyTo = null }) {
+  const has = (t, id) => t.thread.commentIds.includes(id);
+  return (
+    threads.find((t) => has(t, commentId)) ??
+    (inReplyTo ? threads.find((t) => has(t, inReplyTo)) : undefined) ??
+    null
+  );
 }
 
 /**
@@ -3878,7 +4062,7 @@ export const COMMAND_EFFECTS = {
   disposition: {
     stages: [],
     markers: [],
-    appends: ['disposition'],
+    appends: ['disposition', 'dispositionReply'],
     emits: ['issue_comment'],
   },
   // develop.yml, approvable protected changes: the branch is pushed with no
