@@ -25,9 +25,16 @@ jobs:
       github.event.workflow_run.pull_requests[0].number
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Gemini quota: every job that calls run-gemini-cli shares this one group
+    # (security.yml review, fix.yml fix), so a burst queues (FIFO, up to 100
+    # pending) instead of running in parallel. `queue: max` matters: by
+    # default a group keeps one pending run and cancels the older pending one.
+    # It also rules out cancel-in-progress, so a stale head is skipped by the
+    # `fresh` step when its turn comes, not cancelled while waiting.
     concurrency:
-      group: pipeline-pr-${{ github.event.workflow_run.pull_requests[0].number }}-security
-      cancel-in-progress: true
+      group: pipeline-gemini
+      queue: max
+      cancel-in-progress: false
     permissions:
       contents: read
       pull-requests: read
@@ -74,15 +81,29 @@ jobs:
             --data pr=.pipeline/pr.json \
             --data diff=.pipeline/pr.diff
 
+      # The job may have waited in the pipeline-gemini queue while the PR
+      # moved on. A review of an older head is worthless (security-publish
+      # skips it), so do not spend Gemini quota on it.
+      - id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ github.event.workflow_run.pull_requests[0].number }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          head="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$N" --jq .head.sha)"
+          if [[ "$head" == "$SHA" ]]; then echo "stale=false" >> "$GITHUB_OUTPUT"; else echo "stale=true" >> "$GITHUB_OUTPUT"; echo "Head moved to $head; skipping the Gemini review of $SHA."; fi
+
       # Step-level `env:` on the run-gemini-cli step itself does not reliably
       # reach that composite action's own internal steps; $GITHUB_ENV is the
       # documented way to make a var visible to every later step in the job.
       # Same-repo PRs only (job's if:), and the CLI is restricted to
       # read-only tools (settings below).
       - name: Trust the workspace for Gemini CLI
+        if: ${{ steps.fresh.outputs.stale != 'true' }}
         run: echo "GEMINI_CLI_TRUST_WORKSPACE=true" >> "$GITHUB_ENV"
 
       - id: gemini
+        if: ${{ steps.fresh.outputs.stale != 'true' }}
         uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}

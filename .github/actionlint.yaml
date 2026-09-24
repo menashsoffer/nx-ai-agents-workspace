@@ -1,0 +1,16 @@
+# actionlint config (picked up automatically by `pnpm security`, W7/W8).
+#
+# actionlint 1.7.12 (the latest release) does not know the `queue` key of
+# `concurrency`, which GitHub documents:
+# https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
+# The two Gemini jobs need `queue: max` to queue instead of dropping pending
+# runs (docs/pipeline.md, "Gemini queue"). Ignore exactly that message, in
+# exactly those two files. Remove this file when the pinned actionlint
+# learns the key.
+paths:
+  .github/workflows/security.yml:
+    ignore:
+      - 'unexpected key "queue" for "concurrency" section'
+  .github/workflows/fix.yml:
+    ignore:
+      - 'unexpected key "queue" for "concurrency" section'
