@@ -54,6 +54,10 @@ export const FORBIDDEN_PATH_PATTERNS = [
   /^\.pipeline\//,
   /^\.claude\//,
   /^\.gemini\//,
+  /^\.codex\//,
+  // Security gates and the generators behind pre-approved `pnpm new:*`.
+  /^tools\/security\//,
+  /^tools\/workspace-plugin\//,
 ];
 
 const BLOCKING_SEVERITIES = new Set(['critical', 'high', 'medium']);

@@ -44,9 +44,8 @@ docs/              architecture, conventions, decisions (ADRs); read before big 
 If you are running inside the pipeline (`.github/workflows/`), your prompt
 in `.github/prompts/` is authoritative for your step. Never edit `.github/`,
 `CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`, `tools/security/` or
-`tools/workspace-plugin/` there (see "Protected files" below). Such patches
-are rejected: automatically for `.github/`, `CODEOWNERS`, `.claude/` and
-`.gemini/`, in review for the rest.
+`tools/workspace-plugin/` there (see "Protected files" below); such patches
+are rejected.
 
 ## Commands
 
