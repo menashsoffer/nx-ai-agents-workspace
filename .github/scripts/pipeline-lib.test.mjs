@@ -24,6 +24,7 @@ import {
   renderState,
   selectActionable,
   stageTransition,
+  threadsToResolve,
   unquoteCPath,
   validateSpec,
 } from './pipeline-lib.mjs';
@@ -751,4 +752,30 @@ test('issueForAgents takes spec and plan only from the bot', () => {
   });
   assert.equal(none.spec, null);
   assert.equal(none.plan, null);
+});
+
+test('threadsToResolve resolves only all-bot threads', () => {
+  const auto = [BOT, COPILOT_REVIEWER, 'Copilot'];
+  const t = (id, authors, extra = {}) => ({
+    id,
+    isResolved: false,
+    commentIds: authors.map((_, i) => id * 10 + i),
+    authors,
+    ...extra,
+  });
+  const threads = [
+    t(1, [BOT, BOT]), // bot finding + fix reply
+    t(2, [COPILOT_REVIEWER, BOT]),
+    t(3, [BOT, 'alice', BOT]), // a human replied inside
+    t(4, ['alice', BOT]), // human-opened
+    t(5, [BOT], { isResolved: true }),
+    t(6, [BOT]), // not one of the fixed items
+    t(7, [BOT, undefined]), // deleted (ghost) author
+  ];
+  const fixed = [10, 20, 30, 40, 50, 70];
+  assert.deepEqual(
+    threadsToResolve(threads, fixed, auto).map((x) => x.id),
+    [1, 2],
+  );
+  assert.deepEqual(threadsToResolve(threads, fixed, []), []);
 });

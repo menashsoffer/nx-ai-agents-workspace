@@ -145,8 +145,9 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
 5. records the handled ids and new watermark **before** the fixer runs.
 
 After a successful fix, the push job replies on each inline thread and
-resolves the threads opened by bots (security review, Copilot). Threads
-opened by people stay open for them to resolve.
+resolves a thread only if **every** comment in it is from the pipeline bot
+or Copilot. A thread a person opened or replied in stays open for them to
+resolve.
 
 ### Concurrency
 

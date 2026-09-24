@@ -106,7 +106,7 @@ query($owner:String!,$name:String!,$number:Int!,$after:String){
   repository(owner:$owner,name:$name){ pullRequest(number:$number){
     reviewThreads(first:100, after:$after){
       pageInfo{ hasNextPage endCursor }
-      nodes{ id isResolved comments(first:100){ nodes{ databaseId author{ login } } } }
+      nodes{ id isResolved comments(first:100){ nodes{ databaseId author{ login __typename } } } }
     } } } }`;
 
 export function reviewThreads(number) {
@@ -120,7 +120,13 @@ export function reviewThreads(number) {
         id: t.id,
         isResolved: t.isResolved,
         commentIds: t.comments.nodes.map((c) => c.databaseId),
-        authors: t.comments.nodes.map((c) => c.author?.login),
+        // GraphQL drops the `[bot]` suffix REST uses; put it back so
+        // logins compare the same way everywhere.
+        authors: t.comments.nodes.map((c) =>
+          c.author?.__typename === 'Bot'
+            ? `${c.author.login}[bot]`
+            : c.author?.login,
+        ),
       })),
     );
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;

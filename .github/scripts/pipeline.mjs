@@ -24,6 +24,7 @@ import {
   sameLogin,
   selectActionable,
   stageTransition,
+  threadsToResolve,
   validateSpec,
 } from './pipeline-lib.mjs';
 import {
@@ -249,8 +250,7 @@ const commands = {
   'fix-reply'([pr, sha, itemsFile]) {
     const n = num(pr);
     const items = JSON.parse(readFileSync(itemsFile, 'utf8'));
-    const bot = process.env.PIPELINE_BOT_LOGIN ?? '';
-    const autoResolve = new Set([bot, ...COPILOT_LOGINS].filter(Boolean));
+    const autoResolve = [botLogin(), ...COPILOT_LOGINS];
     const short = sha.slice(0, 7);
     for (const it of items.filter((i) => i.kind === 'inline')) {
       api(`pulls/${n}/comments/${it.id}/replies`, {
@@ -260,18 +260,13 @@ const commands = {
         },
       });
     }
-    // Resolve only threads opened by bots; human threads stay for the human.
-    const ids = new Set(
+    // Resolve only all-bot threads; any human comment keeps it open.
+    for (const t of threadsToResolve(
+      reviewThreads(n),
       items.filter((i) => i.kind === 'inline').map((i) => i.id),
-    );
-    for (const t of reviewThreads(n)) {
-      if (
-        !t.isResolved &&
-        t.commentIds.some((id) => ids.has(id)) &&
-        autoResolve.has(t.authors[0])
-      )
-        resolveThread(t.id);
-    }
+      autoResolve,
+    ))
+      resolveThread(t.id);
     const reviewItems = items.filter((i) => i.kind === 'review');
     if (reviewItems.length) {
       api(`issues/${n}/comments`, {

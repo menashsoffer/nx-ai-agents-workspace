@@ -557,6 +557,24 @@ export function selectActionable({
 const DEFER = Symbol('defer');
 
 /**
+ * Review threads fix-reply may resolve: unresolved, containing one of the
+ * fixed inline items, and with **every** comment written by an
+ * auto-resolve login (the pipeline bot, Copilot). A thread where a person
+ * wrote anything stays open for them.
+ */
+export function threadsToResolve(threads, itemIds, autoResolveLogins) {
+  const ids = new Set(itemIds);
+  const auto = (login) => autoResolveLogins.some((l) => sameLogin(l, login));
+  return threads.filter(
+    (t) =>
+      !t.isResolved &&
+      t.commentIds.some((id) => ids.has(id)) &&
+      t.authors.length > 0 &&
+      t.authors.every(auto),
+  );
+}
+
+/**
  * The fix-loop state machine. No new feedback -> noop (idempotent reruns).
  * none -> fix-loop:1 -> fix-loop:2 -> stage:needs-attention (stop).
  */
