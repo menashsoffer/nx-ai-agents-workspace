@@ -1,55 +1,45 @@
 # D7 (docs/security.md): keep npm packages and pinned Action SHAs current.
 # 7-day cooldown: longer than pnpm's 3-day minimumReleaseAge (D6), so update PRs only propose well-aged releases.
+# Few PRs on purpose: each PR runs CI, the Gemini security review and a Copilot review.
+# Groups are first-match in file order: the catch-all comes first so every minor/patch lands in one PR,
+# and only majors fall through to the family groups below.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 8
+    ignore:
+      # Types must match the Node runtime (engines >=22.18); bump by hand with the runtime.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
+      # All minor + patch updates, of every package, in ONE PR per month.
+      npm-minor-patch:
+        patterns: ['*']
+        update-types: ['minor', 'patch']
+      # Majors only reach these (minors were taken above): one PR per family.
       nx:
         patterns: ['nx', '@nx/*']
       storybook:
         patterns: ['storybook', '@storybook/*']
       react:
-        patterns:
-          [
-            'react',
-            'react-dom',
-            'react-router',
-            '@types/react',
-            '@types/react-dom',
-          ]
+        patterns: ['react', 'react-dom', 'react-router', '@types/react', '@types/react-dom']
       vite-vitest:
-        patterns:
-          [
-            'vite',
-            'vitest',
-            '@vitest/*',
-            '@vitejs/*',
-            '@tailwindcss/*',
-            'tailwindcss',
-          ]
+        patterns: ['vite', 'vitest', '@vitest/', '@vitejs/', '@tailwindcss/*', 'tailwindcss']
       lint-format:
-        patterns:
-          [
-            'eslint*',
-            '@eslint/*',
-            'typescript-eslint',
-            '@typescript-eslint/*',
-            'prettier',
-            'knip',
-          ]
+        patterns: ['eslint*', '@eslint/', 'typescript-eslint', '@typescript-eslint/', 'prettier', 'knip']
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     cooldown:
       default-days: 7
+    open-pull-requests-limit: 3
     groups:
       actions:
         patterns: ['*']
