@@ -27,11 +27,34 @@ updates:
       storybook:
         patterns: ['storybook', '@storybook/*']
       react:
-        patterns: ['react', 'react-dom', 'react-router', '@types/react', '@types/react-dom']
+        patterns:
+          [
+            'react',
+            'react-dom',
+            'react-router',
+            '@types/react',
+            '@types/react-dom',
+          ]
       vite-vitest:
-        patterns: ['vite', 'vitest', '@vitest/', '@vitejs/', '@tailwindcss/*', 'tailwindcss']
+        patterns:
+          [
+            'vite',
+            'vitest',
+            '@vitest/*',
+            '@vitejs/*',
+            '@tailwindcss/*',
+            'tailwindcss',
+          ]
       lint-format:
-        patterns: ['eslint*', '@eslint/', 'typescript-eslint', '@typescript-eslint/', 'prettier', 'knip']
+        patterns:
+          [
+            'eslint*',
+            '@eslint/*',
+            'typescript-eslint',
+            '@typescript-eslint/*',
+            'prettier',
+            'knip',
+          ]
 
   - package-ecosystem: github-actions
     directory: /
