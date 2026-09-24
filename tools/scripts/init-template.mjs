@@ -7,7 +7,8 @@
 // - fills in "## This project" in AGENTS.md (--what, and the GitHub Pages URL
 //   derived from `git remote get-url origin`, or --url)
 // - removes template-only files (this script, the template smoke test)
-// - reinstalls, resets the Nx cache, syncs and formats
+// - reinstalls, resets the Nx cache, syncs, regenerates the pipeline map
+//   and formats
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
@@ -126,6 +127,7 @@ for (const file of TEMPLATE_ONLY_FILES) rmSync(file, { force: true });
 run('pnpm install');
 run('pnpm nx reset');
 run('pnpm nx sync');
+run('pnpm pipeline:map'); // template-smoke.yml is gone from the map
 run('pnpm nx format:write --all'); // renamed scope changes Markdown table widths
 
 console.log(`

@@ -1,0 +1,14 @@
+name: Demo · Review
+on: pull_request
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - run: >-
+          node .pipeline/trusted/.github/scripts/pipeline.mjs review
+          "$PR"
+      - run: |
+          node .github/scripts/pipeline.mjs \
+            upsert-comment "$PR" result body.md # trailing comment
+      - name: Retry the build
+        run: gh workflow run build.yml --ref main

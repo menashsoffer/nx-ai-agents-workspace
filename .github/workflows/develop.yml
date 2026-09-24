@@ -1,8 +1,10 @@
 name: Pipeline · Develop
 
 # stage:planned -> Claude implements on issue-<n>-<slug> and runs pnpm verify
-# -> a deterministic job pushes the branch, opens a draft PR ("Closes #n")
-# and labels stage:building. The agent never holds a write token: its
+# -> a deterministic job pushes the branch, opens a draft PR ("Closes #n"),
+# appends an outcome note and labels stage:building. On a problem (agent
+# blocked, failed run, rejected patch) the report job appends an outcome
+# note and sets stage:routing. The agent never holds a write token: its
 # commits leave the job as a patch that is checked before it is pushed.
 on:
   issues:
@@ -26,6 +28,7 @@ jobs:
       base: ${{ steps.branch.outputs.base }}
       result: ${{ steps.claude.outputs.structured_output }}
       prompt_version: ${{ steps.prompt.outputs.version }}
+      patch_rejected: ${{ steps.guard.outputs.rejected }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -81,7 +84,7 @@ jobs:
             --max-turns 150
             --allowedTools "Read,Glob,Grep,Edit,MultiEdit,Write,TodoWrite,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git add:*),Bash(git commit:*),Bash(ls:*)"
             --disallowedTools "WebFetch,WebSearch,Bash(git push:*),Bash(gh:*),Bash(curl:*),Bash(wget:*)"
-            --json-schema '{"type":"object","additionalProperties":false,"required":["status","pr_title","pr_body","blocked_reason"],"properties":{"status":{"type":"string","enum":["done","blocked"]},"pr_title":{"type":"string","maxLength":100},"pr_body":{"type":"string"},"blocked_reason":{"type":"string"}}}'
+            --json-schema '{"type":"object","additionalProperties":false,"required":["status","pr_title","pr_body","blocked_reason","problem"],"properties":{"status":{"type":"string","enum":["done","blocked"]},"pr_title":{"type":"string","maxLength":100},"pr_body":{"type":"string"},"blocked_reason":{"type":"string"},"problem":{"type":"string","enum":["none","verify_failed","plan_gap","protected_surface","needs_secrets_ci_infra","agent_error"]}}}'
 
       - name: Package commits as a patch
         env:
@@ -98,7 +101,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/out"
           git -c core.quotePath=false format-patch "$BASE..HEAD" --stdout > "$RUNNER_TEMP/out/changes.patch"
           test -s "$RUNNER_TEMP/out/changes.patch" || { echo "::error::The agent produced no commits"; exit 1; }
-          node .github/scripts/pipeline.mjs check-patch "$RUNNER_TEMP/out/changes.patch"
+
+      # A rejected patch is the forbidden_path hard gate, not an agent error.
+      - id: guard
+        run: |
+          if ! node .github/scripts/pipeline.mjs check-patch "$RUNNER_TEMP/out/changes.patch"; then
+            echo "rejected=true" >> "$GITHUB_OUTPUT"; exit 1
+          fi
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -116,6 +125,8 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
+    outputs:
+      patch_rejected: ${{ steps.guard.outputs.rejected }}
     steps:
       # App token: pushes/PRs made with GITHUB_TOKEN would not trigger CI.
       # No `workflows` permission, so it can never push workflow changes.
@@ -138,6 +149,13 @@ jobs:
           name: develop-patch
           path: ${{ runner.temp }}/in
 
+      # Checked again here: the patch crossed a job boundary.
+      - id: guard
+        run: |
+          if ! node .github/scripts/pipeline.mjs check-patch "$RUNNER_TEMP/in/changes.patch"; then
+            echo "rejected=true" >> "$GITHUB_OUTPUT"; exit 1
+          fi
+
       - name: Push branch and open draft PR
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
@@ -148,8 +166,6 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
         run: |
-          # Checked again here: the patch crossed a job boundary.
-          node .github/scripts/pipeline.mjs check-patch "$RUNNER_TEMP/in/changes.patch"
           if [[ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[].number')" ]]; then
             echo "::notice::An open PR already exists for $BRANCH; nothing to do."
             exit 0
@@ -169,9 +185,12 @@ jobs:
           pr=${url##*/}
           node .github/scripts/pipeline.mjs init-state "$pr"
           node .github/scripts/pipeline.mjs set-stage "$pr" stage:building
+          jq -n --arg s "Draft PR #$pr opened." --arg v "develop.md@$VERSION" \
+            '{stage: "develop", result: "success", summary: $s, prompt_version: $v}' > outcome.json
+          node .github/scripts/pipeline.mjs outcome "$N" outcome.json
           node .github/scripts/pipeline.mjs set-stage "$N" stage:building
 
-  needs-attention:
+  report:
     needs: [implement, publish]
     if: ${{ always() && needs.implement.result != 'skipped' && (needs.implement.result != 'success' || needs.publish.result != 'success') }}
     runs-on: ubuntu-latest
@@ -191,14 +210,18 @@ jobs:
           private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
           permission-issues: write
 
-      - env:
+      - name: Report the problem to the router (stage:routing)
+        env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ github.event.issue.number }}
           RESULT: ${{ needs.implement.outputs.result }}
-          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          IMPLEMENT: ${{ needs.implement.result }}
+          PUBLISH: ${{ needs.publish.result }}
+          REJECTED: ${{ needs.implement.outputs.patch_rejected || needs.publish.outputs.patch_rejected }}
+          VERSION: ${{ needs.implement.outputs.prompt_version }}
         run: |
-          reason=$(jq -r '.blocked_reason // empty' <<<"${RESULT:-null}" 2>/dev/null || true)
-          printf '**Development needs attention.** %s\n\nRun: %s\n' "${reason:-The develop run failed or its patch was rejected.}" "$RUN_URL" > body.md
-          node .github/scripts/pipeline.mjs upsert-comment "$N" notice body.md
-          node .github/scripts/pipeline.mjs set-stage "$N" stage:needs-attention
+          printf '%s' "$RESULT" > result.json
+          node .github/scripts/pipeline.mjs classify develop --job-result "$IMPLEMENT" \
+            --publish-result "$PUBLISH" --result result.json --patch-rejected "${REJECTED:-false}" \
+            --prompt-version "develop.md@${VERSION:-unknown}" --out outcome.json
+          node .github/scripts/pipeline.mjs outcome "$N" outcome.json

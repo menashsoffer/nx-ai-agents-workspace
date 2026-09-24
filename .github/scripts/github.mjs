@@ -87,6 +87,11 @@ export function findComment(number, marker, { author } = {}) {
   return findMarkerComment(list(`issues/${number}/comments`), marker, author);
 }
 
+/** Appends a new comment (outcome and route notes are never edited). */
+export function postComment(number, body) {
+  return api(`issues/${number}/comments`, { method: 'POST', body: { body } });
+}
+
 export function upsertComment(number, marker, body, { author } = {}) {
   const full = body.includes(marker) ? body : `${marker}\n${body}`;
   const existing = findComment(number, marker, { author });

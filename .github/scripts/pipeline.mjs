@@ -7,20 +7,30 @@ import {
   COPILOT_REVIEWER,
   MARKERS,
   STAGE_STATUS,
+  allowedTargets,
   applyLabels,
   branchName,
   buildSecurityReview,
   checkPatch,
+  classifyDevelop,
+  classifyFix,
+  classifyPlan,
+  classifySpec,
+  collectRouterInput,
   decideCiFailed,
   decideFix,
+  decideFixRetry,
   emptyState,
   evaluateApproval,
   isPipelinePr,
   issueForAgents,
+  normalizeOutcome,
   parseSecurityReport,
   parseState,
+  planRoute,
   previewUrl,
   promptVersion,
+  renderOutcome,
   renderPrompt,
   renderState,
   resetFixLoop,
@@ -30,6 +40,7 @@ import {
   threadsToResolve,
   validateSpec,
 } from './pipeline-lib.mjs';
+import { decideExternal } from './router-external.mjs';
 import {
   NAME,
   OWNER,
@@ -39,6 +50,7 @@ import {
   graphql,
   labelsOf,
   list,
+  postComment,
   resolveThread,
   reviewThreads,
   setOutput,
@@ -98,6 +110,58 @@ function setStage(number, stage) {
   editLabels(number, stageTransition(labelsOf(number), stage));
 }
 
+// ------------------------------------------------------------ outcomes
+
+function runUrl() {
+  const { RUN_URL, GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID } =
+    process.env;
+  if (RUN_URL) return RUN_URL;
+  return GITHUB_RUN_ID
+    ? `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`
+    : '';
+}
+
+/**
+ * Appends an outcome note. A problem hands the item to the router
+ * (stage:routing); on success the caller moves to the next stage itself.
+ */
+function writeOutcome(number, input) {
+  const outcome = normalizeOutcome({
+    ...input,
+    run_url: input.run_url || runUrl(),
+    item: number,
+  });
+  postComment(number, renderOutcome(outcome));
+  if (outcome.result === 'problem') setStage(number, 'stage:routing');
+  setOutput('result', outcome.result);
+  setOutput('problem', outcome.problem);
+  return outcome;
+}
+
+const readIf = (path) => (path ? readFileSync(path, 'utf8') : '');
+
+// Per-stage classifiers: workflow job results + agent output -> outcome.
+const classifiers = {
+  spec: (f) =>
+    classifySpec({ jobResult: f['job-result'], spec: readIf(f.output) }),
+  plan: (f) =>
+    classifyPlan({ jobResult: f['job-result'], raw: readIf(f.result) }),
+  develop: (f) =>
+    classifyDevelop({
+      implementResult: f['job-result'],
+      publishResult: f['publish-result'],
+      raw: readIf(f.result),
+      patchRejected: f['patch-rejected'] === 'true',
+    }),
+  fix: (f) =>
+    classifyFix({
+      fixResult: f['job-result'],
+      verifyResult: f['verify-result'],
+      pushResult: f['push-result'],
+      patchRejected: f['patch-rejected'] === 'true',
+    }),
+};
+
 // ------------------------------------------------------------ commands
 
 const commands = {
@@ -131,6 +195,77 @@ const commands = {
   'edit-labels'(args) {
     const f = flags(args);
     editLabels(num(f._[0]), { add: many(f.add), remove: many(f.remove) });
+  },
+
+  // Appends an outcome note from a JSON file; a problem sets stage:routing.
+  outcome([number, file]) {
+    writeOutcome(num(number), JSON.parse(readFileSync(file, 'utf8')));
+  },
+
+  // Builds a stage's outcome JSON (not posted) from job results and output.
+  classify([stage, ...rest]) {
+    const f = flags(rest);
+    if (!classifiers[stage]) throw new Error(`No classifier for ${stage}`);
+    const outcome = normalizeOutcome({
+      ...classifiers[stage](f),
+      prompt_version: f['prompt-version'] ?? '',
+    });
+    writeFileSync(f.out, JSON.stringify(outcome));
+    setOutput('result', outcome.result);
+    setOutput('problem', outcome.problem);
+  },
+
+  // Read-only: asks the external brain for a pick (router.yml `brain` job).
+  async 'route-external'([number]) {
+    const { outcome, history } = collectRouterInput({
+      comments: list(`issues/${num(number)}/comments`),
+      botLogin: process.env.PIPELINE_BOT_LOGIN,
+    });
+    const allowed = outcome
+      ? allowedTargets(outcome.stage, outcome.problem)
+      : ['human'];
+    const pick = outcome
+      ? await decideExternal({ outcome, history, allowed })
+      : null;
+    setOutput('pick', JSON.stringify(pick ?? null));
+  },
+
+  // The router: read the notes, decide, append a route note, apply it.
+  route([number]) {
+    const n = num(number);
+    const item = api(`issues/${n}`);
+    let external = null;
+    try {
+      external = JSON.parse(process.env.ROUTER_EXTERNAL_PICK || 'null');
+    } catch {
+      external = null;
+    }
+    // develop.yml publishes nothing while a PR for the issue is open.
+    const openPullRequest =
+      !item.pull_request &&
+      list('pulls?state=open').some(
+        (p) =>
+          p.head.ref.startsWith(`issue-${n}-`) &&
+          p.head.repo?.full_name === `${OWNER}/${NAME}`,
+      );
+    const r = planRoute({
+      comments: list(`issues/${n}/comments`),
+      botLogin: process.env.PIPELINE_BOT_LOGIN,
+      mode: process.env.ROUTER_MODE === 'external' ? 'external' : 'rules',
+      shadow: process.env.ROUTER_SHADOW === 'true',
+      external,
+      facts: { openPullRequest },
+    });
+    console.log(
+      `route: ${r.outcome?.stage ?? '-'}/${r.outcome?.problem ?? '-'} -> ${r.final.target} (${r.final.reason})`,
+    );
+    postComment(n, r.body);
+    setStage(n, r.stage);
+    setOutput('target', r.final.target);
+    setOutput(
+      'retry_pr',
+      r.final.target === 'retry' && r.outcome?.stage === 'fix' ? String(n) : '',
+    );
   },
 
   // COMMENT_AUTHOR overrides the author to match, for comments posted with
@@ -182,7 +317,8 @@ const commands = {
     writeState(n, { ...emptyState(), watermark: created });
   },
 
-  'fix-adapter'([pr, outFile]) {
+  // `mode` is 'retry' when the router re-runs a round whose fixer failed.
+  'fix-adapter'([pr, outFile, mode]) {
     const n = num(pr);
     const bot = botLogin();
     const p = api(`pulls/${n}`);
@@ -203,6 +339,7 @@ const commands = {
       setOutput('loop', '');
       return;
     }
+    const retry = mode === 'retry';
     const labels = labelsOf(n);
     const state = readState(n);
     const threads = reviewThreads(n);
@@ -215,15 +352,22 @@ const commands = {
       resolvedCommentIds,
       state,
       botLogin: bot,
+      onlyKeys: retry ? new Set(state.lastBatch) : null,
     });
-    const decision = decideFix({ labels, actionable });
+    const decision = retry
+      ? decideFixRetry({ labels, batch: actionable })
+      : decideFix({ labels, actionable });
     console.log(
-      `fix-adapter: ${decision.action} (${decision.reason ?? `loop ${decision.loop}`})`,
+      `fix-adapter: ${decision.action} (${decision.reason ?? `loop ${decision.loop}${retry ? ', retry' : ''}`})`,
     );
     writeFileSync(outFile, JSON.stringify(actionable, null, 2));
     setOutput('action', decision.action);
     setOutput('loop', String(decision.loop ?? ''));
     if (decision.action === 'noop') return;
+    if (retry) {
+      setStage(n, 'stage:fixing');
+      return;
+    }
 
     // Record before acting: a rerun with no newer comments is a no-op, and
     // a crash after this line cannot spend the same round twice.
@@ -233,16 +377,20 @@ const commands = {
       handled: [
         ...new Set([...state.handled, ...actionable.map((a) => a.key)]),
       ],
+      lastBatch: actionable.map((a) => a.key),
     };
     const edit = { add: decision.add, remove: decision.remove };
     writeState(n, next, applyLabels(labels, edit));
     editLabels(n, edit);
     if (decision.action === 'escalate')
-      upsertBotComment(
-        n,
-        MARKERS.notice,
-        `**Pipeline stopped: needs attention.** ${decision.reason}; ${actionable.length} new review item(s) remain. A human needs to take over this PR. Removing \`stage:needs-attention\` restarts the fix loop with a fresh budget.`,
-      );
+      writeOutcome(n, {
+        stage: 'fix',
+        result: 'problem',
+        problem: 'budget_exhausted',
+        details: [
+          `${decision.reason}; ${actionable.length} new review item(s) remain.`,
+        ],
+      });
   },
 
   'fix-reply'([pr, sha, itemsFile]) {
@@ -307,12 +455,13 @@ const commands = {
     const report = parseSecurityReport(readFileSync(responseFile, 'utf8'));
     if (!report.ok) {
       status('error', report.error);
-      setStage(n, 'stage:needs-attention');
-      upsertBotComment(
-        n,
-        MARKERS.notice,
-        `**Security review failed:** ${report.error}. A human needs to review this PR.`,
-      );
+      writeOutcome(n, {
+        stage: 'security',
+        result: 'problem',
+        problem: 'invalid_output',
+        summary: `Security review stopped: ${report.error}.`,
+        prompt_version: `security-review.md@${promptVer}`,
+      });
       process.exitCode = 1;
       return;
     }
@@ -348,6 +497,12 @@ const commands = {
         ? 'No blocking findings'
         : `${review.blockingCount} blocking finding(s)`,
     );
+    writeOutcome(n, {
+      stage: 'security',
+      result: 'success',
+      summary: `Security review of ${sha.slice(0, 7)}: ${review.clean ? 'clean' : `${review.blockingCount} blocking finding(s)`}.`,
+      prompt_version: `security-review.md@${promptVer}`,
+    });
     setStage(n, 'stage:reviewing');
     setOutput('clean', String(review.clean));
   },
@@ -395,12 +550,15 @@ const commands = {
         });
       } catch (e) {
         process.env.GH_TOKEN = saved;
-        setStage(n, 'stage:needs-attention');
-        upsertBotComment(
-          n,
-          MARKERS.notice,
-          '**Could not request a Copilot review.** Check that Copilot code review is enabled for this repo and that `COPILOT_REVIEW_TOKEN` belongs to a user with Copilot access.',
-        );
+        writeOutcome(n, {
+          stage: 'approval',
+          result: 'problem',
+          problem: 'copilot_request_failed',
+          summary: 'Approval stopped: could not request a Copilot review.',
+          details: [
+            'Check that Copilot code review is enabled for this repo and that `COPILOT_REVIEW_TOKEN` belongs to a user with Copilot access.',
+          ],
+        });
         throw e;
       } finally {
         process.env.GH_TOKEN = saved;
@@ -409,6 +567,11 @@ const commands = {
     }
 
     if (decision.action === 'human-approval') {
+      writeOutcome(n, {
+        stage: 'approval',
+        result: 'success',
+        summary: `Handed to human approval at ${head.slice(0, 7)}.`,
+      });
       // Later human feedback starts a fresh fix budget.
       editLabels(n, resetFixLoop(labels, 'stage:human-approval'));
       if (p.draft)
@@ -439,7 +602,8 @@ const commands = {
     }
   },
 
-  // CI failed on a PR (security.yml, workflow_run). Pipeline PRs only.
+  // CI failed on a PR (security.yml, workflow_run). Pipeline PRs only:
+  // appends a `ci_failed` outcome note for the router.
   'ci-failed'([pr, sha, runUrl]) {
     const n = num(pr);
     const decision = decideCiFailed({
@@ -452,16 +616,17 @@ const commands = {
       `ci-failed: ${decision.action}${decision.reason ? ` (${decision.reason})` : ''}`,
     );
     if (decision.action === 'noop') return;
-    setStage(n, 'stage:needs-attention');
-    upsertBotComment(
-      n,
-      MARKERS.noticeCi,
-      [
-        `**CI failed on the agent PR; needs attention.** Problem: \`${decision.problem}\` (commit \`${sha.slice(0, 7)}\`).`,
-        `See the run: ${runUrl}`,
-        'Push a fix to the branch (or take the PR over by hand). The next green CI run starts the security review again and moves the PR on.',
-      ].join('\n\n'),
-    );
+    // A problem outcome sets stage:routing; the router hands it on.
+    writeOutcome(n, {
+      stage: 'ci',
+      result: 'problem',
+      problem: decision.problem,
+      summary: `CI failed on the agent PR at ${sha.slice(0, 7)}.`,
+      details: [
+        'Push a fix to the branch, or take the PR over by hand. The next green CI run starts the security review again.',
+      ],
+      run_url: runUrl,
+    });
   },
 
   'linked-issues'([pr]) {

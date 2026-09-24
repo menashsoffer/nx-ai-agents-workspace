@@ -38,7 +38,7 @@ test.describe('site under the Pages base path', () => {
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.locator('html')).toHaveAttribute('lang', 'he');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      'ברוכים הבאים',
+      'NX AI Pipeline',
     );
     // public/ asset referenced through BASE_URL actually loaded
     const logoWidth = await page
@@ -79,7 +79,7 @@ test.describe('site under the Pages base path', () => {
     await page.goBack();
     await expect(page).toHaveURL(BASE);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      'ברוכים הבאים',
+      'NX AI Pipeline',
     );
   });
 });
