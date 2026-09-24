@@ -24,19 +24,19 @@ and sets the next label itself. Dashed red arrows: a stage that hits a problem
 appends a problem outcome note and sets `stage:routing`; only the router
 decides what happens next.
 
-| Stage label             | Set by         | Meaning / next step                                                                 |
-| ----------------------- | -------------- | ----------------------------------------------------------------------------------- |
-| `stage:inbox`           | `inbox.yml`    | New issue. A maintainer triages it.                                                 |
-| `stage:qualified`       | **a human**    | Starts the spec agent.                                                              |
-| `stage:spec`            | `spec.yml`     | Spec comment posted. Starts the plan agent.                                         |
-| `stage:planned`         | `plan.yml`     | Plan comment posted. Starts the develop agent.                                      |
-| `stage:building`        | `develop.yml`  | Draft PR open (on the issue and the PR). CI runs.                                   |
-| `stage:reviewing`       | `security.yml` | Security review posted on the PR.                                                   |
-| `stage:fixing`          | `fix.yml`      | Fixer is applying review feedback.                                                  |
-| `stage:human-approval`  | `approval.yml` | Everything green. A human reviews the PR and the preview, then approves and merges. |
-| `stage:routing`         | any step       | A stage reported a problem in an outcome note. `router.yml` decides the next step.  |
-| `stage:needs-attention` | `router.yml`   | The router handed off. Read its latest `pipeline:route` note and act.               |
-| `fix-loop:1` / `:2`     | `fix.yml`      | Automated fix rounds used. At most two.                                             |
+| Stage label             | Set by         | Meaning / next step                                                                          |
+| ----------------------- | -------------- | -------------------------------------------------------------------------------------------- |
+| `stage:inbox`           | `inbox.yml`    | New issue. A maintainer triages it.                                                          |
+| `stage:qualified`       | **a human**    | Starts the spec agent.                                                                       |
+| `stage:spec`            | `spec.yml`     | Spec comment posted. Starts the plan agent.                                                  |
+| `stage:planned`         | `plan.yml`     | Plan comment posted. Starts the develop agent.                                               |
+| `stage:building`        | `develop.yml`  | Draft PR open (on the issue and the PR). CI runs.                                            |
+| `stage:reviewing`       | `security.yml` | Security review posted on the PR.                                                            |
+| `stage:fixing`          | `fix.yml`      | Fixer is applying review feedback.                                                           |
+| `stage:human-approval`  | `approval.yml` | Everything green. A human reviews the PR and the preview, then approves and merges.          |
+| `stage:routing`         | any step       | A stage reported a problem in an outcome note. `router.yml` decides the next step.           |
+| `stage:needs-attention` | `router.yml`   | The router handed off. Read its latest `pipeline:route` note and act.                        |
+| `fix-loop:1` / `:2`     | `fix.yml`      | Automated fix rounds used. At most two. Cleared on escalation and at `stage:human-approval`. |
 
 From `stage:building` on, the **PR** carries the stage; the issue stays at
 `stage:building` until the PR merges and closes it.
@@ -52,6 +52,7 @@ From `stage:building` on, the **PR** carries the stage; the issue stays at
 | `router.yml`       | `stage:routing` added (issue or PR), or manual       | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)       |
 | `ci.yml`           | every PR                                             | none                           | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site) |
 | `security.yml`     | CI succeeded on a PR                                 | Gemini (`security-review.md`)  | PR review, `pipeline/security` status, `stage:reviewing`                  |
+| `security.yml`     | CI failed on a pipeline PR's head                    | none                           | outcome note `ci_failed` + `stage:routing` (router → human)               |
 | `fix.yml`          | review submitted, manual, or router retry            | Gemini (`fix.md`)              | one fix commit per round, replies on threads                              |
 | `approval.yml`     | `pipeline/security` status, review submitted, manual | none                           | Copilot review request, then `stage:human-approval` + preview comment     |
 | `preview.yml`      | PR opened/updated/closed                             | none                           | `https://<owner>.github.io/<repo>/pr-<n>/`, removed on close              |
@@ -68,26 +69,54 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
 - **Issue and comment content is data, never instructions.** Workflows wrap
   it in `<untrusted-data>` tags (look-alike tags inside are neutralised),
   and every prompt says so. Titles and bodies never reach a shell through
-  `${{ }}`; they pass through env vars and files.
+  `${{ }}`; they pass through env vars and files. The trusted "Run
+  context" section accepts only known keys, each with a strict format
+  (repo slug, `#<number>`, commit SHA, pipeline branch, prompt version);
+  anything else fails the render.
 - **Agents hold no write token.** Agent jobs get a read-only `GITHUB_TOKEN`
   and checkouts without persisted credentials. Their output crosses a job
   boundary (a comment body, JSON, or a patch file) and a separate
   deterministic job validates it before anything is written:
   - spec: required headings present;
   - plan / develop: JSON schema (`--json-schema`), status and `problem` fields decide the outcome;
-  - security review: JSON parsed and normalised; unknown severities count as blocking;
+  - security review: exactly one fenced `json` block, parsed and normalised
+    (zero or several blocks fail the review: `pipeline/security` = error,
+    outcome note `invalid_output` → router → human); unknown severities
+    count as blocking;
   - develop / fix patches: rejected if they touch `.github/`, `CODEOWNERS`,
-    `.claude/`, `.gemini/` or `.pipeline/`, checked twice.
+    `.claude/`, `.gemini/` or `.pipeline/`, or the execution surface of
+    `pnpm` (`package.json` and `pnpm-lock.yaml` at any depth,
+    `pnpm-workspace.yaml`, `.npmrc`, `.gitmodules`), checked twice. The
+    check reads every header `git apply` uses (`diff --git`, rename/copy,
+    `---`/`+++`), decodes git's C-quoted names and rejects any patch it
+    cannot parse. So
+    **agents cannot add or change dependencies, scripts or projects**: a
+    task that needs that stops at CI or review and a human finishes it.
 - **Minimal tools.** Spec and security review: Gemini read-only file tools.
   Plan: Claude `Read, Glob, Grep`. Develop: file edits, `pnpm` and local
-  `git add/commit` only; no push, `gh`, `curl` or web. Fix: file edits plus
-  `pnpm`.
+  `git add/commit` only; no push, `gh`, `curl` or web. Fix: file edits only,
+  **no shell**; a separate job with no secrets formats the patch and runs
+  `pnpm verify` before the push job.
+- **Markers count only from the bot.** Anyone can post a comment containing
+  `<!-- pipeline-state -->` or `<!-- pipeline:spec -->`. The scripts match a
+  marker comment only if `PIPELINE_BOT_LOGIN` wrote it (the preview comment:
+  `github-actions[bot]`), and the plan/develop agents get the spec and plan
+  as separate fields taken from the bot's comments, with markers in all
+  other text neutralised. Editing the bot's spec comment keeps the bot as
+  its author, so that still works.
+- **Trusted feedback only.** The fix loop runs only on PRs the pipeline
+  opened (author `PIPELINE_BOT_LOGIN`, branch `issue-<n>-<slug>`), and only
+  on feedback from the pipeline bot, Copilot, or people whose
+  `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR`. Anyone else
+  can comment on this public repo; their text never reaches the fixer.
 - **Trusted code only.** Workflows triggered by `workflow_run`, `status` or
   reviews load prompts and scripts from the default branch, not from the PR.
   Fork PRs never reach an agent.
 - **No merge path for bots.** The ruleset needs a code-owner approval after
-  the last push, resolved conversations and a green, up-to-date `ci`, with
-  no bypass actors. The pipeline App has no `workflows` or `administration`
+  the last push, resolved conversations, and two green, up-to-date status
+  checks: `ci` (GitHub Actions) and `pipeline/security` (the security
+  review verdict, accepted **only from the pipeline App**, so no other
+  token can post a passing one). There are no bypass actors. The pipeline App has no `workflows` or `administration`
   permission. `GITHUB_TOKEN` cannot approve PRs.
 - **Bounded loops.** Two automated fix rounds per PR. Router loops per item:
   re-spec 2, re-plan 1, re-develop 1, fix retry 1, and 5 routed rounds in
@@ -103,23 +132,32 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
 
 `fix.yml`'s first job is deterministic. On each run it:
 
-1. reads the `<!-- pipeline-state -->` comment on the PR (created with the PR);
-2. collects review comments and review bodies **newer than the state's
+1. stops (no-op) unless the PR was opened by the pipeline: author is
+   `PIPELINE_BOT_LOGIN` and the head branch is `issue-<n>-<slug>`;
+2. reads the `<!-- pipeline-state -->` comment on the PR (created with the PR);
+3. collects review comments and review bodies from **trusted sources** (the
+   pipeline bot, Copilot, repo owners/members/collaborators) **newer than the state's
    watermark**, skips ones already handled (**deduped by comment id**),
-   resolved threads, approvals, Copilot's summary body, and pipeline
+   resolved threads, approved and dismissed reviews, Copilot's summary body, and pipeline
    bookkeeping. Pipeline review bodies count only if marked
-   `<!-- pipeline:actionable -->`;
-3. decides:
+   `<!-- pipeline:actionable -->`. Dedupe is by id; the watermark only moves
+   past items with a final decision. Resolved threads and empty bodies are
+   deferred (the watermark stops before them), so a thread reopened later
+   is still picked up. Inline comments count from their review's
+   submission time;
+4. decides:
 
-   | Labels on the PR | New actionable comments | Action                                           |
-   | ---------------- | ----------------------- | ------------------------------------------------ |
-   | any              | none                    | nothing (rerunning is safe)                      |
-   | no `fix-loop:*`  | yes                     | add `fix-loop:1`, run the fixer                  |
-   | `fix-loop:1`     | yes                     | swap to `fix-loop:2`, run the fixer              |
-   | `fix-loop:2`     | yes                     | outcome note `budget_exhausted` → router → human |
+   | Labels on the PR | New actionable comments | Action                                                               |
+   | ---------------- | ----------------------- | -------------------------------------------------------------------- |
+   | any              | none                    | nothing (rerunning is safe)                                          |
+   | no `fix-loop:*`  | yes                     | add `fix-loop:1`, run the fixer                                      |
+   | `fix-loop:1`     | yes                     | swap to `fix-loop:2`, run the fixer                                  |
+   | `fix-loop:2`     | yes                     | clear `fix-loop:*`; outcome note `budget_exhausted` → router → human |
 
-4. records the handled ids, the new watermark and the round's batch
-   (`lastBatch`) **before** the fixer runs.
+5. records the handled ids, the new watermark and the round's batch
+   (`lastBatch`) in the state comment **before** it edits labels or the
+   fixer runs, so a crash cannot spend the same round twice (at worst,
+   that round's items are dropped).
 
 It does nothing while the PR is in `stage:routing` or
 `stage:needs-attention`. When the fixer itself fails, the router may
@@ -127,9 +165,14 @@ It does nothing while the PR is in `stage:routing` or
 replays `lastBatch` under the current `fix-loop:*` label. A retry never
 consumes a new fix round.
 
+The budget resets whenever `fix-loop:*` is cleared: on escalation (so a
+human restart gives the PR two fresh rounds) and when the PR reaches
+`stage:human-approval` (so later human feedback starts at round 1).
+
 After a successful fix, the push job replies on each inline thread and
-resolves the threads opened by bots (security review, Copilot). Threads
-opened by people stay open for them to resolve.
+resolves a thread only if **every** comment in it is from the pipeline bot
+or Copilot. A thread a person opened or replied in stays open for them to
+resolve.
 
 ### Concurrency
 
@@ -156,19 +199,19 @@ Nothing happens until these files are on `main`.
    (label, push, PR, review, status) is made with this App's token.
 3. **Secrets and variables** (Settings → Secrets and variables → Actions):
 
-   | Kind     | Name                       | Value                                                                              |
-   | -------- | -------------------------- | ---------------------------------------------------------------------------------- |
-   | variable | `PIPELINE_APP_CLIENT_ID`   | the App's client ID                                                                |
-   | secret   | `PIPELINE_APP_PRIVATE_KEY` | the App's private key (PEM)                                                        |
-   | variable | `PIPELINE_BOT_LOGIN`       | the App's bot login, e.g. `my-pipeline[bot]` (lets Claude run on its label events) |
-   | secret   | `CLAUDE_CODE_OAUTH_TOKEN`  | Claude subscription token from `claude setup-token` (Pro/Max); no API billing      |
-   | secret   | `GEMINI_API_KEY`           | Gemini API key                                                                     |
-   | variable | `GEMINI_MODEL`             | optional, e.g. a specific Gemini model                                             |
-   | variable | `PROJECT_URL`              | set by `setup-project.sh`; leave unset to run without a Project                    |
-   | secret   | `PROJECT_TOKEN`            | classic PAT, `project` scope (App tokens cannot reach user-owned Projects)         |
-   | secret   | `COPILOT_REVIEW_TOKEN`     | PAT of a user with Copilot code review (Pull requests: write); App token if unset  |
-   | variable | `ROUTER_MODE`              | optional: `rules` (default when unset) or `external` ([Router](#router))           |
-   | variable | `ROUTER_SHADOW`            | optional: `true` records the external brain's pick without using it                |
+   | Kind     | Name                       | Value                                                                                                                   |
+   | -------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+   | variable | `PIPELINE_APP_CLIENT_ID`   | the App's client ID                                                                                                     |
+   | secret   | `PIPELINE_APP_PRIVATE_KEY` | the App's private key (PEM)                                                                                             |
+   | variable | `PIPELINE_BOT_LOGIN`       | **required**: the App's bot login, e.g. `my-pipeline[bot]`; the only author whose marker comments and notes are trusted |
+   | secret   | `CLAUDE_CODE_OAUTH_TOKEN`  | Claude subscription token from `claude setup-token` (Pro/Max); no API billing                                           |
+   | secret   | `GEMINI_API_KEY`           | Gemini API key                                                                                                          |
+   | variable | `GEMINI_MODEL`             | optional, e.g. a specific Gemini model                                                                                  |
+   | variable | `PROJECT_URL`              | set by `setup-project.sh`; leave unset to run without a Project                                                         |
+   | secret   | `PROJECT_TOKEN`            | classic PAT, `project` scope (App tokens cannot reach user-owned Projects)                                              |
+   | secret   | `COPILOT_REVIEW_TOKEN`     | PAT of a user with Copilot code review (Pull requests: write); App token if unset                                       |
+   | variable | `ROUTER_MODE`              | optional: `rules` (default when unset) or `external` ([Router](#router))                                                |
+   | variable | `ROUTER_SHADOW`            | optional: `true` records the external brain's pick without using it                                                     |
 
 4. **Labels:** `tools/scripts/pipeline/setup-labels.sh`
 5. **Project:** `gh auth refresh -s project && tools/scripts/pipeline/setup-project.sh`,
@@ -183,6 +226,9 @@ Nothing happens until these files are on `main`.
    (see [ADR 0004](decisions/0004-gh-pages-branch-for-previews.md)).
 7. **Copilot code review** enabled for the repo (Settings → Copilot → Code review).
 8. **Ruleset** (after everything above is merged): `tools/scripts/pipeline/setup-ruleset.sh`.
+   It pins `pipeline/security` to the App's ID, found from
+   `PIPELINE_BOT_LOGIN` (or pass `PIPELINE_APP_ID=<App ID>`). Re-run it if
+   you replace the App.
 
 ## Running one task through it
 
@@ -219,18 +265,21 @@ questions / fix the cause and restart a stage:
 - spec / plan / develop: add the stage's trigger label (`stage:qualified`,
   `stage:spec`, `stage:planned`). The stage's own label change then clears
   `stage:needs-attention`;
-- fix loop: remove `stage:needs-attention` and the `fix-loop:*` label, then
-  run **Pipeline · Fix** manually with the PR number;
+- fix loop: remove `stage:needs-attention` (escalation already cleared
+  `fix-loop:*`, so the PR gets two fresh rounds), then run **Pipeline ·
+  Fix** manually with the PR number;
 - approval: remove `stage:needs-attention`, then run **Pipeline · Approval**
   manually with the PR number;
+- failed CI (`ci_failed`): push a fix to the PR branch. The next green CI
+  run starts the security review, which moves the PR to `stage:reviewing`;
 - router: run **Pipeline · Router** manually with the item number to route
   the latest outcome note again (it goes to a human if that note was
   already routed).
 
 **Resetting loops.** Router caps count only the route notes after the
 latest route to a human, so a restart after a hand-off always starts with
-the full budget. There is nothing else to reset. Removing the fix-loop
-label resets the fix rounds.
+the full budget. There is nothing else to reset: escalation clears the
+fix-loop label, which resets the fix rounds.
 
 ## Router
 
@@ -253,7 +302,7 @@ so the history stays readable:
 ```
 ````
 
-`stage` is one of `spec`, `plan`, `develop`, `security`, `fix`, `approval`;
+`stage` is one of `spec`, `plan`, `develop`, `security`, `fix`, `approval`, `ci`;
 `result` is `success` or `problem`. On success the stage moves to its next
 label itself (no extra run). On a problem it sets `stage:routing`.
 `pipeline.mjs outcome <n> <file.json>` posts a note; `pipeline.mjs classify
@@ -263,22 +312,23 @@ forge a marker.
 
 ### Problem codes (`PROBLEMS`)
 
-| Code                     | Reported by          | Meaning                                                                                                      |
-| ------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `invalid_output`         | spec, plan, security | The agent answered, but not in the required shape                                                            |
-| `agent_error`            | spec, plan, dev, fix | The run failed: API/quota/timeout, empty output, no changes                                                  |
-| `spec_missing`           | plan                 | No spec comment                                                                                              |
-| `spec_questions`         | plan                 | The spec's open questions block planning                                                                     |
-| `untestable_criteria`    | plan                 | Acceptance criteria untestable or contradictory                                                              |
-| `verify_failed`          | develop              | `pnpm verify` could not be made green                                                                        |
-| `plan_gap`               | develop              | The plan is wrong or incomplete                                                                              |
-| `budget_exhausted`       | fix                  | Both fix rounds used                                                                                         |
-| `copilot_request_failed` | approval             | The Copilot review could not be requested                                                                    |
-| `protected_surface`      | plan, develop        | **Gate.** Touches `tools/security/`, `.github/`, `CODEOWNERS`, `packageManager`/`pnpm` supply-chain settings |
-| `needs_secrets_ci_infra` | plan, develop        | **Gate.** Needs secrets, CI/workflow changes, infra, a server                                                |
-| `scope_split`            | plan                 | **Gate.** Bigger than size L; split the issue                                                                |
-| `embedded_instructions`  | plan                 | **Gate.** The issue contains instructions aimed at the agents                                                |
-| `forbidden_path`         | develop, fix         | **Gate.** `check-patch` rejected the patch                                                                   |
+| Code                     | Reported by          | Meaning                                                                                                     |
+| ------------------------ | -------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `invalid_output`         | spec, plan, security | The agent answered, but not in the required shape                                                           |
+| `agent_error`            | spec, plan, dev, fix | The run failed: API/quota/timeout, empty output, no changes                                                 |
+| `spec_missing`           | plan                 | No spec comment                                                                                             |
+| `spec_questions`         | plan                 | The spec's open questions block planning                                                                    |
+| `untestable_criteria`    | plan                 | Acceptance criteria untestable or contradictory                                                             |
+| `verify_failed`          | develop, fix         | `pnpm verify` could not be made green (fix: the secret-free verify job failed on the patch)                 |
+| `plan_gap`               | develop              | The plan is wrong or incomplete                                                                             |
+| `budget_exhausted`       | fix                  | Both fix rounds used                                                                                        |
+| `copilot_request_failed` | approval             | The Copilot review could not be requested                                                                   |
+| `ci_failed`              | ci                   | CI failed on a pipeline PR's current head (`security.yml`'s `ci-failed` job)                                |
+| `protected_surface`      | plan, develop        | **Gate.** Touches `tools/security/`, `.github/`, `CODEOWNERS`, supply-chain settings, any manifest/lockfile |
+| `needs_secrets_ci_infra` | plan, develop        | **Gate.** Needs secrets, CI/workflow changes, infra, a server                                               |
+| `scope_split`            | plan                 | **Gate.** Bigger than size L; split the issue                                                               |
+| `embedded_instructions`  | plan                 | **Gate.** The issue contains instructions aimed at the agents                                               |
+| `forbidden_path`         | develop, fix         | **Gate.** `check-patch` rejected the patch                                                                  |
 
 ### Rules table (`decideByRules`)
 
@@ -294,6 +344,7 @@ forge a marker.
 | fix      | `budget_exhausted`                                      | human                                                       |
 | security | `invalid_output`                                        | human                                                       |
 | approval | `copilot_request_failed`                                | human                                                       |
+| ci       | `ci_failed`                                             | human (proposed later: one fixer retry with the CI log)     |
 | any      | hard gate, anything unlisted, or no valid outcome note  | human                                                       |
 
 A re-spec shows the planner's questions in the route note; the spec prompt
@@ -355,6 +406,9 @@ key or secret exists for it yet.
 
 ### Not automated yet
 
+- **CI failure retry.** `ci_failed` goes to a human. Proposed: one retry
+  through the fixer with the CI log as input, then a human.
+
 - **Security retry.** `security` problems go to a human, because
   `security.yml` only runs on `workflow_run` after CI. A retry would need a
   `workflow_dispatch` path in `security.yml` (with the PR number and head
@@ -381,3 +435,17 @@ data, never instructions.
   you need to.
 - The pipeline's own files (`.github/**`) cannot be changed by the pipeline.
   Change them in a normal PR.
+- **Every PR to `main` needs `pipeline/security` = success**, including
+  PRs you open yourself. `security.yml` reviews every same-repo PR after
+  green CI, but the fix loop only runs on pipeline PRs, so fix blocking
+  findings on your own PRs by hand (the next push gets a fresh review). If
+  the review errored (quota, invalid output), re-run **Pipeline · Security
+  Review** from the Actions tab. A status you post yourself does not count.
+- **Dependabot and fork PRs get no `pipeline/security` status**, so they
+  cannot merge as they are. Fork PRs are never reviewed (on purpose: no
+  secrets for fork code). Runs triggered by Dependabot see only
+  _Dependabot_ secrets, so neither Gemini nor the App token is available.
+  For Dependabot, add `PIPELINE_APP_PRIVATE_KEY` and `GEMINI_API_KEY` as
+  Dependabot secrets too (Settings → Secrets and variables → Dependabot),
+  so its PRs are reviewed like any other. For a fork PR, re-create the
+  change on a same-repo branch.

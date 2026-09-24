@@ -51,8 +51,14 @@ export const MARKERS = {
 export const COPILOT_REVIEWER = 'copilot-pull-request-reviewer[bot]';
 export const COPILOT_LOGINS = [COPILOT_REVIEWER, 'Copilot'];
 
+// Humans whose review feedback may reach the fixer. Anyone else can comment
+// on a public repo, so their text never becomes agent input.
+export const TRUSTED_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+
 // Agent-produced patches may never touch these. The pipeline's own
-// workflows, prompts and scripts are the trust boundary.
+// workflows, prompts and scripts are the trust boundary. Package manifests,
+// the lockfile and pnpm/npm/git config are the execution surface of every
+// later `pnpm` run, so dependency and script changes need a human.
 export const FORBIDDEN_PATH_PATTERNS = [
   /^\.github\//,
   /(^|\/)CODEOWNERS$/,
@@ -65,6 +71,11 @@ export const FORBIDDEN_PATH_PATTERNS = [
   /^tools\/security\//,
   /^tools\/workspace-plugin\//,
   /^tools\/pipeline-map\//,
+  /(^|\/)package\.json$/,
+  /(^|\/)pnpm-lock\.yaml$/,
+  /(^|\/)pnpm-workspace\.yaml$/,
+  /(^|\/)\.npmrc$/,
+  /(^|\/)\.gitmodules$/,
 ];
 
 const BLOCKING_SEVERITIES = new Set(['critical', 'high', 'medium']);
@@ -101,6 +112,24 @@ export function branchName(issueNumber, title) {
   return `issue-${n}-${slugify(title)}`;
 }
 
+const PIPELINE_BRANCH = /^issue-[1-9]\d*-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** GitHub logins are case-insensitive. */
+export const sameLogin = (a, b) =>
+  Boolean(a && b) && String(a).toLowerCase() === String(b).toLowerCase();
+
+/**
+ * True only for PRs the pipeline opened: authored by the pipeline App's bot
+ * and on an `issue-<n>-<slug>` branch (see branchName) in this repository.
+ */
+export function isPipelinePr({ author, headRef, headRepo, repo, botLogin }) {
+  return (
+    sameLogin(author, botLogin) &&
+    PIPELINE_BRANCH.test(String(headRef ?? '')) &&
+    (headRepo === undefined || sameLogin(headRepo, repo))
+  );
+}
+
 export function previewUrl(owner, repo, prNumber) {
   return `https://${owner.toLowerCase()}.github.io/${repo}/pr-${prNumber}/`;
 }
@@ -121,6 +150,36 @@ function escapeUntrusted(text) {
 }
 
 /**
+ * Keys allowed in the trusted "Run context" section, each with the only
+ * shape its value may take. Anything else would put unvalidated text
+ * (for example a branch name) next to the instructions.
+ */
+export const CONTEXT_FORMATS = {
+  repository: /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/,
+  issue: /^#[1-9]\d*$/,
+  'pull request': /^#[1-9]\d*$/,
+  branch: PIPELINE_BRANCH,
+  'head commit': /^[0-9a-f]{40}$/,
+  'fix loop': /^[12] of 2$/,
+  'prompt version': /^[\w./-]+\.md@[\w.-]+$/,
+  'pipeline bot login': /^[A-Za-z0-9-]+(?:\[bot\])?$/,
+};
+
+/** Throws unless every context entry is a known key with a valid value. */
+export function validateContext(context) {
+  for (const [key, value] of Object.entries(context)) {
+    const format = Object.hasOwn(CONTEXT_FORMATS, key)
+      ? CONTEXT_FORMATS[key]
+      : null;
+    if (!format) throw new Error(`Unknown prompt context key: ${key}`);
+    if (typeof value !== 'string' || !format.test(value))
+      throw new Error(
+        `Invalid prompt context value for ${key}: ${JSON.stringify(String(value)).slice(0, 80)}`,
+      );
+  }
+}
+
+/**
  * Versioned prompt + trusted context + untrusted data. Data is fenced in
  * <untrusted-data> tags (with any look-alike tags inside it neutralised) so
  * the model can tell instructions from content.
@@ -131,6 +190,7 @@ export function renderPrompt({
   data = [],
   maxDataChars = 90_000,
 }) {
+  validateContext(context);
   const body = promptText.replace(/^---\n[\s\S]*?\n---\n*/, '');
   const ctx = Object.entries(context)
     .map(([k, v]) => `- ${k}: ${v}`)
@@ -178,14 +238,143 @@ export function validateSpec(markdown) {
 
 // ---------------------------------------------------------------- patches
 
-/** Paths touched by a `git format-patch` / `git diff` output. */
+const C_ESCAPES = {
+  a: 7,
+  b: 8,
+  t: 9,
+  n: 10,
+  v: 11,
+  f: 12,
+  r: 13,
+  '"': 34,
+  '\\': 92,
+};
+
+/**
+ * Decodes a git C-quoted path (`"a/\327\251 x.md"`, as git writes names
+ * with non-ASCII bytes, quotes, backslashes or control characters).
+ * Returns null if `text` is not exactly one well-formed quoted string.
+ */
+export function unquoteCPath(text) {
+  const s = String(text);
+  if (s.length < 2 || s[0] !== '"' || s.at(-1) !== '"') return null;
+  const chars = [...s.slice(1, -1)]; // code points, not UTF-16 units
+  const bytes = [];
+  const utf8 = new TextEncoder();
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (ch === '"') return null;
+    if (ch !== '\\') {
+      bytes.push(...utf8.encode(ch));
+      continue;
+    }
+    const next = chars[++i];
+    if (next === undefined) return null;
+    if (/[0-7]/.test(next)) {
+      const oct = chars.slice(i, i + 3).join('');
+      if (!/^[0-3][0-7]{2}$/.test(oct)) return null;
+      bytes.push(parseInt(oct, 8));
+      i += 2;
+    } else if (next in C_ESCAPES) bytes.push(C_ESCAPES[next]);
+    else return null;
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(
+      Uint8Array.from(bytes),
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** A path token: C-quoted, or taken verbatim. */
+const pathToken = (t) => (t.startsWith('"') ? unquoteCPath(t) : t);
+
+/** Repo-relative path, or null if it could escape the repo or is empty. */
+function normalizePath(p) {
+  if (p === null || p === '' || p.startsWith('/') || p.includes('\0'))
+    return null;
+  const parts = p.split('/').filter((x) => x !== '' && x !== '.');
+  if (!parts.length || parts.includes('..')) return null;
+  return parts.join('/');
+}
+
+/**
+ * Splits the `a/<old> b/<new>` part of a `diff --git` header. Either side
+ * may be C-quoted; unquoted names may contain spaces, so every split point
+ * is tried. Returns [old, new], or null when the header is ambiguous or
+ * malformed.
+ */
+function splitGitHeader(rest) {
+  const candidates = [];
+  for (let i = rest.indexOf(' '); i !== -1; i = rest.indexOf(' ', i + 1)) {
+    const a = pathToken(rest.slice(0, i));
+    const b = pathToken(rest.slice(i + 1));
+    if (a?.startsWith('a/') && b?.startsWith('b/'))
+      candidates.push([a.slice(2), b.slice(2)]);
+  }
+  if (candidates.length === 1) return candidates[0];
+  const same = candidates.filter(([a, b]) => a === b);
+  return same.length === 1 ? same[0] : null;
+}
+
+/**
+ * Paths touched by a `git format-patch` / `git diff` output, from every
+ * header git apply reads: `diff --git`, `rename/copy from/to` and
+ * `---`/`+++` (any line that looks like one, even inside a hunk or a commit
+ * message, so the scan over-collects rather than misses). Handles C-quoted
+ * names. Returns `{ paths, errors }`; any unparseable header is an error,
+ * and callers must reject the patch (fail closed).
+ */
 export function patchPaths(patch) {
   const paths = new Set();
-  for (const m of String(patch).matchAll(/^diff --git a\/(\S+) b\/(\S+)$/gm)) {
-    paths.add(m[1]);
-    paths.add(m[2]);
+  const errors = [];
+  const add = (raw, line) => {
+    const p = normalizePath(raw);
+    if (p === null) errors.push(`unparseable path in: ${line.slice(0, 200)}`);
+    else paths.add(p);
+  };
+  let headers = 0;
+  for (const rawLine of String(patch).split('\n')) {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+    let m;
+    if (line.startsWith('diff --git')) {
+      headers++;
+      const pair = line.startsWith('diff --git ')
+        ? splitGitHeader(line.slice('diff --git '.length))
+        : null;
+      if (!pair) {
+        errors.push(`unparseable header: ${line.slice(0, 200)}`);
+        continue;
+      }
+      add(pair[0], line);
+      add(pair[1], line);
+    } else if ((m = /^(?:rename|copy) (?:from|to) (.*)$/.exec(line))) {
+      add(pathToken(m[1]), line);
+    } else if ((m = /^(?:---|\+\+\+) (.*)$/.exec(line))) {
+      let v = m[1];
+      if (!v.startsWith('"')) v = v.replace(/\t.*$/, '');
+      v = pathToken(v);
+      if (v === '/dev/null') continue;
+      // git apply strips one leading component (-p1): `a/x` -> `x`.
+      if (v !== null) v = v.includes('/') ? v.slice(v.indexOf('/') + 1) : v;
+      add(v, line);
+    }
   }
-  return [...paths];
+  if (String(patch).trim() && headers === 0)
+    errors.push('no `diff --git` header found');
+  return { paths: [...paths], errors };
+}
+
+/** check-patch: rejects forbidden paths and anything it cannot parse. */
+export function checkPatch(patch) {
+  const { paths, errors } = patchPaths(patch);
+  const forbidden = forbiddenPaths(paths);
+  return {
+    ok: errors.length === 0 && forbidden.length === 0,
+    forbidden,
+    errors,
+  };
 }
 
 export function forbiddenPaths(paths) {
@@ -235,81 +424,234 @@ export function renderState(state, labels = []) {
 
 const short = (sha) => (sha ? `\`${sha.slice(0, 7)}\`` : '-');
 
+// ---------------------------------------------------------------- comments
+
+/**
+ * The comment carrying `marker`, written by `author` (the pipeline bot).
+ * Anyone can post a comment containing a marker on a public repo, so
+ * markers from other authors are never trusted.
+ */
+export function findMarkerComment(comments, marker, author) {
+  if (!author) throw new Error('findMarkerComment needs an author');
+  return comments.find(
+    (c) => sameLogin(c.user?.login, author) && c.body?.includes(marker),
+  );
+}
+
+/** Makes `<!-- pipeline... -->` markers in untrusted text inert. */
+const neutraliseMarkers = (text) =>
+  String(text ?? '').replace(/<!--(\s*pipeline)/gi, '&lt;!--$1');
+
+/**
+ * Issue data for the plan/develop agents. The spec and plan come only from
+ * the pipeline bot's own marker comments (the latest of each; a
+ * maintainer's edit keeps the bot as author). Every other comment is
+ * discussion, with any pipeline markers in it neutralised.
+ */
+export function issueForAgents({ issue, comments, botLogin }) {
+  const fromBot = (marker) =>
+    comments
+      .filter(
+        (c) => sameLogin(c.user?.login, botLogin) && c.body?.includes(marker),
+      )
+      .at(-1)?.body ?? null;
+  const spec = botLogin ? fromBot(MARKERS.spec) : null;
+  const plan = botLogin ? fromBot(MARKERS.plan) : null;
+  return {
+    number: issue.number,
+    title: issue.title,
+    body: neutraliseMarkers(issue.body),
+    author: issue.user?.login,
+    labels: (issue.labels ?? []).map((l) =>
+      typeof l === 'string' ? l : l.name,
+    ),
+    spec,
+    plan,
+    comments: comments
+      .filter(
+        (c) =>
+          !(
+            sameLogin(c.user?.login, botLogin) && [spec, plan].includes(c.body)
+          ),
+      )
+      .map((c) => ({
+        author: c.user?.login,
+        author_association: c.author_association,
+        created_at: c.created_at,
+        body: sameLogin(c.user?.login, botLogin)
+          ? c.body
+          : neutraliseMarkers(c.body),
+      })),
+  };
+}
+
 // ---------------------------------------------------------------- fix loop
 
 const hasPipelineMarker = (body) => /<!-- pipeline[-:]/.test(body ?? '');
 
 /**
+ * Where review feedback comes from. Only these sources reach the fixer:
+ * the pipeline bot, Copilot, and humans who are owners, members or
+ * collaborators. Everything else is dropped before it can reach a prompt.
+ */
+export function feedbackSource({ user, author_association }, botLogin) {
+  const login = user?.login;
+  if (sameLogin(login, botLogin)) return 'pipeline';
+  if (COPILOT_LOGINS.some((l) => sameLogin(l, login))) return 'copilot';
+  if (user?.type !== 'Bot' && TRUSTED_ASSOCIATIONS.includes(author_association))
+    return 'human';
+  return null;
+}
+
+/**
  * Review feedback the fixer should act on: inline comments and review
- * bodies that are (a) newer than the state watermark, (b) not already
- * handled (deduped by id), (c) not in a resolved thread, (d) not pipeline
- * bookkeeping. Returns `{ actionable, watermark }`, where `watermark` is the
- * newest timestamp seen in this scan. With `onlyKeys` (a routed retry),
- * (a) and (b) are replaced by "key is in onlyKeys".
+ * bodies that are (a) from a trusted source (feedbackSource), (b) not
+ * already handled (deduped by key in `state.handled`), (c) at or after the
+ * state watermark, (d) not in a resolved thread, (e) not pipeline
+ * bookkeeping. With `onlyKeys` (a routed retry), (b) and (c) are replaced
+ * by "key is in onlyKeys"; the trust filters still apply.
+ *
+ * Each item ends as actionable, dropped for good, or deferred (resolved
+ * thread that may be reopened, empty comment or review body that may be
+ * edited). The returned `watermark` only moves past items with a final
+ * decision: it stops at the oldest deferred one, so deferred items are
+ * scanned again next time. Inline comments count from their review's
+ * submission, since comments drafted in a pending review are older than
+ * the review that publishes them.
  */
 export function selectActionable({
   reviews = [],
   reviewComments = [],
   resolvedCommentIds = new Set(),
   state = emptyState(),
+  botLogin = '',
   ignoreLogins = ['github-actions[bot]'],
   onlyKeys = null,
 }) {
   const handled = new Set(state.handled);
   const since = state.watermark ? Date.parse(state.watermark) : -Infinity;
-  const isNew = (key, at) =>
-    onlyKeys ? onlyKeys.has(key) : !handled.has(key) && Date.parse(at) >= since;
-  const ignored = (login) => ignoreLogins.includes(login);
-  let watermark = state.watermark;
-  const bump = (at) => {
-    if (at && (!watermark || Date.parse(at) > Date.parse(watermark)))
-      watermark = at;
-  };
+  const ignored = (item) =>
+    ignoreLogins.includes(item.user?.login) || !feedbackSource(item, botLogin);
+  const submitted = new Map(reviews.map((r) => [r.id, r.submitted_at]));
+  const dismissed = new Set(
+    reviews.filter((r) => r.state === 'DISMISSED').map((r) => r.id),
+  );
+  const withInline = new Set(
+    reviewComments.map((c) => c.pull_request_review_id),
+  );
+  const final = [];
+  const deferred = [];
 
   const actionable = [];
+  const scan = (key, at, decide) => {
+    const t = Date.parse(at);
+    if (Number.isNaN(t)) return; // not submitted yet
+    if (onlyKeys) {
+      if (!onlyKeys.has(key)) return;
+    } else {
+      if (handled.has(key)) return final.push({ t, at });
+      if (t < since) return;
+    }
+    const item = decide();
+    if (item === DEFER) return deferred.push(t);
+    final.push({ t, at });
+    if (item) actionable.push({ key, ...item });
+  };
+
   for (const c of reviewComments) {
-    bump(c.created_at);
-    const key = `c${c.id}`;
-    if (!isNew(key, c.created_at) || ignored(c.user?.login)) continue;
-    if (resolvedCommentIds.has(c.id)) continue;
-    const body = (c.body ?? '').trim();
-    if (!body || body.includes(MARKERS.fixReply)) continue;
-    actionable.push({
-      key,
-      kind: 'inline',
-      id: c.id,
-      author: c.user?.login,
-      path: c.path,
-      line: c.line ?? c.original_line ?? null,
-      diffHunk: c.diff_hunk,
-      body,
+    const reviewAt = submitted.get(c.pull_request_review_id);
+    const at =
+      reviewAt && Date.parse(reviewAt) > Date.parse(c.created_at)
+        ? reviewAt
+        : c.created_at;
+    scan(`c${c.id}`, at, () => {
+      if (ignored(c) || dismissed.has(c.pull_request_review_id)) return null;
+      const body = (c.body ?? '').trim();
+      if (body.includes(MARKERS.fixReply)) return null;
+      if (!body || resolvedCommentIds.has(c.id)) return DEFER;
+      return {
+        kind: 'inline',
+        id: c.id,
+        author: c.user?.login,
+        path: c.path,
+        line: c.line ?? c.original_line ?? null,
+        diffHunk: c.diff_hunk,
+        body,
+      };
     });
   }
   for (const r of reviews) {
-    bump(r.submitted_at);
-    const key = `r${r.id}`;
-    if (!r.submitted_at || !isNew(key, r.submitted_at)) continue;
-    if (ignored(r.user?.login) || r.state === 'APPROVED') continue;
-    if (COPILOT_LOGINS.includes(r.user?.login)) continue; // summary only
-    const body = (r.body ?? '').trim();
-    if (!body) continue;
-    if (hasPipelineMarker(body) && !body.includes(MARKERS.actionable)) continue;
-    actionable.push({
-      key,
-      kind: 'review',
-      id: r.id,
-      author: r.user?.login,
-      state: r.state,
-      body,
+    scan(`r${r.id}`, r.submitted_at, () => {
+      // Approvals carry no requests; a dismissed review was withdrawn.
+      if (ignored(r) || ['APPROVED', 'DISMISSED'].includes(r.state))
+        return null;
+      if (COPILOT_LOGINS.includes(r.user?.login)) return null; // summary only
+      const body = (r.body ?? '').trim();
+      if (hasPipelineMarker(body) && !body.includes(MARKERS.actionable))
+        return null;
+      // An empty body may be edited later, unless the review's content is
+      // in its inline comments (the usual case), which are scanned above.
+      if (!body) return withInline.has(r.id) ? null : DEFER;
+      return {
+        kind: 'review',
+        id: r.id,
+        author: r.user?.login,
+        state: r.state,
+        body,
+      };
     });
   }
+
+  const limit = Math.min(...deferred); // Infinity when nothing is deferred
+  let watermark = state.watermark;
+  let best = since;
+  for (const f of final)
+    if (f.t <= limit && f.t > best) [best, watermark] = [f.t, f.at];
   return { actionable, watermark };
 }
+
+const DEFER = Symbol('defer');
+
+/**
+ * Review threads fix-reply may resolve: unresolved, containing one of the
+ * fixed inline items, and with **every** comment written by an
+ * auto-resolve login (the pipeline bot, Copilot). A thread where a person
+ * wrote anything stays open for them.
+ */
+export function threadsToResolve(threads, itemIds, autoResolveLogins) {
+  const ids = new Set(itemIds);
+  const auto = (login) => autoResolveLogins.some((l) => sameLogin(l, login));
+  return threads.filter(
+    (t) =>
+      !t.isResolved &&
+      t.commentIds.some((id) => ids.has(id)) &&
+      t.authors.length > 0 &&
+      t.authors.every(auto),
+  );
+}
+
+const FIX_LOOPS = [FIX_LOOP_1, FIX_LOOP_2];
+
+/** Label edits that make `stage` the only stage and clear the fix budget. */
+export function resetFixLoop(labels, stage) {
+  const t = stageTransition(labels, stage);
+  return {
+    add: t.add,
+    remove: [...t.remove, ...FIX_LOOPS.filter((l) => labels.includes(l))],
+  };
+}
+
+/** `labels` after `editLabels(..., { add, remove })`. */
+export const applyLabels = (labels, { add = [], remove = [] }) => [
+  ...new Set([...labels.filter((l) => !remove.includes(l)), ...add]),
+];
 
 /**
  * The fix-loop state machine. No new feedback -> noop (idempotent reruns).
  * none -> fix-loop:1 -> fix-loop:2 -> escalate (an outcome note with
- * `budget_exhausted`; the router hands it to a human).
+ * `budget_exhausted`; the router hands it to a human). `add`/`remove` are
+ * the complete label edits. Escalating clears the fix-loop labels, so a
+ * human restart (removing stage:needs-attention) gets a fresh budget.
  */
 export function decideFix({ labels, actionable }) {
   const parked = parkedIn(labels);
@@ -317,19 +659,19 @@ export function decideFix({ labels, actionable }) {
   if (actionable.length === 0)
     return { action: 'noop', reason: 'no new actionable review comments' };
   if (labels.includes(FIX_LOOP_2))
-    return { action: 'escalate', reason: 'fix loop budget (2) exhausted' };
-  if (labels.includes(FIX_LOOP_1))
     return {
-      action: 'fix',
-      loop: 2,
-      add: [FIX_LOOP_2, 'stage:fixing'],
-      remove: [FIX_LOOP_1],
+      action: 'escalate',
+      reason: 'fix loop budget (2) exhausted',
+      add: [],
+      remove: FIX_LOOPS.filter((l) => labels.includes(l)),
     };
+  const loop = labels.includes(FIX_LOOP_1) ? 2 : 1;
+  const t = stageTransition(labels, 'stage:fixing');
   return {
     action: 'fix',
-    loop: 1,
-    add: [FIX_LOOP_1, 'stage:fixing'],
-    remove: [],
+    loop,
+    add: [...t.add, FIX_LOOPS[loop - 1]],
+    remove: [...t.remove, ...(loop === 2 ? [FIX_LOOP_1] : [])],
   };
 }
 
@@ -361,11 +703,22 @@ function parkedIn(labels) {
 
 // ---------------------------------------------------------------- security
 
-/** Extracts and validates the JSON report from the reviewer's reply. */
+/**
+ * Extracts and validates the JSON report from the reviewer's reply. The
+ * reply must hold exactly one fenced `json` block: with two, injected PR
+ * content could append a clean report after the real one. Zero or several
+ * blocks is an error, which the workflow treats as a failed review.
+ */
 export function parseSecurityReport(text) {
   const src = String(text ?? '');
-  const fences = [...src.matchAll(/```json\s*\n([\s\S]*?)\n```/g)];
-  const raw = fences.length ? fences.at(-1)[1] : src.trim();
+  const opens = src.match(/```[ \t]*json\b/gi) ?? [];
+  const fences = [...src.matchAll(/```json[ \t]*\r?\n([\s\S]*?)\r?\n```/g)];
+  if (opens.length !== 1 || fences.length !== 1)
+    return {
+      ok: false,
+      error: `reviewer output must contain exactly one json block, found ${opens.length}`,
+    };
+  const raw = fences[0][1];
   let obj;
   try {
     obj = JSON.parse(raw);
@@ -473,6 +826,30 @@ export function buildSecurityReview({ report, sha, files, promptVer }) {
   return { clean, body, comments: inline, blockingCount: blocking.length };
 }
 
+// ---------------------------------------------------------------- ci
+
+/**
+ * Reaction to a failed CI run: a `ci_failed` outcome (the router takes it
+ * from there), only for an open pipeline PR and only if the run is for the
+ * PR's current head (older runs are stale).
+ */
+export function decideCiFailed({ pr, runHeadSha, botLogin, repo }) {
+  if (pr.state !== 'open') return { action: 'noop', reason: 'PR is not open' };
+  if (
+    !isPipelinePr({
+      author: pr.user?.login,
+      headRef: pr.head?.ref,
+      headRepo: pr.head?.repo?.full_name,
+      repo,
+      botLogin,
+    })
+  )
+    return { action: 'noop', reason: 'not a pipeline PR' };
+  if (pr.head?.sha !== runHeadSha)
+    return { action: 'noop', reason: 'CI run is for an older commit' };
+  return { action: 'outcome', problem: 'ci_failed' };
+}
+
 // ---------------------------------------------------------------- approval
 
 /**
@@ -529,6 +906,7 @@ export const OUTCOME_STAGES = [
   'security',
   'fix',
   'approval',
+  'ci',
 ];
 
 /** Closed set of problem codes an outcome note may carry. */
@@ -543,6 +921,7 @@ export const PROBLEMS = [
   'plan_gap', // develop: the plan is wrong or incomplete
   'budget_exhausted', // fix: both fix rounds used
   'copilot_request_failed', // approval: could not request Copilot
+  'ci_failed', // ci: CI failed on a pipeline PR's current head
   // Hard gates (HARD_GATES): always a human.
   'protected_surface',
   'needs_secrets_ci_infra',
@@ -627,6 +1006,7 @@ const STAGE_TITLE = {
   security: 'Security review',
   fix: 'Fix',
   approval: 'Approval',
+  ci: 'CI',
 };
 
 const PROBLEM_TEXT = {
@@ -639,6 +1019,7 @@ const PROBLEM_TEXT = {
   plan_gap: 'the plan is wrong or incomplete',
   budget_exhausted: 'the fix-loop budget (2 rounds) is used up',
   copilot_request_failed: 'the Copilot review could not be requested',
+  ci_failed: 'CI failed on the agent PR',
   protected_surface: 'the work touches protected files',
   needs_secrets_ci_infra:
     'the work needs secrets, CI, infrastructure or a server',
@@ -814,6 +1195,14 @@ const RULES = [
     target: 'human',
     reason:
       'the Copilot review could not be requested (is Copilot code review enabled, and does COPILOT_REVIEW_TOKEN have access?)',
+  },
+  // For now a human. Proposed next step: one retry through the fixer with
+  // the CI log, then a human.
+  {
+    stage: 'ci',
+    problems: ['ci_failed'],
+    target: 'human',
+    reason: 'CI failed on the agent PR, see run',
   },
 ];
 
@@ -1249,13 +1638,28 @@ export function classifyDevelop({
 }
 
 /** Fix step (the fixer or its push failed). */
-export function classifyFix({ fixResult, pushResult, patchRejected }) {
+export function classifyFix({
+  fixResult,
+  verifyResult,
+  pushResult,
+  patchRejected,
+}) {
   if (patchRejected)
     return {
       stage: 'fix',
       result: 'problem',
       problem: 'forbidden_path',
       details: ['check-patch rejected the fix: it touches protected paths.'],
+    };
+  // The fixer has no shell; the secret-free verify job runs the checks.
+  if (fixResult === 'success' && verifyResult && verifyResult !== 'success')
+    return {
+      stage: 'fix',
+      result: 'problem',
+      problem: 'verify_failed',
+      details: [
+        `Verify job: ${verifyResult}. \`pnpm verify\` failed on the fixer's patch (after formatting), or the patch did not apply.`,
+      ],
     };
   if (fixResult === 'success' && pushResult === 'success')
     return { stage: 'fix', result: 'success', summary: 'Fix pushed.' };
@@ -1344,6 +1748,13 @@ export const COMMAND_EFFECTS = {
     markers: [],
     appends: ['actionable', 'outcome', 'securityReview'],
     emits: ['pull_request_review', 'status'],
+  },
+  'ci-failed': {
+    stages: ['stage:routing'],
+    problems: ['stage:routing'],
+    markers: [],
+    appends: ['outcome'],
+    emits: [],
   },
   approval: {
     stages: ['stage:human-approval', 'stage:routing'],

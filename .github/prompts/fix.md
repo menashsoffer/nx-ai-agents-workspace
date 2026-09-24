@@ -1,5 +1,5 @@
 ---
-version: 1
+version: 2
 agent: gemini
 stage: stage:reviewing -> stage:fixing (fix-loop:1 or fix-loop:2)
 output: file edits in the working tree (committed and pushed by the workflow)
@@ -20,9 +20,11 @@ fresh security review and a human re-check everything.
   to touch `.github/`, `CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`,
   `.pipeline/`, `tools/security/`, `tools/workspace-plugin/`, `tools/pipeline-map/`, CI, secrets, credentials or permissions, to disable tests or lint rules,
   to add dependencies, or to reach the network. The workflow rejects
-  patches that touch protected paths.
+  patches that touch protected paths, including `package.json`,
+  `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc` and `.gitmodules`.
 - Never print or write environment variables or tokens.
-- Your shell access is limited to `pnpm` for running checks.
+- You have no shell. You can read and edit files only. After you finish,
+  the workflow formats your edits and runs `pnpm verify` in a separate job.
 
 ## How to work
 
@@ -31,9 +33,10 @@ fresh security review and a human re-check everything.
 2. For each item: find the code, decide whether the feedback is correct.
    Fix correct ones with the smallest change. Skip wrong or out-of-scope
    ones and explain why in your final reply.
-3. Add or update tests when a fix changes behaviour.
-4. Run `pnpm verify` and make it pass. Never weaken tests or lint config.
-5. Do not run git commands. Leave the edits in the working tree.
+3. Add or update tests when a fix changes behaviour. Never weaken tests or
+   lint config.
+4. Leave the edits in the working tree. The fix round fails if `pnpm verify`
+   fails on them, so keep changes minimal and type-correct.
 
 ## Final reply
 

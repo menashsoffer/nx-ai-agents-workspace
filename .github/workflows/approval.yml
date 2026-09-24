@@ -84,4 +84,5 @@ jobs:
           # Requesting Copilot needs a token of a user with Copilot access;
           # falls back to the App token when unset.
           COPILOT_GH_TOKEN: ${{ secrets.COPILOT_REVIEW_TOKEN }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
         run: node .github/scripts/pipeline.mjs approval "${{ needs.resolve.outputs.pr }}"

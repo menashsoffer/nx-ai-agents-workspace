@@ -37,13 +37,15 @@ jobs:
 
       - uses: ./.github/actions/setup
 
+      # The spec and plan come only from the pipeline bot's marker comments.
       - name: Collect issue, spec and plan (untrusted data)
         env:
           GH_TOKEN: ${{ github.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          N: ${{ github.event.issue.number }}
         run: |
           mkdir -p .pipeline
-          gh issue view "${{ github.event.issue.number }}" --repo "$GITHUB_REPOSITORY" \
-            --json number,title,body,author,labels,comments > .pipeline/issue.json
+          node .github/scripts/pipeline.mjs collect-issue "$N" .pipeline/issue.json
 
       - id: branch
         env:
@@ -97,7 +99,7 @@ jobs:
             git commit -m "Add remaining agent changes"
           fi
           mkdir -p "$RUNNER_TEMP/out"
-          git format-patch "$BASE..HEAD" --stdout > "$RUNNER_TEMP/out/changes.patch"
+          git -c core.quotePath=false format-patch "$BASE..HEAD" --stdout > "$RUNNER_TEMP/out/changes.patch"
           test -s "$RUNNER_TEMP/out/changes.patch" || { echo "::error::The agent produced no commits"; exit 1; }
 
       # A rejected patch is the forbidden_path hard gate, not an agent error.
@@ -162,6 +164,7 @@ jobs:
           RESULT: ${{ needs.implement.outputs.result }}
           VERSION: ${{ needs.implement.outputs.prompt_version }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
         run: |
           if [[ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[].number')" ]]; then
             echo "::notice::An open PR already exists for $BRANCH; nothing to do."

@@ -193,7 +193,7 @@ describe('this repository', () => {
     for (const line of [
       's_stage_qualified --> w_spec',
       'w_develop -->|"opens PR"| w_ci',
-      'w_ci -->|"on success"| w_security',
+      'w_ci -->|"on failure/success"| w_security', // failure: ci_failed
       'w_fix -.-> s_stage_routing',
       's_stage_routing --> w_router',
       'w_router -.-> s_stage_needs_attention',

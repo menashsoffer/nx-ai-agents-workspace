@@ -3,6 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { findMarkerComment } from './pipeline-lib.mjs';
 
 const REPO = process.env.GITHUB_REPOSITORY ?? '';
 export const [OWNER, NAME] = REPO.split('/');
@@ -81,10 +82,9 @@ export function editLabels(number, { add = [], remove = [] }) {
     api(`issues/${number}/labels`, { method: 'POST', body: { labels: add } });
 }
 
-export function findComment(number, marker) {
-  return list(`issues/${number}/comments`).find((c) =>
-    c.body?.includes(marker),
-  );
+/** The comment with `marker` written by `author`; see findMarkerComment. */
+export function findComment(number, marker, { author } = {}) {
+  return findMarkerComment(list(`issues/${number}/comments`), marker, author);
 }
 
 /** Appends a new comment (outcome and route notes are never edited). */
@@ -92,9 +92,9 @@ export function postComment(number, body) {
   return api(`issues/${number}/comments`, { method: 'POST', body: { body } });
 }
 
-export function upsertComment(number, marker, body) {
+export function upsertComment(number, marker, body, { author } = {}) {
   const full = body.includes(marker) ? body : `${marker}\n${body}`;
-  const existing = findComment(number, marker);
+  const existing = findComment(number, marker, { author });
   if (existing)
     return api(`issues/comments/${existing.id}`, {
       method: 'PATCH',
@@ -111,7 +111,7 @@ query($owner:String!,$name:String!,$number:Int!,$after:String){
   repository(owner:$owner,name:$name){ pullRequest(number:$number){
     reviewThreads(first:100, after:$after){
       pageInfo{ hasNextPage endCursor }
-      nodes{ id isResolved comments(first:100){ nodes{ databaseId author{ login } } } }
+      nodes{ id isResolved comments(first:100){ nodes{ databaseId author{ login __typename } } } }
     } } } }`;
 
 export function reviewThreads(number) {
@@ -125,7 +125,13 @@ export function reviewThreads(number) {
         id: t.id,
         isResolved: t.isResolved,
         commentIds: t.comments.nodes.map((c) => c.databaseId),
-        authors: t.comments.nodes.map((c) => c.author?.login),
+        // GraphQL drops the `[bot]` suffix REST uses; put it back so
+        // logins compare the same way everywhere.
+        authors: t.comments.nodes.map((c) =>
+          c.author?.__typename === 'Bot'
+            ? `${c.author.login}[bot]`
+            : c.author?.login,
+        ),
       })),
     );
     after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;

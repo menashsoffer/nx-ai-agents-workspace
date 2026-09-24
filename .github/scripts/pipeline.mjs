@@ -8,30 +8,36 @@ import {
   MARKERS,
   STAGE_STATUS,
   allowedTargets,
+  applyLabels,
   branchName,
   buildSecurityReview,
+  checkPatch,
   classifyDevelop,
   classifyFix,
   classifyPlan,
   classifySpec,
   collectRouterInput,
+  decideCiFailed,
   decideFix,
   decideFixRetry,
   emptyState,
   evaluateApproval,
-  forbiddenPaths,
+  isPipelinePr,
+  issueForAgents,
   normalizeOutcome,
   parseSecurityReport,
   parseState,
-  patchPaths,
   planRoute,
   previewUrl,
   promptVersion,
   renderOutcome,
   renderPrompt,
   renderState,
+  resetFixLoop,
+  sameLogin,
   selectActionable,
   stageTransition,
+  threadsToResolve,
   validateSpec,
 } from './pipeline-lib.mjs';
 import { decideExternal } from './router-external.mjs';
@@ -76,15 +82,28 @@ const num = (v) => {
   return n;
 };
 
+/** The pipeline App's bot login (`vars.PIPELINE_BOT_LOGIN`). Required. */
+function botLogin() {
+  const login = process.env.PIPELINE_BOT_LOGIN;
+  if (!login) throw new Error('PIPELINE_BOT_LOGIN is not set');
+  return login;
+}
+
+/** Marker comments are trusted only when the pipeline bot wrote them. */
+const findBotComment = (number, marker) =>
+  findComment(number, marker, { author: botLogin() });
+const upsertBotComment = (number, marker, body) =>
+  upsertComment(number, marker, body, { author: botLogin() });
+
 // ------------------------------------------------------------ state
 
 function readState(pr) {
-  const c = findComment(pr, MARKERS.state);
+  const c = findBotComment(pr, MARKERS.state);
   return c ? parseState(c.body) : emptyState();
 }
 
-function writeState(pr, state) {
-  upsertComment(pr, MARKERS.state, renderState(state, labelsOf(pr)));
+function writeState(pr, state, labels = labelsOf(pr)) {
+  upsertBotComment(pr, MARKERS.state, renderState(state, labels));
 }
 
 function setStage(number, stage) {
@@ -137,6 +156,7 @@ const classifiers = {
   fix: (f) =>
     classifyFix({
       fixResult: f['job-result'],
+      verifyResult: f['verify-result'],
       pushResult: f['push-result'],
       patchRejected: f['patch-rejected'] === 'true',
     }),
@@ -248,10 +268,26 @@ const commands = {
     );
   },
 
+  // COMMENT_AUTHOR overrides the author to match, for comments posted with
+  // GITHUB_TOKEN (github-actions[bot]) instead of the pipeline App.
   'upsert-comment'([number, markerKey, file]) {
     const marker = MARKERS[markerKey];
     if (!marker) throw new Error(`Unknown marker ${markerKey}`);
-    upsertComment(num(number), marker, readFileSync(file, 'utf8'));
+    upsertComment(num(number), marker, readFileSync(file, 'utf8'), {
+      author: process.env.COMMENT_AUTHOR || botLogin(),
+    });
+  },
+
+  // Issue + comments for the plan/develop agents, with the spec and plan
+  // taken only from the bot's own marker comments.
+  'collect-issue'([number, outFile]) {
+    const n = num(number);
+    const data = issueForAgents({
+      issue: api(`issues/${n}`),
+      comments: list(`issues/${n}/comments`),
+      botLogin: botLogin(),
+    });
+    writeFileSync(outFile, JSON.stringify(data, null, 2));
   },
 
   'branch-name'([number]) {
@@ -265,16 +301,18 @@ const commands = {
   },
 
   'check-patch'([file]) {
-    const bad = forbiddenPaths(patchPaths(readFileSync(file, 'utf8')));
-    if (bad.length) {
-      console.error(`Patch touches protected paths: ${bad.join(', ')}`);
-      process.exit(1);
-    }
+    const res = checkPatch(readFileSync(file, 'utf8'));
+    if (res.forbidden.length)
+      console.error(
+        `Patch touches protected paths: ${res.forbidden.join(', ')}`,
+      );
+    for (const e of res.errors) console.error(`Patch rejected: ${e}`);
+    if (!res.ok) process.exit(1);
   },
 
   'init-state'([pr]) {
     const n = num(pr);
-    if (findComment(n, MARKERS.state)) return;
+    if (findBotComment(n, MARKERS.state)) return;
     const created = api(`pulls/${n}`).created_at;
     writeState(n, { ...emptyState(), watermark: created });
   },
@@ -282,6 +320,25 @@ const commands = {
   // `mode` is 'retry' when the router re-runs a round whose fixer failed.
   'fix-adapter'([pr, outFile, mode]) {
     const n = num(pr);
+    const bot = botLogin();
+    const p = api(`pulls/${n}`);
+    if (
+      !isPipelinePr({
+        author: p.user?.login,
+        headRef: p.head?.ref,
+        headRepo: p.head?.repo?.full_name,
+        repo: `${OWNER}/${NAME}`,
+        botLogin: bot,
+      })
+    ) {
+      console.log(
+        `fix-adapter: noop (PR #${n} by ${p.user?.login} on ${p.head?.ref} was not opened by the pipeline)`,
+      );
+      writeFileSync(outFile, '[]');
+      setOutput('action', 'noop');
+      setOutput('loop', '');
+      return;
+    }
     const retry = mode === 'retry';
     const labels = labelsOf(n);
     const state = readState(n);
@@ -294,6 +351,7 @@ const commands = {
       reviewComments: list(`pulls/${n}/comments`),
       resolvedCommentIds,
       state,
+      botLogin: bot,
       onlyKeys: retry ? new Set(state.lastBatch) : null,
     });
     const decision = retry
@@ -311,7 +369,8 @@ const commands = {
       return;
     }
 
-    // Record before acting: a rerun with no newer comments is a no-op.
+    // Record before acting: a rerun with no newer comments is a no-op, and
+    // a crash after this line cannot spend the same round twice.
     const next = {
       ...state,
       watermark,
@@ -320,7 +379,10 @@ const commands = {
       ],
       lastBatch: actionable.map((a) => a.key),
     };
-    if (decision.action === 'escalate') {
+    const edit = { add: decision.add, remove: decision.remove };
+    writeState(n, next, applyLabels(labels, edit));
+    editLabels(n, edit);
+    if (decision.action === 'escalate')
       writeOutcome(n, {
         stage: 'fix',
         result: 'problem',
@@ -329,21 +391,12 @@ const commands = {
           `${decision.reason}; ${actionable.length} new review item(s) remain.`,
         ],
       });
-    } else {
-      editLabels(n, stageTransition(labels, 'stage:fixing'));
-      editLabels(n, {
-        add: decision.add.filter((l) => !l.startsWith('stage:')),
-        remove: decision.remove,
-      });
-    }
-    writeState(n, next);
   },
 
   'fix-reply'([pr, sha, itemsFile]) {
     const n = num(pr);
     const items = JSON.parse(readFileSync(itemsFile, 'utf8'));
-    const bot = process.env.PIPELINE_BOT_LOGIN ?? '';
-    const autoResolve = new Set([bot, ...COPILOT_LOGINS].filter(Boolean));
+    const autoResolve = [botLogin(), ...COPILOT_LOGINS];
     const short = sha.slice(0, 7);
     for (const it of items.filter((i) => i.kind === 'inline')) {
       api(`pulls/${n}/comments/${it.id}/replies`, {
@@ -353,18 +406,13 @@ const commands = {
         },
       });
     }
-    // Resolve only threads opened by bots; human threads stay for the human.
-    const ids = new Set(
+    // Resolve only all-bot threads; any human comment keeps it open.
+    for (const t of threadsToResolve(
+      reviewThreads(n),
       items.filter((i) => i.kind === 'inline').map((i) => i.id),
-    );
-    for (const t of reviewThreads(n)) {
-      if (
-        !t.isResolved &&
-        t.commentIds.some((id) => ids.has(id)) &&
-        autoResolve.has(t.authors[0])
-      )
-        resolveThread(t.id);
-    }
+      autoResolve,
+    ))
+      resolveThread(t.id);
     const reviewItems = items.filter((i) => i.kind === 'review');
     if (reviewItems.length) {
       api(`issues/${n}/comments`, {
@@ -385,8 +433,11 @@ const commands = {
       console.log(`Head moved (${head}); skipping stale review of ${sha}.`);
       return;
     }
-    const already = list(`pulls/${n}/reviews`).some((r) =>
-      r.body?.includes(`${MARKERS.securityReview} sha=${sha}`),
+    const bot = botLogin();
+    const already = list(`pulls/${n}/reviews`).some(
+      (r) =>
+        sameLogin(r.user?.login, bot) &&
+        r.body?.includes(`${MARKERS.securityReview} sha=${sha}`),
     );
     if (already) {
       console.log('Security review for this commit already posted.');
@@ -521,7 +572,8 @@ const commands = {
         result: 'success',
         summary: `Handed to human approval at ${head.slice(0, 7)}.`,
       });
-      setStage(n, 'stage:human-approval');
+      // Later human feedback starts a fresh fix budget.
+      editLabels(n, resetFixLoop(labels, 'stage:human-approval'));
       if (p.draft)
         graphql(
           `
@@ -536,7 +588,7 @@ const commands = {
           { id: p.node_id },
         );
       const url = previewUrl(OWNER, NAME, n);
-      upsertComment(
+      upsertBotComment(
         n,
         MARKERS.humanApproval,
         [
@@ -548,6 +600,33 @@ const commands = {
       );
       writeState(n, { ...state, humanApprovalFor: head });
     }
+  },
+
+  // CI failed on a PR (security.yml, workflow_run). Pipeline PRs only:
+  // appends a `ci_failed` outcome note for the router.
+  'ci-failed'([pr, sha, runUrl]) {
+    const n = num(pr);
+    const decision = decideCiFailed({
+      pr: api(`pulls/${n}`),
+      runHeadSha: sha,
+      botLogin: botLogin(),
+      repo: `${OWNER}/${NAME}`,
+    });
+    console.log(
+      `ci-failed: ${decision.action}${decision.reason ? ` (${decision.reason})` : ''}`,
+    );
+    if (decision.action === 'noop') return;
+    // A problem outcome sets stage:routing; the router hands it on.
+    writeOutcome(n, {
+      stage: 'ci',
+      result: 'problem',
+      problem: decision.problem,
+      summary: `CI failed on the agent PR at ${sha.slice(0, 7)}.`,
+      details: [
+        'Push a fix to the branch, or take the PR over by hand. The next green CI run starts the security review again.',
+      ],
+      run_url: runUrl,
+    });
   },
 
   'linked-issues'([pr]) {
