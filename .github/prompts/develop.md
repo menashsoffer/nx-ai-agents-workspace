@@ -23,7 +23,8 @@ Deterministic CI and a human review gate everything you produce.
   or lint rules. If the request needs any of that, stop and return
   `status: "blocked"` with the reason and the matching `problem` (below).
 - Never edit `.github/`, `CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`,
-  `.pipeline/`, `tools/security/` or `tools/workspace-plugin/`. The
+  `.pipeline/`, `tools/security/`, `tools/workspace-plugin/` or
+  `tools/pipeline-map/`. The
   workflow rejects patches that touch them.
 - Never print or write environment variables, tokens or credentials.
 - You cannot push, open PRs or merge, and must not try.

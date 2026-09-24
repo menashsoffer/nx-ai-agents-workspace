@@ -44,8 +44,8 @@ docs/              architecture, conventions, decisions (ADRs); read before big 
 
 If you are running inside the pipeline (`.github/workflows/`), your prompt
 in `.github/prompts/` is authoritative for your step. Never edit `.github/`,
-`CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`, `tools/security/` or
-`tools/workspace-plugin/` there (see "Protected files" below); such patches
+`CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`, `tools/security/`,
+`tools/workspace-plugin/` or `tools/pipeline-map/` there (see "Protected files" below); such patches
 are rejected.
 
 ## Commands
@@ -157,9 +157,10 @@ Do **not** change these unless the user explicitly asks for that change:
 `.github/workflows/`, `.github/dependabot.yml`, `.github/zizmor.yml`, `.claude/settings.json`,
 `.claude/hooks/`, `.gemini/`, `.codex/`, the supply-chain settings in
 `pnpm-workspace.yaml` (`allowBuilds`, `strictDepBuilds`, `minimumReleaseAge`,
-`overrides`), `packageManager` in `package.json`, `tools/security/`, and
+`overrides`), `packageManager` in `package.json`, `tools/security/`,
 `tools/workspace-plugin/` (its generators run through pre-approved
-`pnpm new:*` commands).
+`pnpm new:*` commands), and `tools/pipeline-map/` (pre-approved
+`pnpm verify` runs it).
 Never add exceptions to `tools/security/exceptions.json` on your own. The
 rules are in `docs/security.md`.
 
