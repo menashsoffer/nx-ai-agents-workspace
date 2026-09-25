@@ -12,6 +12,14 @@ export function HomePage() {
         זהו דף הבית של האתר. מחליפים את התוכן הזה בתוכן של הפרויקט.
       </p>
       <Button>התחילו כאן</Button>
+      <a
+        href="https://example.com"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block text-muted"
+      >
+        דוגמה
+      </a>
     </section>
   );
 }
