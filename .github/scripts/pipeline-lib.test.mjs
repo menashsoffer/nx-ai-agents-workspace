@@ -89,6 +89,7 @@ import {
   DISPOSITION_NOT_A_FINDING,
   FINDING_TOPICS,
   patchNewLines,
+  shouldMarkReady,
   threadOfComment,
   inlineFindingId,
   findingId,
@@ -6008,4 +6009,13 @@ test('workflows: no job hides the checkout its local action was loaded from', ()
     }
   }
   assert.ok(checked >= 2, 'the fix.yml jobs that move the checkout were seen');
+});
+
+test("shouldMarkReady: only a draft the pipeline opened is converted, never a person's own", () => {
+  assert.equal(shouldMarkReady({ draft: true, pipelinePr: true }), true);
+  // A person's draft stays a draft (and the App could not convert it anyway).
+  assert.equal(shouldMarkReady({ draft: true, pipelinePr: false }), false);
+  assert.equal(shouldMarkReady({ draft: false, pipelinePr: true }), false);
+  assert.equal(shouldMarkReady({ draft: false, pipelinePr: false }), false);
+  assert.equal(shouldMarkReady({}), false);
 });

@@ -633,7 +633,8 @@ the reviewer errored, a required approval was refused) and `pending` otherwise,
 its description naming the first missing gate. A push gives the new SHA no
 status, which blocks the merge; `approval.yml` posts a `pending` one as soon
 as CI is requested so the PR says why it waits. When the gates hold, the
-existing hand-off happens: `stage:human-approval`, PR marked ready, code
+existing hand-off happens: `stage:human-approval`, PR marked ready (only a PR the
+pipeline opened as a draft; a person's own draft stays a draft), code
 owners requested. Merging stays with a human.
 
 ### Copilot review is optional
