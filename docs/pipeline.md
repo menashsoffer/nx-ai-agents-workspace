@@ -340,11 +340,11 @@ account) posts one comment whose whole body is one line:
 /restart <qualified|planned|fixing> <reason, 10+ characters>
 ```
 
-| Stage       | What it does                                                                                                                                                           | Must be in `stage:needs-attention` |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `qualified` | spec + plan again: sets `stage:qualified` on the issue (also for an old item stuck in the deprecated `stage:spec`)                                                     | the issue                          |
-| `planned`   | develop again from the plan already on the issue: sets `stage:planned`                                                                                                 | the issue                          |
-| `fixing`    | the fix loop of the issue's linked open PR: sets `stage:fixing`, clears its `fix-loop:*` labels (`resetFixLoop`, a fresh budget of two rounds) and runs Pipeline · Fix | the PR (the issue is not parked)   |
+| Stage       | What it does                                                                                                                                                                                                                                                                                                               | Must be in `stage:needs-attention` |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `qualified` | spec + plan again: sets `stage:qualified` on the issue (also for an old item stuck in the deprecated `stage:spec`)                                                                                                                                                                                                         | the issue                          |
+| `planned`   | develop again from the plan already on the issue: sets `stage:planned`                                                                                                                                                                                                                                                     | the issue                          |
+| `fixing`    | the fix loop of the issue's linked open PR: sets `stage:fixing`, clears its `fix-loop:*` labels (`resetFixLoop`, a fresh budget of two rounds), forgets the review items earlier rounds already took (`resetFixItems`: open feedback from a round that failed before it pushed is looked at again) and runs Pipeline · Fix | the PR (the issue is not parked)   |
 
 `restart.yml` checks the command in full: the commenter is the owner and a
 human, the comment was not edited (only new comments count), the issue is

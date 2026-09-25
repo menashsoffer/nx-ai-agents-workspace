@@ -89,6 +89,7 @@ import {
   DISPOSITION_NOT_A_FINDING,
   FINDING_TOPICS,
   patchNewLines,
+  resetFixItems,
   shouldMarkReady,
   GEMINI_BILLING_ERROR,
   isGeminiBillingError,
@@ -6244,5 +6245,54 @@ test('workflows: security.yml checks for 402 from a wiped stderr file and fails 
   assert.ok(
     !publish.run.includes('REVIEW_BILLING'),
     'never interpolated into the script',
+  );
+});
+
+test('/restart fixing forgets the items a failed round claimed, so open feedback is looked at again', () => {
+  const at = '2026-01-03T00:00:00Z';
+  const open = comment(7, at, { user: bot, body: finderBody('S-00000001') });
+  // A round took the finding and then failed before it pushed anything.
+  const failed = {
+    ...emptyState(),
+    watermark: at,
+    handled: ['c7'],
+    lastBatch: ['c7'],
+    humanApprovalFor: 'h1',
+    copilotRequestedFor: 'h2',
+  };
+  const seen = (state) =>
+    selectActionable({
+      botLogin: BOT,
+      reviewComments: [open],
+      state,
+    }).actionable.map((a) => a.key);
+  assert.deepEqual(seen(failed), [], 'without the reset the restart is a noop');
+  const reset = resetFixItems(failed);
+  assert.deepEqual(seen(reset), ['c7']);
+  // Only the fix items go; the rest of the state stays.
+  assert.deepEqual(reset, {
+    ...failed,
+    watermark: null,
+    handled: [],
+    lastBatch: [],
+  });
+  // Resolved threads and dispositioned findings stay out of the new round.
+  assert.deepEqual(
+    selectActionable({
+      botLogin: BOT,
+      reviewComments: [open],
+      state: reset,
+      resolvedCommentIds: new Set([7]),
+    }).actionable,
+    [],
+  );
+  assert.deepEqual(
+    selectActionable({
+      botLogin: BOT,
+      reviewComments: [open],
+      state: reset,
+      dispositioned: new Set(['S-00000001']),
+    }).actionable,
+    [],
   );
 });

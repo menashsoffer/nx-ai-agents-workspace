@@ -67,6 +67,7 @@ import {
   renderPrompt,
   renderSpecComment,
   renderState,
+  resetFixItems,
   resetFixLoop,
   routerSkip,
   sameLogin,
@@ -1149,6 +1150,9 @@ const commands = {
     postComment(target.number, decision.note);
     editLabels(target.number, target.edit);
     if (target.kind === 'pr') {
+      // A round that failed before pushing left its items marked handled:
+      // forget them, or the run below finds no new feedback and does nothing.
+      writeState(target.number, resetFixItems(readState(target.number)));
       postComment(
         n,
         `Restart ${decision.count}/${MAX_LIFETIME_RESETS} accepted: the fix loop of PR #${target.number} has a fresh budget and Pipeline · Fix runs next.`,
