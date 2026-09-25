@@ -35,6 +35,7 @@ import {
   emptyState,
   evaluateApproval,
   evaluateProtectedApproval,
+  isGeminiBillingError,
   isPipelinePr,
   isPipelineBranch,
   issueForAgents,
@@ -71,6 +72,8 @@ import {
   sameLogin,
   securityIdsForHead,
   securityOutcomeDetails,
+  securitySkippedForHead,
+  securitySkippedOutcome,
   selectActionable,
   shouldMarkReady,
   stageTransition,
@@ -589,6 +592,20 @@ const commands = {
     }
   },
 
+  // Did the Gemini CLI fail with the API's 402 (credits depleted)? Reads the
+  // CLI's stderr the action left in the workspace and sets the `billing`
+  // output. No file, or any other text, is `false`. The file is capped and
+  // only searched for one fixed string; nothing from it is executed.
+  'gemini-billing'([file]) {
+    let text = '';
+    try {
+      text = readFileSync(file, 'utf8').slice(0, 1_000_000);
+    } catch {
+      // no stderr recorded: not a billing failure
+    }
+    setOutput('billing', String(isGeminiBillingError(text)));
+  },
+
   'security-publish'([pr, sha, responseFile, promptVer]) {
     const n = num(pr);
     const head = api(`pulls/${n}`).head.sha;
@@ -615,6 +632,25 @@ const commands = {
           description: description.slice(0, 140),
         },
       });
+    // Gemini answered 402 (credit used up): release the PR to human approval
+    // with a loud note instead of failing the review. Only when the review
+    // job says so (security.yml matches the API's exact 402 message); any
+    // other failure still ends in the fail-closed path below. The note is
+    // written before the status, because the status is what re-runs approval.
+    if (
+      process.env.REVIEW_RESULT !== 'success' &&
+      process.env.REVIEW_BILLING === 'true'
+    ) {
+      writeOutcome(n, securitySkippedOutcome({ sha, promptVer }));
+      setStage(n, 'stage:reviewing');
+      status(
+        'success',
+        'SKIPPED: Gemini credits depleted (402), no review ran',
+      );
+      setOutput('skipped', 'billing');
+      console.log(`Security review of ${sha.slice(0, 7)} skipped: Gemini 402.`);
+      return;
+    }
     // Finding ids anchor on a code line the reviewer quotes; parseSecurityReport
     // checks that it is a line of the file at the reviewed head. Only files the
     // PR changed are read (the path comes from reviewer output). The file's
@@ -734,6 +770,11 @@ const commands = {
       botLogin: bot,
       sha: head,
     });
+    const securitySkipped = securitySkippedForHead({
+      comments,
+      botLogin: bot,
+      sha: head,
+    });
     const decision = evaluateApproval({
       prState: p.state,
       labels,
@@ -742,6 +783,7 @@ const commands = {
       securityJobConclusion: conclusionOf('security'),
       securityState: stateOf('pipeline/security'),
       securityFindings,
+      securitySkipped,
       dispositioned: new Set(kinds.keys()),
       unresolvedThreads: threads.filter((t) => !t.isResolved).length,
       copilotReviewedHead,
@@ -854,7 +896,10 @@ const commands = {
         MARKERS.humanApproval,
         [
           `### Ready for human approval`,
-          `CI is green, the Gemini security review is clean or every finding is dispositioned, ${requireCopilot() ? `Copilot has reviewed \`${head.slice(0, 7)}\`, ` : ''}all threads are resolved and \`${GATES_CONTEXT}\` is green.`,
+          securitySkipped
+            ? `**WARNING: the Gemini security review did NOT run on \`${head.slice(0, 7)}\`.** The Gemini API answered 402 (credits depleted). Renew the Google Gemini subscription or credits, and read this change yourself before approving. (To get the review afterwards, re-run the failed **Pipeline · Security Review** run for this commit.)`
+            : '',
+          `CI is green, ${securitySkipped ? '' : 'the Gemini security review is clean or every finding is dispositioned, '}${requireCopilot() ? `Copilot has reviewed \`${head.slice(0, 7)}\`, ` : ''}all threads are resolved and \`${GATES_CONTEXT}\` is green.`,
           `**Preview:** ${url}`,
           `Code owners have been requested for review. Merging is a human decision; no agent can merge.`,
           stillDraft

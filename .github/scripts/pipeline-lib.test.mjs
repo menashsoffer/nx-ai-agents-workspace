@@ -90,6 +90,10 @@ import {
   FINDING_TOPICS,
   patchNewLines,
   shouldMarkReady,
+  GEMINI_BILLING_ERROR,
+  isGeminiBillingError,
+  securitySkippedForHead,
+  securitySkippedOutcome,
   threadOfComment,
   inlineFindingId,
   findingId,
@@ -6070,4 +6074,175 @@ test('workflows: fix.yml restores its trusted checkout from a clean slate', () =
   );
   // Without the hidden copy (the patch step never ran) nothing is touched.
   assert.match(step.run, /if \[ -d "\$RUNNER_TEMP\/trusted" \]/);
+});
+
+// ---------------------------------------------------------------- gemini credit (402)
+
+// The line the Gemini CLI printed on stderr in the readiness dry run (run
+// 36075840816) when the prepaid credit was used up.
+const REAL_402 =
+  'Error generating content via API. Full report available at: /tmp/gemini-client-error-generateJson-api-2026-09-25T00-05-09-724Z.json _ApiError: {"error":{"code":402,"message":"Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing."}}';
+
+test("isGeminiBillingError: only the API's exact 402 message, nothing looser", () => {
+  assert.equal(isGeminiBillingError(REAL_402), true);
+  assert.equal(
+    isGeminiBillingError(
+      `Warning: 256-color support\nRipgrep is not available.\n${REAL_402}\n    at throwErrorIfNotOK`,
+    ),
+    true,
+  );
+  assert.ok(REAL_402.includes(GEMINI_BILLING_ERROR));
+  // Other failures fail closed.
+  for (const other of [
+    '',
+    null,
+    undefined,
+    '_ApiError: {"error":{"code":429,"message":"Resource has been exhausted (e.g. check quota)."}}',
+    '_ApiError: {"error":{"code":500,"message":"Internal error"}}',
+    '_ApiError: {"error":{"code":402,"message":"Something else about payment"}}',
+    // Words alone, as text a PR or the model could echo, are not the API's error.
+    'Your prepayment credits are depleted',
+    'the reviewer said: code 402, credits depleted',
+    'HTTP 402',
+  ])
+    assert.equal(isGeminiBillingError(other), false, String(other));
+});
+
+test('a skipped review round-trips through its outcome note and is replaced by a real one', () => {
+  const note = (sha, details, user = bot) => ({
+    user,
+    body: renderOutcome({
+      stage: 'security',
+      result: 'success',
+      summary: 's',
+      details,
+    }),
+  });
+  const skipped = securitySkippedOutcome({ sha: HEAD_A, promptVer: '3' });
+  assert.equal(skipped.stage, 'security');
+  assert.equal(
+    skipped.result,
+    'success',
+    'nothing to route: it releases the PR',
+  );
+  assert.match(skipped.summary, /SKIPPED/);
+  assert.match(skipped.summary, /402/);
+  assert.match(skipped.summary, /Renew the Google Gemini/);
+  const skippedNote = {
+    user: bot,
+    body: renderOutcome(skipped),
+  };
+  const at = (comments, sha) =>
+    securitySkippedForHead({ comments, botLogin: BOT, sha });
+  assert.equal(at([skippedNote], HEAD_A), true);
+  // Another head, or a note that is not the bot's, does not count.
+  assert.equal(at([skippedNote], HEAD_B), false);
+  assert.equal(at([{ ...skippedNote, user: alice }], HEAD_A), false);
+  // It is not a finding list: approval reads no findings from it.
+  assert.equal(
+    securityIdsForHead({ comments: [skippedNote], botLogin: BOT, sha: HEAD_A }),
+    null,
+  );
+  // After the credit is renewed and the review re-run, the real review wins.
+  const real = note(HEAD_A, [`head=${HEAD_A} blocking=0`]);
+  assert.equal(at([skippedNote, real], HEAD_A), false);
+  // ... and a later skip wins over an earlier real review of the same head.
+  assert.equal(at([real, skippedNote], HEAD_A), true);
+});
+
+test('a skipped review is released with a warning, never reported as clean', () => {
+  const base = {
+    ciConclusion: 'success',
+    securityState: 'success',
+    unresolvedThreads: 0,
+  };
+  const clean = evaluateGates(base);
+  assert.equal(clean.state, 'success');
+  assert.ok(!clean.checks.some((c) => c.warn));
+  const skipped = evaluateGates({ ...base, securitySkipped: true });
+  assert.equal(skipped.state, 'success', 'released to human approval');
+  const row = skipped.checks.find((c) => c.key === 'security');
+  assert.equal(row.state, 'success');
+  assert.equal(row.warn, true);
+  assert.match(row.detail, /SKIPPED/);
+  assert.match(skipped.description, /WARNING/);
+  assert.match(skipped.description, /SKIPPED/);
+  assert.ok(!/Gemini review all|Gemini review and/.test(skipped.description));
+  assert.ok(skipped.description.length <= 140, 'fits a commit status');
+  // The flag only matters for a success status: it never rescues a review
+  // that failed, errored or is missing.
+  for (const securityState of ['failure', 'error', undefined, 'pending'])
+    assert.notEqual(
+      evaluateGates({ ...base, securityState, securitySkipped: true }).state,
+      'success',
+      String(securityState),
+    );
+  // Other gates still hold: a skipped review does not skip CI or threads.
+  assert.equal(
+    evaluateGates({ ...base, securitySkipped: true, ciConclusion: 'failure' })
+      .state,
+    'failure',
+  );
+  assert.equal(
+    evaluateGates({ ...base, securitySkipped: true, unresolvedThreads: 1 })
+      .state,
+    'pending',
+  );
+  // The gates comment marks it.
+  const md = renderGatesComment({ head: HEAD_A, gates: skipped });
+  assert.match(md, /Gemini security review \| ⚠️ \| SKIPPED/);
+  assert.ok(!/Gemini security review \| ✅/.test(md));
+  // And the hand-off happens.
+  assert.equal(
+    evaluateApproval({
+      prState: 'open',
+      labels: ['stage:reviewing'],
+      headSha: HEAD_A,
+      ...base,
+      securitySkipped: true,
+      copilotReviewedHead: false,
+      requireCopilot: false,
+      state: emptyState(),
+    }).action,
+    'human-approval',
+  );
+});
+
+test('workflows: security.yml checks for 402 from a wiped stderr file and fails closed otherwise', () => {
+  const wf = parseYaml(
+    readFileSync(new URL('../workflows/security.yml', import.meta.url), 'utf8'),
+  );
+  const review = wf.jobs.review;
+  const idx = (pred) => review.steps.findIndex(pred);
+  const wipe = idx((s) => /rm -rf gemini-artifacts/.test(s.run ?? ''));
+  const gemini = idx((s) => s.id === 'gemini');
+  const billing = idx((s) => s.id === 'billing');
+  assert.ok(
+    wipe >= 0 && gemini > wipe,
+    'the artifacts are wiped before the action runs',
+  );
+  assert.ok(billing > gemini, 'the check runs after the action');
+  const step = review.steps[billing];
+  // Only after the reviewer failed, with a trusted script from the default branch.
+  assert.match(step.if, /always\(\)/);
+  assert.match(step.if, /steps\.gemini\.outcome == 'failure'/);
+  assert.match(
+    step.run,
+    /^node \.pipeline\/trusted\/\.github\/scripts\/pipeline\.mjs gemini-billing gemini-artifacts\/stderr\.log$/,
+  );
+  assert.ok(!step.run.includes('${{'));
+  assert.equal(review.outputs.billing, '${{ steps.billing.outputs.billing }}');
+  // The publish job gets the flag and the review result, as data.
+  const publish = wf.jobs.publish.steps.find((s) =>
+    /security-publish/.test(s.run ?? ''),
+  );
+  assert.equal(
+    publish.env.REVIEW_BILLING,
+    '${{ needs.review.outputs.billing }}',
+  );
+  assert.equal(publish.env.REVIEW_RESULT, '${{ needs.review.result }}');
+  assert.ok(
+    !publish.run.includes('REVIEW_BILLING'),
+    'never interpolated into the script',
+  );
 });

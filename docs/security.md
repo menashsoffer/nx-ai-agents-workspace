@@ -99,6 +99,14 @@ approved the diff. How that stays safe (flow: `docs/pipeline.md`,
   most 300 files), a path the pipeline cannot parse, or a never-approvable path
   all end in refusal, and a branch that turns out to
   hold one is deleted. A fix patch never carries protected paths of any kind.
+- **One deliberate exception: Gemini credit.** When the Gemini API answers
+  402 (prepaid credit used up) the automated security review is **skipped, not
+  failed**: the PR is released to human approval with a loud warning that no
+  review ran. Only the API's exact 402 message, read by a trusted script from
+  the CLI's stderr after the reviewer failed, triggers it; every other reviewer
+  failure still fails closed. CI, the threads gate, protected-file approval and
+  the required code-owner approval are unchanged. See
+  [pipeline.md](pipeline.md#when-gemini-credit-runs-out-http-402).
 - **Why `.github` stays local.** The workflows, prompts and scripts are the
   trust boundary itself: a change there could weaken this approval, the
   `pipeline/gates` logic or W9. They are never approvable, `tools/security/`,

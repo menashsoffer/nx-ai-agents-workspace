@@ -33,6 +33,10 @@ jobs:
       pull-requests: read
     outputs:
       response: ${{ steps.gemini.outputs.summary }}
+      # `true` only when Gemini answered 402 (the prepaid credit is used up):
+      # the publish job then skips the review, releases the PR to human
+      # approval and says so, instead of failing it. Anything else still fails.
+      billing: ${{ steps.billing.outputs.billing }}
       prompt_version: ${{ steps.prompt.outputs.version }}
       pr: ${{ github.event.workflow_run.pull_requests[0].number }}
       sha: ${{ github.event.workflow_run.head_sha }}
@@ -82,6 +86,13 @@ jobs:
       - name: Trust the workspace for Gemini CLI
         run: echo "GEMINI_CLI_TRUST_WORKSPACE=true" >> "$GITHUB_ENV"
 
+      # The billing check below reads the CLI's stderr from this directory. A
+      # failed action run has no outputs, so the file is the only record; wipe
+      # it first (rm -rf removes a symlink itself, not its target) so it can
+      # only ever be what this run's action wrote, never a file from the PR.
+      - name: Clear Gemini artifacts left in the workspace
+        run: rm -rf gemini-artifacts
+
       - id: gemini
         uses: google-github-actions/run-gemini-cli@f77273f4c914e4bf38440cf36a0369cb64a37489 # v0.1.22
         with:
@@ -94,6 +105,13 @@ jobs:
               "telemetry": { "enabled": false },
               "privacy": { "usageStatisticsEnabled": false }
             }
+
+      # Gemini answered 402 (credits depleted)? Only the API's exact message
+      # counts (GEMINI_BILLING_ERROR in pipeline-lib.mjs); any other failure
+      # leaves `billing` false and the review fails closed as before.
+      - id: billing
+        if: ${{ always() && steps.gemini.outcome == 'failure' }}
+        run: node .pipeline/trusted/.github/scripts/pipeline.mjs gemini-billing gemini-artifacts/stderr.log
 
   publish:
     needs: review
@@ -130,6 +148,7 @@ jobs:
           RESPONSE: ${{ needs.review.outputs.response }}
           VERSION: ${{ needs.review.outputs.prompt_version }}
           REVIEW_RESULT: ${{ needs.review.result }}
+          REVIEW_BILLING: ${{ needs.review.outputs.billing }}
           PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
           # Dispositioned findings carry over to a new head by id.
           PIPELINE_OWNER_LOGIN: ${{ vars.PIPELINE_OWNER_LOGIN }}
