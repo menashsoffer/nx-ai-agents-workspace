@@ -1,8 +1,10 @@
 // dry-run scenario 5: an unrelated commit so the finding is reviewed again on a new head.
-const NOTE_HTML = '<b>הערת בדיקה</b>';
-
 function DemoNote() {
-  return <p dangerouslySetInnerHTML={{ __html: NOTE_HTML }} />;
+  return (
+    <p>
+      <b>הערת בדיקה</b>
+    </p>
+  );
 }
 
 export function AboutPage() {
