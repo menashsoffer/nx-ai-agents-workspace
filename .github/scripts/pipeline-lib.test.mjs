@@ -89,6 +89,7 @@ import {
   DISPOSITION_NOT_A_FINDING,
   FINDING_TOPICS,
   patchNewLines,
+  shouldMarkReady,
   threadOfComment,
   inlineFindingId,
   findingId,
@@ -6008,4 +6009,65 @@ test('workflows: no job hides the checkout its local action was loaded from', ()
     }
   }
   assert.ok(checked >= 2, 'the fix.yml jobs that move the checkout were seen');
+});
+
+test("shouldMarkReady: only a draft the pipeline opened is converted, never a person's own", () => {
+  assert.equal(shouldMarkReady({ draft: true, pipelinePr: true }), true);
+  // A person's draft stays a draft (and the App could not convert it anyway).
+  assert.equal(shouldMarkReady({ draft: true, pipelinePr: false }), false);
+  assert.equal(shouldMarkReady({ draft: false, pipelinePr: true }), false);
+  assert.equal(shouldMarkReady({ draft: false, pipelinePr: false }), false);
+  assert.equal(shouldMarkReady({}), false);
+});
+
+test("evaluateApproval hands over once per head, whatever the PR's draft state", () => {
+  const handed = {
+    prState: 'open',
+    labels: ['stage:human-approval'],
+    headSha: 'h1',
+    ciConclusion: 'success',
+    securityState: 'success',
+    unresolvedThreads: 0,
+    copilotReviewedHead: false,
+    requireCopilot: false,
+    state: { ...emptyState(), humanApprovalFor: 'h1' },
+  };
+  // A person's draft (or a pipeline draft that could not be converted) stays
+  // a draft: after the hand-off every later event is a noop, not another note.
+  for (const draft of [true, false])
+    assert.equal(
+      evaluateApproval({ ...handed, draft }).action,
+      'noop',
+      `draft=${draft}`,
+    );
+  // A new head is handed over again, and so is a PR that lost its label.
+  assert.equal(
+    evaluateApproval({ ...handed, draft: true, headSha: 'h2' }).action,
+    'human-approval',
+  );
+  assert.equal(
+    evaluateApproval({ ...handed, draft: true, labels: ['stage:reviewing'] })
+      .action,
+    'human-approval',
+  );
+});
+
+test('workflows: fix.yml restores its trusted checkout from a clean slate', () => {
+  const wf = parseYaml(
+    readFileSync(new URL('../workflows/fix.yml', import.meta.url), 'utf8'),
+  );
+  const step = wf.jobs.verify.steps.find((s) =>
+    /Put the trusted checkout back/.test(s.name ?? ''),
+  );
+  assert.equal(step.if, 'always()');
+  // Code from the patched tree ran before this step and could have planted
+  // .pipeline/trusted/.../action.yml; the post step must only ever see ours.
+  const rm = step.run.indexOf('rm -rf .pipeline');
+  const mv = step.run.indexOf('mv "$RUNNER_TEMP/trusted" .pipeline/trusted');
+  assert.ok(
+    rm >= 0 && mv > rm,
+    'wipes .pipeline before moving the checkout in',
+  );
+  // Without the hidden copy (the patch step never ran) nothing is touched.
+  assert.match(step.run, /if \[ -d "\$RUNNER_TEMP\/trusted" \]/);
 });

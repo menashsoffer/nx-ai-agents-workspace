@@ -170,6 +170,15 @@ export const sameLogin = (a, b) =>
   Boolean(a && b) && String(a).toLowerCase() === String(b).toLowerCase();
 
 /**
+ * Whether the hand-off to human approval marks a draft PR ready for review:
+ * only a PR the pipeline opened as a draft itself. A person's own draft stays
+ * a draft (their call), and the App cannot convert it anyway: the GraphQL
+ * mutation answers "Resource not accessible by integration".
+ */
+export const shouldMarkReady = ({ draft, pipelinePr }) =>
+  Boolean(draft && pipelinePr);
+
+/**
  * True only for PRs the pipeline opened: authored by the pipeline App's bot
  * and on an `issue-<n>-<slug>` branch (see branchName) in this repository.
  */
@@ -2398,7 +2407,6 @@ export const parseRequireCopilot = (value) => value === 'true';
  */
 export function evaluateApproval({
   prState,
-  draft,
   labels,
   headSha,
   ciConclusion,
@@ -2441,10 +2449,14 @@ export function evaluateApproval({
   }
   if (gates.state !== 'success')
     return { action: 'wait', reason: gates.description, gates };
+  // Once per head, whatever the PR's draft state: a person's draft stays a
+  // draft for good, a pipeline draft that could not be converted is left for
+  // the owner (the hand-off comment says so), and one put back to draft after
+  // the hand-off is respected. Repeating the hand-off would only repeat the
+  // outcome note on every event.
   if (
     state.humanApprovalFor === headSha &&
-    labels.includes('stage:human-approval') &&
-    !draft
+    labels.includes('stage:human-approval')
   )
     return {
       action: 'noop',

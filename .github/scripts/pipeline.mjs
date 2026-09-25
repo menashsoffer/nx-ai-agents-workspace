@@ -72,6 +72,7 @@ import {
   securityIdsForHead,
   securityOutcomeDetails,
   selectActionable,
+  shouldMarkReady,
   stageTransition,
   threadOfComment,
   threadsToResolve,
@@ -735,7 +736,6 @@ const commands = {
     });
     const decision = evaluateApproval({
       prState: p.state,
-      draft: p.draft,
       labels,
       headSha: head,
       ciConclusion: conclusionOf('ci') ?? null,
@@ -821,19 +821,33 @@ const commands = {
       });
       // Later human feedback starts a fresh fix budget.
       editLabels(n, resetFixLoop(labels, 'stage:human-approval'));
-      if (p.draft)
-        graphql(
-          `
-            mutation ($id: ID!) {
-              markPullRequestReadyForReview(input: { pullRequestId: $id }) {
-                pullRequest {
-                  id
+      // Only for the PRs the pipeline opened as drafts. A failure here must
+      // not end the hand-off: the outcome and label are written already, and
+      // the comment and state below are what keep it from repeating.
+      let stillDraft = false;
+      if (
+        shouldMarkReady({
+          draft: p.draft,
+          pipelinePr: protectedEval.pipelinePr,
+        })
+      )
+        try {
+          graphql(
+            `
+              mutation ($id: ID!) {
+                markPullRequestReadyForReview(input: { pullRequestId: $id }) {
+                  pullRequest {
+                    id
+                  }
                 }
               }
-            }
-          `,
-          { id: p.node_id },
-        );
+            `,
+            { id: p.node_id },
+          );
+        } catch (e) {
+          console.error(`approval: could not mark #${n} ready: ${e.message}`);
+          stillDraft = true;
+        }
       const url = previewUrl(OWNER, NAME, n);
       upsertBotComment(
         n,
@@ -843,7 +857,12 @@ const commands = {
           `CI is green, the Gemini security review is clean or every finding is dispositioned, ${requireCopilot() ? `Copilot has reviewed \`${head.slice(0, 7)}\`, ` : ''}all threads are resolved and \`${GATES_CONTEXT}\` is green.`,
           `**Preview:** ${url}`,
           `Code owners have been requested for review. Merging is a human decision; no agent can merge.`,
-        ].join('\n\n'),
+          stillDraft
+            ? 'The pull request is still a draft: the pipeline could not mark it ready for review. Mark it ready yourself.'
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
       );
       writeState(n, { ...state, humanApprovalFor: head });
     }
