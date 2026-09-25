@@ -11,3 +11,5 @@ describe('dedent', () => {
     expect(result).toBe('line one\nline two\n  line three');
   });
 });
+
+// dry-run scenario 6: a follow-up commit after the owner approved the protected change.
