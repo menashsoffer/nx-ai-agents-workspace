@@ -5945,3 +5945,67 @@ test('the reviewer prompt and the code agree on the topic list and the version',
   // The finding format changed: the recorded prompt version moved with it.
   assert.equal(promptVersion(prompt), '3');
 });
+
+// ---------------------------------------------------------------- local action post steps
+
+// A local action's post step reads its action.yml from where it was loaded.
+// If a later step moves that checkout out of the workspace (fix.yml's verify
+// job hides `.pipeline/trusted` from the patched tree), the job fails at
+// cleanup even though every real step passed. Returns the problem, or null.
+function movedLocalAction(job) {
+  const steps = job.steps ?? [];
+  const loaded = steps.findIndex((s) =>
+    String(s.uses ?? '').startsWith('./.pipeline/trusted/'),
+  );
+  if (loaded < 0) return null;
+  const moved = steps.findIndex(
+    (s, i) => i > loaded && /\bmv\s+\.pipeline\/trusted\b/.test(s.run ?? ''),
+  );
+  if (moved < 0) return null;
+  const restored = steps.some(
+    (s, i) =>
+      i > moved &&
+      /\balways\(\)/.test(String(s.if ?? '')) &&
+      /\.pipeline\/trusted/.test(s.run ?? ''),
+  );
+  return restored
+    ? null
+    : 'a step moves .pipeline/trusted away after a local action was loaded from it, and no later `if: always()` step puts it back';
+}
+
+test('movedLocalAction flags a job that hides its local action and never restores it', () => {
+  const setup = { uses: './.pipeline/trusted/.github/actions/setup' };
+  const hide = { run: 'mv .pipeline/trusted "$RUNNER_TEMP/trusted"' };
+  const restore = {
+    if: 'always()',
+    run: 'mv "$RUNNER_TEMP/trusted" .pipeline/trusted',
+  };
+  assert.ok(movedLocalAction({ steps: [setup, hide] }));
+  // Restoring before the move, or without always(), does not count.
+  assert.ok(movedLocalAction({ steps: [setup, restore, hide] }));
+  assert.ok(
+    movedLocalAction({ steps: [setup, hide, { ...restore, if: undefined }] }),
+  );
+  assert.equal(movedLocalAction({ steps: [setup, hide, restore] }), null);
+  // No local action, or nothing moved: nothing to restore.
+  assert.equal(movedLocalAction({ steps: [hide] }), null);
+  assert.equal(movedLocalAction({ steps: [setup] }), null);
+});
+
+test('workflows: no job hides the checkout its local action was loaded from', () => {
+  const dir = new URL('../workflows/', import.meta.url);
+  let checked = 0;
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.yml'))) {
+    const wf = parseYaml(readFileSync(new URL(f, dir), 'utf8'));
+    for (const [name, job] of Object.entries(wf.jobs ?? {})) {
+      assert.equal(movedLocalAction(job), null, `${f} job ${name}`);
+      if (
+        (job.steps ?? []).some((s) =>
+          /\bmv\s+\.pipeline\/trusted\b/.test(s.run ?? ''),
+        )
+      )
+        checked++;
+    }
+  }
+  assert.ok(checked >= 2, 'the fix.yml jobs that move the checkout were seen');
+});

@@ -269,6 +269,18 @@ jobs:
           path: ${{ runner.temp }}/out/verified.patch
           retention-days: 7
 
+      # The setup action's post step reads its own action.yml from where it was
+      # loaded, and "Apply the patch" moved that checkout out of the workspace.
+      # Without this the job fails at cleanup even when the patch verified,
+      # and every fix round ends as `verify_failed`.
+      - name: Put the trusted checkout back for the post steps
+        if: always()
+        run: |
+          if [ ! -d .pipeline/trusted ] && [ -d "$RUNNER_TEMP/trusted" ]; then
+            mkdir -p .pipeline
+            mv "$RUNNER_TEMP/trusted" .pipeline/trusted
+          fi
+
   push:
     needs: [adapter, fix, verify]
     runs-on: ubuntu-latest
