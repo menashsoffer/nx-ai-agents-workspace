@@ -905,6 +905,23 @@ export function threadsToResolve(threads, itemIds, autoResolveLogins) {
   );
 }
 
+/**
+ * A PR's fix state after the owner's `/restart fixing`: the review items the
+ * fix loop already took (`handled`, `lastBatch`) and the watermark are
+ * forgotten, so feedback that is still open (an unresolved thread from a round
+ * that failed before it pushed anything) is looked at again. Without this a
+ * restart gets a fresh budget but finds nothing new, and the PR waits at
+ * `stage:fixing` with nothing running. Everything else in the state stays.
+ * Resolved threads, dispositioned findings and the bot's own replies are still
+ * skipped by selectActionable, so only real open feedback comes back.
+ */
+export const resetFixItems = (state) => ({
+  ...state,
+  watermark: null,
+  handled: [],
+  lastBatch: [],
+});
+
 const FIX_LOOPS = [FIX_LOOP_1, FIX_LOOP_2];
 const isFixLoop = (l) => String(l).startsWith('fix-loop:');
 
