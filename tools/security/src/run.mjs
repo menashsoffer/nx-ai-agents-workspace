@@ -94,7 +94,7 @@ if ('unsupported' in platform) {
   // differently, so run offline there.
   const online = Boolean(
     process.env['CI'] &&
-      (process.env['GH_TOKEN'] || process.env['GITHUB_TOKEN']),
+    (process.env['GH_TOKEN'] || process.env['GITHUB_TOKEN']),
   );
   for (const { label, problems } of runScanners({
     manifest,
