@@ -17,9 +17,19 @@ function gh(args, input) {
   });
 }
 
+/**
+ * The URL `gh api` gets for `path`: relative to /repos/<owner>/<repo> unless it
+ * starts with '/'. An empty path is the repository itself, without a trailing
+ * slash (GitHub answers `repos/<owner>/<repo>/` with 404).
+ */
+export function apiUrl(path) {
+  if (path.startsWith('/')) return path.slice(1);
+  return path === '' ? `repos/${REPO}` : `repos/${REPO}/${path}`;
+}
+
 /** REST call. `path` is relative to /repos/<owner>/<repo> unless it starts with '/'. */
 export function api(path, { method = 'GET', body } = {}) {
-  const url = path.startsWith('/') ? path.slice(1) : `repos/${REPO}/${path}`;
+  const url = apiUrl(path);
   const args = [
     'api',
     '-X',
