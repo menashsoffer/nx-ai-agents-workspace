@@ -669,6 +669,45 @@ The bot keeps one **Review gates** comment per PR (`<!-- pipeline:gates -->`,
 edited in place): each gate, the open findings with their ids, and the
 dispositions on record.
 
+### When Gemini credit runs out (HTTP 402)
+
+Gemini is a paid API. When its prepaid credit is used up, the API answers
+**402 "Your prepayment credits are depleted"** and no review can run. The
+pipeline does not stop there: it **skips the review, releases the PR to human
+approval and says so loudly**, so the owner can still review and merge. This is
+the one deliberate exception to "the review fails closed".
+
+- **Detection.** `security.yml` wipes `gemini-artifacts/` before the review. If
+  the review fails, a trusted script (`pipeline.mjs gemini-billing`) looks for
+  the API's exact error text (`GEMINI_BILLING_ERROR` in `pipeline-lib.mjs`) in
+  the CLI's stderr the action left there. A failed run has no action outputs,
+  so the file is the only record. Any other failure (another API error, quota
+  429, no output, a changed message) is not billing and fails closed as before:
+  `pipeline/security` is `error`, an `invalid_output` outcome, a human.
+- **What the owner sees.** A new bot comment on the PR: **"WARNING: the security
+  review of <sha> was SKIPPED. The Gemini API answered 402 (credits depleted) ...
+  Renew the Google Gemini subscription or credits."** (an outcome note, so it
+  notifies); `pipeline/security` is `success` with the description "SKIPPED:
+  Gemini credits depleted (402), no review ran"; the Review gates comment marks
+  the Gemini row with a warning icon and "SKIPPED"; `pipeline/gates` says
+  "... all satisfied; WARNING: the Gemini review was SKIPPED"; and the hand-off
+  comment starts with a warning that the review did not run and that the change
+  must be read by a person before approving.
+- **What is not skipped.** CI, unresolved threads, the protected-file approval
+  and the required code-owner approval all still apply. Only the automated
+  Gemini review is released, and it is never reported as clean.
+- **After renewing.** Re-run the failed **Pipeline · Security Review** run of
+  that commit (Actions -> re-run). Its real review replaces the skip (the latest
+  outcome note for a head wins) and the gates are re-evaluated. Later commits get
+  the normal review again.
+- **Not covered.** The fix step (`fix.yml`, also Gemini) is unchanged: if it hits
+  402 the round fails as before. A finding that was already raised still needs a
+  fix or a `/disposition`.
+- **Residual risk.** The check trusts the text of the CLI's stderr. For a PR to
+  fake it, the reviewer run would have to fail _and_ print the API's exact error
+  text, which PR content cannot do through the read-only tools; a probe of the
+  API from a trusted step would remove even that (not done).
+
 ### Finding ids
 
 - Gemini findings: `S-<8 hex>` = first 8 hex of a sha256 of **file, topic and

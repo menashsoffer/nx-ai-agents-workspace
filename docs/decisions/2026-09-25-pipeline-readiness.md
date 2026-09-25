@@ -71,7 +71,7 @@ rebase.
 - **Gemini billing.** A 402 during the run stopped every review for about 15
   minutes, and the pipeline reports it as `invalid_output` ("could not be
   parsed") and routes to a human, which hides the cause. `GEMINI_MODEL` is unset,
-  so the model is the action's default.
+  so the model is the action's default. Follow-up: PR #69 makes a 402 skip the review and release the PR to human approval with a warning (not exercised live).
 - **A person's draft PR** still gets a `stage:human-approval` label and a
   hand-off comment once per head. Proposed follow-up: gates informational only
   for a person's draft, with re-evaluation when they mark it ready (a new

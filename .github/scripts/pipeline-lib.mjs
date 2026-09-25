@@ -1603,6 +1603,61 @@ export const dispositionsInEffect = (input) =>
 
 // ---------------------------------------------------------------- findings
 
+// ---------------------------------------------------------------- gemini credit
+
+/**
+ * What the Gemini CLI prints on stderr when the Gemini API answers 402 (the
+ * prepaid credit is used up). security.yml sets the review job's `billing`
+ * output when the action's error output contains exactly this text (a test
+ * keeps the two in step), so any other failure of the reviewer, or a changed
+ * message, still fails the review closed.
+ */
+export const GEMINI_BILLING_ERROR =
+  '_ApiError: {"error":{"code":402,"message":"Your prepayment credits are depleted';
+
+/** Whether a Gemini CLI stderr text holds the API's 402 credit-depleted error. */
+export const isGeminiBillingError = (text) =>
+  String(text ?? '').includes(GEMINI_BILLING_ERROR);
+
+const securitySkippedDetail = (sha) => `head=${sha} skipped=billing`;
+
+/**
+ * The outcome note of a security review that was SKIPPED because Gemini
+ * answered 402. It is a success (nothing to route: the PR goes on to human
+ * approval) whose text says plainly that no review ran, and whose first
+ * detail line is what securitySkippedForHead reads back.
+ */
+export function securitySkippedOutcome({ sha, promptVer }) {
+  return {
+    stage: 'security',
+    result: 'success',
+    summary: `WARNING: the security review of ${String(sha).slice(0, 7)} was SKIPPED. The Gemini API answered 402 (credits depleted), so no automated review ran. Renew the Google Gemini subscription or credits.`,
+    details: [securitySkippedDetail(sha)],
+    prompt_version: `security-review.md@${promptVer}`,
+  };
+}
+
+/**
+ * Whether the latest security outcome note of the pipeline bot for `sha` is a
+ * skipped review (a later real review of the same commit, after the credit
+ * was renewed and the review re-run, replaces it).
+ */
+export function securitySkippedForHead({ comments, botLogin, sha }) {
+  let skipped = false;
+  for (const c of comments) {
+    if (!sameLogin(c.user?.login, botLogin)) continue;
+    const parsed = parseOutcome(c.body);
+    if (!parsed.ok) continue;
+    const { outcome } = parsed;
+    if (outcome.stage !== 'security' || outcome.result !== 'success') continue;
+    const first = outcome.details[0] ?? '';
+    if (first === securitySkippedDetail(sha)) skipped = true;
+    else if (new RegExp(`^head=${sha} blocking=\\d+$`).test(first))
+      skipped = false;
+  }
+  return skipped;
+}
+
 /**
  * The blocking findings recorded for `sha` in the latest security outcome
  * note of the pipeline bot (see securityOutcomeDetails), or null when that
@@ -2186,6 +2241,7 @@ export function evaluateGates({
   securityJobConclusion,
   securityState,
   securityFindings = null,
+  securitySkipped = false,
   dispositioned = new Set(),
   unresolvedThreads = 0,
   copilotReviewedHead = false,
@@ -2229,6 +2285,17 @@ export function evaluateGates({
 
   const security = (() => {
     const label = 'Gemini security review';
+    // A review skipped for Gemini credit is released, loudly: the row says
+    // so and the hand-off comment tells the owner to review the change.
+    if (securityState === 'success' && securitySkipped)
+      return {
+        ...ok(
+          'security',
+          label,
+          'SKIPPED: Gemini credits depleted (402), no automated review ran',
+        ),
+        warn: true,
+      };
     if (securityState === 'success') return ok('security', label, 'clean');
     if (securityState === 'error')
       return fail('security', label, 'the review failed to run');
@@ -2307,12 +2374,16 @@ export function evaluateGates({
       ? `${blocker.label}: ${blocker.detail}`
       : `${[
           'CI',
-          'Gemini review',
+          ...(security.warn ? [] : ['Gemini review']),
           ...(requireCopilot ? ['Copilot review'] : []),
           'threads',
         ]
           .join(', ')
-          .replace(/, ([^,]*)$/, ' and $1')} all satisfied`,
+          .replace(/, ([^,]*)$/, ' and $1')} all satisfied${
+          security.warn
+            ? '; WARNING: the Gemini review was SKIPPED (credits depleted)'
+            : ''
+        }`,
     blockedBy: blocker?.key ?? null,
     checks,
   };
@@ -2349,7 +2420,8 @@ export function renderGatesComment({
     '| gate | state | detail |',
     '| --- | --- | --- |',
     ...gates.checks.map(
-      (c) => `| ${c.label} | ${GATE_ICON[c.state]} | ${gateCell(c.detail)} |`,
+      (c) =>
+        `| ${c.label} | ${c.warn ? '⚠️' : GATE_ICON[c.state]} | ${gateCell(c.detail)} |`,
     ),
   ];
   if (open.length) {
@@ -2430,6 +2502,7 @@ export function evaluateApproval({
   securityJobConclusion,
   securityState,
   securityFindings,
+  securitySkipped = false,
   dispositioned,
   unresolvedThreads,
   copilotReviewedHead,
@@ -2445,6 +2518,7 @@ export function evaluateApproval({
     securityJobConclusion,
     securityState,
     securityFindings,
+    securitySkipped,
     dispositioned,
     unresolvedThreads,
     copilotReviewedHead,
