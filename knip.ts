@@ -39,9 +39,6 @@ const config: KnipConfig = {
     // The app template emits `export default App` beside `export function App`;
     // main.tsx imports the named one.
     'apps/*/src/app/App.tsx': ['exports'],
-    // frozen during the session-6 readiness dry run; remove after un-exporting
-    // the 11 symbols that are only used inside the file (see PR "Follow-up after the dry run")
-    '.github/scripts/pipeline-lib.mjs': ['exports'],
     // Exported but only used inside their own file. tools/pipeline-map and
     // tools/security are protected paths (AGENTS.md), so un-exporting needs the
     // owner's approval; remove these entries when they are un-exported.
