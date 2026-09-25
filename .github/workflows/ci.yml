@@ -34,8 +34,8 @@ jobs:
       - name: Format check
         run: pnpm nx format:check --all
 
-      - name: Unused dependencies
-        run: pnpm exec knip --dependencies
+      - name: Unused code and dependencies (knip)
+        run: pnpm exec knip
 
       - name: Lint
         run: pnpm nx run-many -t lint

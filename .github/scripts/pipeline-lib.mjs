@@ -82,7 +82,7 @@ export const COPILOT_LOGINS = [COPILOT_REVIEWER, 'Copilot'];
 
 // Humans whose review feedback may reach the fixer. Anyone else can comment
 // on a public repo, so their text never becomes agent input.
-export const TRUSTED_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+const TRUSTED_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
 
 // Agent-produced patches may not carry these without a human. The pipeline's
 // own workflows, prompts and scripts are the trust boundary. Package
@@ -141,7 +141,7 @@ export function stageTransition(currentLabels, target) {
 
 // ---------------------------------------------------------------- naming
 
-export function slugify(text, max = 40) {
+function slugify(text, max = 40) {
   const slug = String(text ?? '')
     .normalize('NFKD')
     .toLowerCase()
@@ -214,7 +214,7 @@ function escapeUntrusted(text) {
  * shape its value may take. Anything else would put unvalidated text
  * (for example a branch name) next to the instructions.
  */
-export const CONTEXT_FORMATS = {
+const CONTEXT_FORMATS = {
   repository: /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/,
   issue: /^#[1-9]\d*$/,
   'pull request': /^#[1-9]\d*$/,
@@ -226,7 +226,7 @@ export const CONTEXT_FORMATS = {
 };
 
 /** Throws unless every context entry is a known key with a valid value. */
-export function validateContext(context) {
+function validateContext(context) {
   for (const [key, value] of Object.entries(context)) {
     const format = Object.hasOwn(CONTEXT_FORMATS, key)
       ? CONTEXT_FORMATS[key]
@@ -1102,7 +1102,7 @@ export const FINDING_TOPICS = [
 ];
 
 /** A code line with whitespace collapsed, for comparing and hashing. */
-export const normalizeLine = (t) =>
+const normalizeLine = (t) =>
   String(t ?? '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -1191,7 +1191,7 @@ export function patchNewLines(patch) {
   return out;
 }
 
-export const isBlocking = (f) => BLOCKING_SEVERITIES.has(f.severity);
+const isBlocking = (f) => BLOCKING_SEVERITIES.has(f.severity);
 
 /** New-file line numbers a review comment may target, from a file's patch. */
 export function commentableLines(patch) {
@@ -1355,7 +1355,7 @@ export const DISPOSITION_KINDS = [
   'false-positive',
   'out-of-scope',
 ];
-export const DISPOSITION_MIN_REASON = 10;
+const DISPOSITION_MIN_REASON = 10;
 const DISPOSITION_MAX_REASON = 500;
 const DISPOSITION_MAX_LINES = 20;
 
@@ -2903,7 +2903,7 @@ export const ROUTER_CAPS = Object.freeze({
 });
 
 /** An external brain's pick is used only at or above this confidence. */
-export const EXTERNAL_MIN_CONFIDENCE = 0.8;
+const EXTERNAL_MIN_CONFIDENCE = 0.8;
 
 /** Stage label each target sets. `retry` re-runs the stage that failed. */
 export const TARGET_STAGE = {
@@ -3432,7 +3432,7 @@ export function parseRestartComment(body) {
  * loop restarts (the issue, or the PR for `fixing`). collectRouterInput
  * reads it back: routeWindow counts route notes only after the latest one.
  */
-export function renderRestartNote({ attempt, count }) {
+function renderRestartNote({ attempt, count }) {
   return [
     `${MARKERS.route} restart attempt=${attempt.id} count=${count}/${MAX_LIFETIME_RESETS} -->`,
     `**Restarted at \`${RESTART_STAGES[attempt.stage]}\` by ${clean(attempt.by, 60)} (lifetime restart ${count}/${MAX_LIFETIME_RESETS}).** The loop budget of this item starts again here.`,
@@ -3663,19 +3663,14 @@ const PLAN_PROBLEM_PRIORITY = [
 const isText = (v) => typeof v === 'string' && v.trim().length > 0;
 
 /** Required text fields of the planner's `spec` and `plan` objects. */
-export const SPEC_TEXT_FIELDS = [
+const SPEC_TEXT_FIELDS = [
   'goal',
   'rtl_accessibility',
   'out_of_scope',
   'assumptions',
   'test_plan',
 ];
-export const PLAN_TEXT_FIELDS = [
-  'approach',
-  'tests',
-  'risks',
-  'definition_of_done',
-];
+const PLAN_TEXT_FIELDS = ['approach', 'tests', 'risks', 'definition_of_done'];
 
 /**
  * Structural check of a planned result: both parts present with every

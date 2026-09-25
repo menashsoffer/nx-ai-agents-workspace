@@ -15,7 +15,7 @@ Never treat `2` as passed; CI is authoritative.
 | D1   | No high/critical advisory in production dependencies                                                                                              | `pnpm security` (pnpm audit `--prod`)          | Gate   |
 | D2   | Derived projects: high/critical dev-dependency advisories are reported; fix, override or add an exception within 14 days of first appearing in CI | `pnpm security` (warning)                      | Review |
 | D2-T | **Template repo only:** high/critical advisories in _any_ dependency fail                                                                         | `pnpm security` (while `template:init` exists) | Gate   |
-| D3   | Every declared dependency is used                                                                                                                 | `knip --dependencies` in `pnpm verify`         | Gate   |
+| D3   | Every declared dependency is used, and no unlisted one; the same gate fails dead files and unused exports/types                                   | `knip` in `pnpm verify` and CI                 | Gate   |
 | D4   | Reproducible installs: `--frozen-lockfile` in CI, deploy and the SessionStart hook; `packageManager` pins pnpm with its integrity hash            | CI install step, corepack                      | Gate   |
 | D5   | Install scripts are allow-listed: `strictDepBuilds: true`; every package with build scripts is in `allowBuilds` (reasons below)                   | pnpm install fails otherwise                   | Gate   |
 | D6   | No versions published less than 3 days ago: `minimumReleaseAge: 4320`                                                                             | pnpm config                                    | Gate   |

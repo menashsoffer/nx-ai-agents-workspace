@@ -74,6 +74,14 @@ clear "No sandbox app" message.
 - Use the exact syntax from the Nx docs for the installed Nx major; check
   `pnpm nx migrate --help` and don't guess flags.
 
+## Dead code
+
+`knip` runs in `pnpm verify` and CI. Unused files, exports, types and
+dependencies fail it. Don't export a symbol just in case; export it when
+something imports it. If code is used without an import knip can follow (a
+workflow script, a hook, a generator loaded by Nx), teach knip in `knip.ts`
+with an `entry` and a one-line reason. Don't ignore a whole folder.
+
 ## Git
 
 - Small commits with an imperative subject line in English ("Add booking form").
