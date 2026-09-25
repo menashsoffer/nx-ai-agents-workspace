@@ -74,8 +74,8 @@ Project names are short: `site`, `site-e2e`, `pages-e2e`, `sandbox`, `ui`,
 
 ## Definition of done
 
-1. `pnpm verify` passes (sync, format check, unused-dependency check, lint,
-   typecheck, test, build on all projects).
+1. `pnpm verify` passes (sync, format check, dead-code and dependency check
+   (knip), lint, typecheck, test, build on all projects).
 2. New behavior has a test next to the code (`*.spec.ts(x)`); UI components also have a story.
 3. If you changed routes or user-visible flows in `site`, `pnpm e2e` passes; if
    you changed routing, assets, the base path or Storybook, `pnpm e2e:pages` too.
@@ -191,8 +191,10 @@ agents even inside an approvable file. See `docs/pipeline.md`,
 - Single-version policy: third-party packages go in the **root**
   `package.json` (`pnpm add -w <pkg>`, or `pnpm add -Dw` for tooling). Project
   `package.json` files list only `workspace:*` links to other projects.
-- Every declared dependency must be used (`knip` in `verify`). A package used
-  only indirectly (a plugin loaded by config) goes in `knip.ts` with a reason.
+- Every declared dependency must be used, and unused files, exports and types
+  fail `verify` too (`knip` in `verify` and CI). An export nothing imports is
+  dead: use it or remove it. Anything used only indirectly (a plugin loaded by
+  config, a script run by a workflow or hook) goes in `knip.ts` with a reason.
 - pnpm won't install versions younger than 3 days (`minimumReleaseAge`). If
   the newest release is too fresh, it picks the newest mature one; don't
   work around this.
