@@ -1,3 +1,4 @@
+// dry-run scenario 5: an unrelated commit so the finding is reviewed again on a new head.
 const NOTE_HTML = '<b>הערת בדיקה</b>';
 
 function DemoNote() {
