@@ -8,9 +8,7 @@ export function HomePage() {
           NX AI Pipeline
         </bdi>
       </h1>
-      <p className="text-muted">
-        זהו דף הבית של האתר. מחליפים את התוכן הזה בתוכן של הפרויקט.
-      </p>
+      <p className="text-muted">ברוכים הבאים לאתר הבדיקה של הצינור</p>
       <Button>התחילו כאן</Button>
     </section>
   );
