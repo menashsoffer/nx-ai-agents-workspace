@@ -2407,7 +2407,6 @@ export const parseRequireCopilot = (value) => value === 'true';
  */
 export function evaluateApproval({
   prState,
-  draft,
   labels,
   headSha,
   ciConclusion,
@@ -2450,10 +2449,14 @@ export function evaluateApproval({
   }
   if (gates.state !== 'success')
     return { action: 'wait', reason: gates.description, gates };
+  // Once per head, whatever the PR's draft state: a person's draft stays a
+  // draft for good, a pipeline draft that could not be converted is left for
+  // the owner (the hand-off comment says so), and one put back to draft after
+  // the hand-off is respected. Repeating the hand-off would only repeat the
+  // outcome note on every event.
   if (
     state.humanApprovalFor === headSha &&
-    labels.includes('stage:human-approval') &&
-    !draft
+    labels.includes('stage:human-approval')
   )
     return {
       action: 'noop',

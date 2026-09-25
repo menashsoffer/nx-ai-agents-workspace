@@ -736,7 +736,6 @@ const commands = {
     });
     const decision = evaluateApproval({
       prState: p.state,
-      draft: p.draft,
       labels,
       headSha: head,
       ciConclusion: conclusionOf('ci') ?? null,

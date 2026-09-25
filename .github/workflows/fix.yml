@@ -272,11 +272,15 @@ jobs:
       # The setup action's post step reads its own action.yml from where it was
       # loaded, and "Apply the patch" moved that checkout out of the workspace.
       # Without this the job fails at cleanup even when the patch verified,
-      # and every fix round ends as `verify_failed`.
+      # and every fix round ends as `verify_failed`. Code from the patched tree
+      # ran in between, so wipe .pipeline first: whatever it left there (an
+      # action.yml the post step would run) must not survive. If "Apply the
+      # patch" never ran there is no hidden copy and the checkout is untouched.
       - name: Put the trusted checkout back for the post steps
         if: always()
         run: |
-          if [ ! -d .pipeline/trusted ] && [ -d "$RUNNER_TEMP/trusted" ]; then
+          if [ -d "$RUNNER_TEMP/trusted" ]; then
+            rm -rf .pipeline
             mkdir -p .pipeline
             mv "$RUNNER_TEMP/trusted" .pipeline/trusted
           fi
