@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
 } from 'node:fs';
@@ -21,50 +22,92 @@ function fixture(files) {
 
 const html = (body = '') => `<!doctype html><html><head>${body}</head></html>`;
 
-describe('assemble', () => {
-  it('puts the site at the root and Storybook under storybook/', () => {
-    const siteDir = fixture({ 'index.html': html(), '404.html': html() });
-    const storybookDir = fixture({ 'index.html': html() });
-    const outDir = join(mkdtempSync(join(tmpdir(), 'out-')), 'pages');
+const out = () => join(mkdtempSync(join(tmpdir(), 'out-')), 'pages');
 
-    assemble({ siteDir, storybookDir, outDir });
+/** Minimal valid builds; each can be overridden with fixture files. */
+function builds({ site = {}, storybook = {}, docs = {} } = {}) {
+  return {
+    siteDir: fixture({ 'index.html': html(), ...site }),
+    storybookDir: fixture({ 'index.html': html(), ...storybook }),
+    docsDir: fixture({ 'index.html': html(), ...docs }),
+    outDir: out(),
+  };
+}
+
+describe('assemble', () => {
+  it('puts the site at the root, Storybook and the docs under their paths', () => {
+    const dirs = builds({
+      site: { '404.html': html() },
+      docs: { 'architecture.html': html() },
+    });
+
+    const outDir = assemble(dirs);
 
     expect(existsSync(join(outDir, 'index.html'))).toBe(true);
     expect(existsSync(join(outDir, '404.html'))).toBe(true);
     expect(existsSync(join(outDir, 'storybook/index.html'))).toBe(true);
+    expect(existsSync(join(outDir, 'docs/index.html'))).toBe(true);
+    expect(existsSync(join(outDir, 'docs/architecture.html'))).toBe(true);
     expect(readFileSync(join(outDir, '.nojekyll'), 'utf8')).toBe('');
   });
 
+  it('adds nothing at the top level that the deploy would not own', () => {
+    const outDir = assemble(builds());
+    expect(readdirSync(outDir).sort()).toEqual([
+      '.nojekyll',
+      'docs',
+      'index.html',
+      'storybook',
+    ]);
+  });
+
   it('refuses a site build that already has storybook/', () => {
-    const siteDir = fixture({ 'index.html': html(), 'storybook/x.txt': 'x' });
-    const storybookDir = fixture({ 'index.html': html() });
     expect(() =>
-      assemble({ siteDir, storybookDir, outDir: fixture({}) }),
+      assemble(builds({ site: { 'storybook/x.txt': 'x' } })),
     ).toThrow(/reserves for Storybook/);
   });
 
-  it('rejects source maps (P2)', () => {
-    const siteDir = fixture({ 'index.html': html(), 'assets/a.js.map': '{}' });
-    const storybookDir = fixture({ 'index.html': html() });
-    expect(() =>
-      assemble({ siteDir, storybookDir, outDir: fixture({}) }),
-    ).toThrow(/P2/);
+  it('refuses a site build that already has docs/', () => {
+    expect(() => assemble(builds({ site: { 'docs/x.txt': 'x' } }))).toThrow(
+      /reserves for the docs app/,
+    );
   });
 
-  it('rejects third-party scripts and styles (P1)', () => {
-    const siteDir = fixture({
-      'index.html': html(
-        '<script src="https://cdn.example.com/x.js"></script>',
-      ),
-    });
-    const storybookDir = fixture({
-      'index.html': html(
-        '<link rel="stylesheet" href="//cdn.example.com/x.css">',
-      ),
-    });
+  it('refuses a site build with a pr-<n>/ path, which belongs to previews', () => {
+    expect(() => assemble(builds({ site: { 'pr-12/x.txt': 'x' } }))).toThrow(
+      /"pr-12\/".*PR previews/,
+    );
+  });
+
+  it('allows other pr- names', () => {
     expect(() =>
-      assemble({ siteDir, storybookDir, outDir: fixture({}) }),
-    ).toThrow(/P1[\s\S]*P1/);
+      assemble(builds({ site: { 'pr-notes/x.txt': 'x' } })),
+    ).not.toThrow();
+  });
+
+  it('rejects source maps (P2), also in the docs', () => {
+    expect(() =>
+      assemble(builds({ site: { 'assets/a.js.map': '{}' } })),
+    ).toThrow(/P2/);
+    expect(() =>
+      assemble(builds({ docs: { 'assets/a.js.map': '{}' } })),
+    ).toThrow(/P2: source map in artifact: docs\/assets/);
+  });
+
+  it('rejects third-party scripts and styles (P1) in every part', () => {
+    const script = html('<script src="https://cdn.example.com/x.js"></script>');
+    const style = html(
+      '<link rel="stylesheet" href="//cdn.example.com/x.css">',
+    );
+    expect(() =>
+      assemble(
+        builds({
+          site: { 'index.html': script },
+          storybook: { 'index.html': style },
+          docs: { 'index.html': script },
+        }),
+      ),
+    ).toThrow(/P1[\s\S]*P1[\s\S]*P1/);
   });
 
   it.each([
@@ -90,13 +133,8 @@ describe('assemble', () => {
       '<link rel=stylesheet href=//cdn.example.com/x.css>',
     ],
   ])('rejects a third-party asset written with %s (P1)', (_name, head) => {
-    const storybookDir = fixture({ 'index.html': html() });
     expect(() =>
-      assemble({
-        siteDir: fixture({ 'index.html': html(head) }),
-        storybookDir,
-        outDir: fixture({}),
-      }),
+      assemble(builds({ site: { 'index.html': html(head) } })),
     ).toThrow(/P1: third-party asset in index\.html/);
   });
 
@@ -105,8 +143,12 @@ describe('assemble', () => {
       assemble({
         siteDir: fixture({}),
         storybookDir: fixture({}),
+        docsDir: fixture({}),
         outDir: fixture({}),
       }),
     ).toThrow(/site build not found/);
+    expect(() => assemble({ ...builds(), docsDir: fixture({}) })).toThrow(
+      /docs build not found/,
+    );
   });
 });

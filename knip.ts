@@ -64,6 +64,9 @@ const config: KnipConfig = {
     '@nx/workspace',
     // Peer dependency of @storybook/react-vite.
     '@storybook/react',
+    // Imported by the pages VitePress compiles from docs/*.md, which sit outside
+    // apps/docs and so cannot resolve VitePress's own copy (apps/docs).
+    'vue',
     // Runtime helpers for compiled output ("importHelpers": true in tsconfig.base.json).
     'tslib',
   ],

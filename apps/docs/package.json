@@ -1,0 +1,39 @@
+{
+  "name": "@starter/docs",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "nx": {
+    "name": "docs",
+    "tags": [
+      "type:app",
+      "scope:product"
+    ],
+    "targets": {
+      "build": {
+        "command": "vitepress build",
+        "options": {
+          "cwd": "{projectRoot}"
+        },
+        "cache": true,
+        "inputs": [
+          "production",
+          "{workspaceRoot}/docs/**/*",
+          {
+            "env": "GITHUB_REPOSITORY"
+          }
+        ],
+        "outputs": [
+          "{projectRoot}/dist"
+        ]
+      },
+      "dev": {
+        "command": "vitepress dev --port 4210",
+        "options": {
+          "cwd": "{projectRoot}"
+        },
+        "continuous": true
+      }
+    }
+  }
+}
