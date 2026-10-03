@@ -133,13 +133,8 @@ describe('assemble', () => {
       '<link rel=stylesheet href=//cdn.example.com/x.css>',
     ],
   ])('rejects a third-party asset written with %s (P1)', (_name, head) => {
-    const storybookDir = fixture({ 'index.html': html() });
     expect(() =>
-      assemble({
-        siteDir: fixture({ 'index.html': html(head) }),
-        storybookDir,
-        outDir: fixture({}),
-      }),
+      assemble(builds({ site: { 'index.html': html(head) } })),
     ).toThrow(/P1: third-party asset in index\.html/);
   });
 
