@@ -35,9 +35,11 @@ Never treat `2` as passed; CI is authoritative.
 
 ### Overrides (D8)
 
-| Package     | Override  | Advisory            | Remove when                          |
-| ----------- | --------- | ------------------- | ------------------------------------ |
-| `smol-toml` | `>=1.7.1` | GHSA-7w5x-hrqm-74c2 | `nx` depends on `smol-toml` >= 1.7.1 |
+| Package                 | Override  | Advisory                                                      | Remove when                                 |
+| ----------------------- | --------- | ------------------------------------------------------------- | ------------------------------------------- |
+| `smol-toml`             | `>=1.7.1` | GHSA-7w5x-hrqm-74c2                                           | `nx` depends on `smol-toml` >= 1.7.1        |
+| `axios`                 | `^1.20.0` | GHSA-c29m-xwm3-cm6r and 11 more                               | `nx` depends on `axios` >= 1.20.0           |
+| `brace-expansion@5.0.9` | `5.0.12`  | GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p, GHSA-q2hr-2g5m-vwhr | `nx` depends on `brace-expansion` >= 5.0.12 |
 
 ## 2. GitHub Actions workflows
 
