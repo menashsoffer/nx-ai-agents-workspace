@@ -43,6 +43,9 @@ test('localizeHtml rejects third-party assets written in other legal HTML', () =
     '<script src=https://x.test/a.js></script>',
     '<script src=//x.test/a.js></script>',
     '<link rel=stylesheet href = //x.test/a.css>',
+    '<script src="http:x.test/a.js"></script>',
+    '<script src="http://pages.invalid/a.js"></script>',
+    '<script src="//pages.invalid/a.js"></script>',
   ]) {
     assert.throws(() => localizeHtml(page(extra)), /third-party assets/, extra);
   }

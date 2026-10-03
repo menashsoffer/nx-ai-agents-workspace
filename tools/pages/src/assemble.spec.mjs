@@ -74,6 +74,18 @@ describe('assemble', () => {
     ],
     ['an unquoted value', '<script src=https://cdn.example.com/x.js></script>'],
     [
+      'a scheme without // (http:host/path)',
+      '<script src="http:cdn.example.com/x.js"></script>',
+    ],
+    [
+      'the placeholder host',
+      '<script src="http://pages.invalid/x.js"></script>',
+    ],
+    [
+      'the placeholder host, protocol-relative',
+      '<script src=//pages.invalid/x.js></script>',
+    ],
+    [
       'an unquoted protocol-relative URL',
       '<link rel=stylesheet href=//cdn.example.com/x.css>',
     ],
