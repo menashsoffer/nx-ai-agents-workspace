@@ -30,7 +30,7 @@
     "prepare": "simple-git-hooks",
     "template:init": "node tools/scripts/init-template.mjs",
     "template:smoke": "bash tools/scripts/template-smoke.sh",
-    "pages:build": "nx run-many -t build build-storybook -p site ui && node tools/pages/src/assemble.mjs",
+    "pages:build": "nx run-many -t build build-storybook -p site ui docs && node tools/pages/src/assemble.mjs",
     "pages:serve": "node tools/pages/src/serve.mjs",
     "security": "node tools/security/src/run.mjs"
   },
@@ -83,6 +83,7 @@
     "knip": "^6.37.0",
     "lint-staged": "^17.5.1",
     "nx": "23.2.1",
+    "postcss-rtlcss": "^6.0.0",
     "prettier": "~3.9.7",
     "simple-git-hooks": "^2.14.0",
     "storybook": "^10.5.0",
@@ -91,7 +92,9 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.58.0",
     "vite": "^8.0.0",
+    "vitepress": "2.0.0-alpha.20",
     "vitest": "~5.0.1",
+    "vue": "^3.5.43",
     "yaml": "^2.9.1"
   },
   "simple-git-hooks": {

@@ -14,6 +14,7 @@ Tailwind CSS v4 · Vitest · Playwright · Storybook 10 · GitHub Pages.
 | ------------------------ | --------------------------------------------------------------------------- |
 | `apps/site`              | The product. Hebrew RTL shell, deployed to Pages at `/`                     |
 | `apps/site-e2e`          | Playwright tests for `site`                                                 |
+| `apps/docs`              | VitePress site rendering `docs/`, deployed at `/docs/`                      |
 | `apps/sandbox`           | Throwaway experiments, one auto-listed page per spike                       |
 | `libs/ui`                | Design system: components + Tailwind tokens + Storybook (`/storybook/`)     |
 | `libs/shared/utils`      | Framework-free helpers                                                      |

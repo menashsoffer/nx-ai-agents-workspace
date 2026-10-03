@@ -27,6 +27,7 @@ apps/
   site/            the product (scope:product), deployed to Pages at /
   site-e2e/        Playwright tests for site
   pages-e2e/       Playwright tests of the assembled GitHub Pages artifact (base path, 404.html, Storybook)
+  docs/            VitePress site that renders docs/ (scope:product), deployed at /docs/
   sandbox/         throwaway experiments (scope:dev), one folder per spike in src/spikes/
 libs/
   ui/              design system: React components + Tailwind tokens + Storybook (deployed at /storybook/)
@@ -34,7 +35,7 @@ libs/
 tools/
   vite-config/     defineAppConfig(): shared Vite/Vitest config for every app
   workspace-plugin/ local Nx generators (pnpm new:*)
-  pages/           assembles + serves the Pages artifact (site at /, Storybook at /storybook/)
+  pages/           assembles + serves the Pages artifact (site at /, Storybook at /storybook/, docs at /docs/)
   security/        `pnpm security`: audit, exceptions, AI-config checks, pinned scanners
   pipeline-map/    generates docs/pipeline-map.md from the pipeline workflows (`pnpm pipeline:map`)
   scripts/         one-off repo scripts (template-only; removed by template:init)
@@ -57,6 +58,7 @@ Always run tasks through pnpm/Nx, never `npx vite`, `npx vitest`, etc.
 | Task                                   | Command                                                    |
 | -------------------------------------- | ---------------------------------------------------------- |
 | Dev server (site)                      | `pnpm dev` (http://localhost:4200)                         |
+| Dev server (docs)                      | `pnpm nx dev docs` (http://localhost:4210)                 |
 | Any app                                | `pnpm nx dev <app>`                                        |
 | Storybook                              | `pnpm storybook` (http://localhost:6006)                   |
 | **Verify (required before finishing)** | `pnpm verify`                                              |
@@ -69,7 +71,7 @@ Always run tasks through pnpm/Nx, never `npx vite`, `npx vitest`, etc.
 | Format                                 | `pnpm format`                                              |
 | New app / lib / component / spike      | `pnpm new:app` · `new:lib` · `new:component` · `new:spike` |
 
-Project names are short: `site`, `site-e2e`, `pages-e2e`, `sandbox`, `ui`,
+Project names are short: `site`, `site-e2e`, `pages-e2e`, `docs`, `sandbox`, `ui`,
 `shared-utils`, `vite-config`, `workspace-plugin`, `pages`, `security`, `pipeline-map`. List them with `pnpm nx show projects`.
 
 ## Definition of done
