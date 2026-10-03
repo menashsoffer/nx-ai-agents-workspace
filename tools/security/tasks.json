@@ -23,16 +23,38 @@
     "package.json#prepare": "simple-git-hooks",
     "package.json#template:init": "node tools/scripts/init-template.mjs",
     "package.json#template:smoke": "bash tools/scripts/template-smoke.sh",
-    "package.json#pages:build": "nx run-many -t build build-storybook -p site ui && node tools/pages/src/assemble.mjs",
+    "package.json#pages:build": "nx run-many -t build build-storybook -p site ui docs && node tools/pages/src/assemble.mjs",
     "package.json#pages:serve": "node tools/pages/src/serve.mjs",
     "package.json#security": "node tools/security/src/run.mjs"
   },
   "targets": {
-    "tools/pipeline-map/package.json#generate": {
-      "command": "node tools/pipeline-map/src/cli.mjs"
+    "apps/docs/package.json#build": {
+      "command": "vitepress build",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "cache": true,
+      "inputs": [
+        "production",
+        "{workspaceRoot}/docs/**/*",
+        {
+          "env": "GITHUB_REPOSITORY"
+        }
+      ],
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "apps/docs/package.json#dev": {
+      "command": "vitepress dev --port 4210",
+      "options": {
+        "cwd": "{projectRoot}"
+      },
+      "continuous": true
     },
     "tools/pipeline-map/package.json#check": {
       "command": "node tools/pipeline-map/src/cli.mjs --check"
+    },
+    "tools/pipeline-map/package.json#generate": {
+      "command": "node tools/pipeline-map/src/cli.mjs"
     }
   },
   "executors": ["@nx/js:tsc"],

@@ -3,10 +3,12 @@
 //
 //   <out>/            <- apps/site/dist
 //   <out>/storybook/  <- libs/ui/storybook-static
+//   <out>/docs/       <- apps/docs/dist
 //
 // Used by both CI (pages-e2e) and the deploy workflow, so what is tested is
 // exactly what is deployed. Guards (docs/security.md, docs/architecture.md):
-//   - the site must not already contain a reserved top-level path (storybook/)
+//   - the site must not already contain a reserved top-level path (storybook/,
+//     docs/) or a PR preview path (pr-<n>/, which the deploy keeps and owns)
 //   - P1: index.html files load no third-party scripts or styles
 //   - P2: no source maps in the artifact
 import {
@@ -20,8 +22,13 @@ import {
 } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findExternalAssets } from './external-assets.mjs';
 
-export const RESERVED_PATHS = ['storybook'];
+/** Top-level paths the deployment gives to other builds, with their owner. */
+export const RESERVED_PATHS = { storybook: 'Storybook', docs: 'the docs app' };
+
+/** PR previews (preview.yml) live here; a deploy must never write into them. */
+const PREVIEW_PATH = /^pr-\d+$/;
 
 const workspaceRoot = resolve(fileURLToPath(import.meta.url), '../../../..');
 
@@ -33,34 +40,39 @@ function* walk(dir) {
   }
 }
 
-/** Absolute http(s) or protocol-relative URLs in <script src> / <link href>. */
-const EXTERNAL_ASSET =
-  /<(?:script[^>]*\ssrc|link[^>]*\shref)=["']((?:https?:)?\/\/[^"']+)["']/gi;
-
 export function assemble({
   siteDir = join(workspaceRoot, 'apps/site/dist'),
   storybookDir = join(workspaceRoot, 'libs/ui/storybook-static'),
+  docsDir = join(workspaceRoot, 'apps/docs/dist'),
   outDir = join(workspaceRoot, 'dist/pages'),
 } = {}) {
   for (const [label, dir] of [
     ['site build', siteDir],
     ['Storybook build', storybookDir],
+    ['docs build', docsDir],
   ]) {
     if (!existsSync(join(dir, 'index.html'))) {
       throw new Error(`${label} not found at ${dir}. Build it first.`);
     }
   }
-  for (const reserved of RESERVED_PATHS) {
+  for (const [reserved, owner] of Object.entries(RESERVED_PATHS)) {
     if (existsSync(join(siteDir, reserved))) {
       throw new Error(
-        `The site build contains "${reserved}/", which the Pages deployment reserves for Storybook. Rename it in apps/site.`,
+        `The site build contains "${reserved}/", which the Pages deployment reserves for ${owner}. Rename it in apps/site.`,
       );
     }
+  }
+  const preview = readdirSync(siteDir).find((name) => PREVIEW_PATH.test(name));
+  if (preview) {
+    throw new Error(
+      `The site build contains "${preview}/", which the Pages deployment keeps for PR previews. Rename it in apps/site.`,
+    );
   }
 
   rmSync(outDir, { recursive: true, force: true });
   cpSync(siteDir, outDir, { recursive: true });
   cpSync(storybookDir, join(outDir, 'storybook'), { recursive: true });
+  cpSync(docsDir, join(outDir, 'docs'), { recursive: true });
   writeFileSync(join(outDir, '.nojekyll'), '');
 
   const problems = [];
@@ -69,9 +81,7 @@ export function assemble({
     if (file.endsWith('.map'))
       problems.push(`P2: source map in artifact: ${rel}`);
     if (file.endsWith('.html')) {
-      for (const [, url] of readFileSync(file, 'utf8').matchAll(
-        EXTERNAL_ASSET,
-      )) {
+      for (const url of findExternalAssets(readFileSync(file, 'utf8'))) {
         problems.push(`P1: third-party asset in ${rel}: ${url}`);
       }
     }

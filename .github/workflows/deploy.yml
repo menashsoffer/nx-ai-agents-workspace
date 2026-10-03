@@ -1,8 +1,10 @@
 name: Deploy to GitHub Pages
 
 # Publishes the assembled Pages artifact (apps/site at /, the ui Storybook
-# at /storybook/) to the root of the gh-pages branch, keeping PR previews
-# under /pr-<n>/ (preview.yml, docs/decisions/0004).
+# at /storybook/, the graphify code map at /code-map/) to the root of the
+# gh-pages branch, keeping PR previews under /pr-<n>/ (preview.yml,
+# docs/decisions/0004). The code map is generated here on every deploy, so
+# nothing else may write /code-map/ (docs/decisions/2026-10-03-code-map-on-pages.md).
 # One-time setup: Settings → Pages → Source: "Deploy from a branch",
 # branch gh-pages, folder / (root).
 
@@ -22,8 +24,46 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
 
+  # Step 1: the code map. Runs next to `ci`. graphify is installed from pip
+  # here and nowhere else (not in package.json or the lockfile). `--code-only`
+  # is AST-only: no backend, no LLM, no API key. Deploy-only: never on PRs.
+  code-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install graphify (pinned)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/graphify-venv"
+          "$RUNNER_TEMP/graphify-venv/bin/pip" install --disable-pip-version-check graphifyy==0.9.74
+
+      - name: Extract the code graph (AST only, no LLM)
+        run: |
+          graphify="$RUNNER_TEMP/graphify-venv/bin/graphify"
+          "$graphify" extract . --code-only --out "$RUNNER_TEMP/graphify"
+          "$graphify" cluster-only "$RUNNER_TEMP/graphify" --no-label
+
+      # After the extract, so the graph never sees node_modules. code-map.mjs
+      # needs the workspace install (jsdom, shared with tools/pages).
+      - uses: ./.github/actions/setup
+
+      # graph.html -> index.html without the unpkg script (P1), + graph.json.
+      - name: Build the static code-map/ folder
+        run: node .github/scripts/code-map.mjs "$RUNNER_TEMP/graphify/graphify-out" code-map
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: code-map
+          path: code-map
+          retention-days: 3
+
+  # Step 2: build and publish the site as usual; the map rides along as a
+  # static asset of apps/site (public/code-map/ -> dist/code-map/).
   build:
-    needs: ci
+    needs: [ci, code-map]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -35,6 +75,11 @@ jobs:
 
       # No dependency cache in the deploy path (cache poisoning).
       - uses: ./.github/actions/setup
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: code-map
+          path: apps/site/public/code-map
 
       # Same script as the pages-e2e tests: what was tested is what ships.
       - run: pnpm pages:build

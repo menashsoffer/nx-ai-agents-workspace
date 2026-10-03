@@ -404,9 +404,9 @@ so the history stays readable:
 `stage` is one of `spec` (legacy: notes written before spec and plan merged), `plan`, `develop`, `approval`, `ci`, `pr`;
 `result` is `success` or `problem`. On success the stage moves to its next
 label itself (no extra run). On a problem it sets `stage:routing`.
-`pipeline.mjs outcome <n> <file.json>` posts a note; `pipeline.mjs classify
-<stage> ...` turns job results and agent output into one. Agent text in a
-note is flattened to single lines and cannot contain `<!--`, so it cannot
+`pipeline.mjs outcome <n> <file.json>` posts a note;
+`pipeline.mjs classify <stage> ...` turns job results and agent output into
+one. Agent text in a note is flattened to single lines and cannot contain `<!--`, so it cannot
 forge a marker.
 
 ### Problem codes (`PROBLEMS`)

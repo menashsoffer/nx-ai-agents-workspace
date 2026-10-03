@@ -5,6 +5,7 @@
 ```
             ┌────────────── scope:product ──────────────┐   ┌──── scope:dev ────┐
  apps       │  site  ◄── site-e2e (Playwright)           │   │  sandbox          │
+            │  docs  (VitePress over docs/)              │   │                   │
             └──────┬─────────────────────────────────────┘   └───┬───────────────┘
                    │ imports                                      │ imports
             ┌──────▼──────────────── scope:shared ────────────────▼───────────────┐
@@ -24,6 +25,9 @@
 - **Feature libs** (`pnpm new:lib x --type=feature`) are where logic shared by
   several apps goes. None exist yet; create one when a second app needs the same
   feature.
+- **`docs`** renders the Markdown in `docs/` as a site (VitePress, RTL Hebrew
+  chrome). The files stay in `docs/`; the app holds no content (ADR
+  `2026-10-03-docs-app`).
 - **`sandbox`** is for spikes. Code there can import anything, but nothing may
   import from it. Promote a spike by moving its code into a lib or app, then
   delete the spike.
@@ -47,10 +51,12 @@ A single GitHub Pages site per repo (`https://<user>.github.io/<repo>/`):
 | ------------- | -------------------------------- |
 | `/`           | `apps/site` production build     |
 | `/storybook/` | `libs/ui` Storybook static build |
+| `/docs/`      | `apps/docs` build of this folder |
 | `/pr-<n>/`    | `apps/site` preview of PR `<n>`  |
 
 `tools/pages` assembles the artifact (`pnpm pages:build`) and refuses a site
-that already contains `storybook/`, source maps, or third-party scripts.
+that already contains `storybook/`, `docs/`, a `pr-<n>/` path, source maps, or
+third-party scripts.
 `apps/pages-e2e` tests that exact artifact under a non-root base path with a
 Pages-like server. `.github/workflows/deploy.yml` publishes it to the root of
 the `gh-pages` branch, next to the PR previews that `preview.yml` puts under
