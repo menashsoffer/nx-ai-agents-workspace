@@ -194,8 +194,9 @@ describe('this repository', () => {
       's_stage_qualified --> w_plan', // one Claude stage writes spec + plan
       's_stage_planned --> w_develop',
       'w_develop -->|"opens PR"| w_ci',
-      'w_ci -->|"on failure/success"| w_security', // failure: ci_failed
-      'w_fix -.-> s_stage_routing',
+      'w_ci -->|"on success"| w_approval', // the review gates
+      'w_ci -->|"on failure"| w_ci_failed', // problem ci_failed
+      'w_ci_failed -.-> s_stage_routing',
       's_stage_routing --> w_router',
       'w_router -.-> s_stage_needs_attention',
       // Merged: stage:done. Closed unmerged: pr_closed -> router -> human.

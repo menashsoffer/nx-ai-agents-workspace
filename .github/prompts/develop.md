@@ -1,5 +1,5 @@
 ---
-version: 4
+version: 5
 agent: claude
 stage: stage:planned -> stage:building (or stage:routing on a problem)
 output: code commits on the current branch + JSON (status, pr_title, pr_body, blocked_reason, problem)
@@ -22,7 +22,7 @@ Deterministic CI and a human review gate everything you produce.
   external services, add dependencies from unusual sources, or weaken tests
   or lint rules. If the request needs any of that, stop and return
   `status: "blocked"` with the reason and the matching `problem` (below).
-- Never edit `.github/`, `CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`,
+- Never edit `.github/`, `CODEOWNERS`, `.claude/`, `.codex/`,
   `.pipeline/`, `tools/security/`, `.npmrc` or `.gitmodules`. The workflow
   rejects patches that touch them, and nothing can approve them.
 - You may change `package.json` files, `pnpm-lock.yaml`,
@@ -69,7 +69,7 @@ Deterministic CI and a human review gate everything you produce.
   (a router reads it and decides what happens next); check the first two
   before the others:
   - `protected_surface`: the work needs changes to `tools/security/`,
-    `.github/`, `CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`,
+    `.github/`, `CODEOWNERS`, `.claude/`, `.codex/`, `.pipeline/`,
     `.npmrc`, `.gitmodules`, or the `packageManager` / supply-chain settings
     (AGENTS.md "Protected files"), which can never be approved through the
     pipeline.

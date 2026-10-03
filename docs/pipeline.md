@@ -1,7 +1,7 @@
 # Multi-agent pipeline (stage 1)
 
 An issue goes in; a reviewed, previewed, human-approved pull request comes
-out. Gemini and Claude do the writing. Deterministic workflows move work
+out. Claude does the writing. Deterministic workflows move work
 between stages, check every agent output, and hold every token that can
 write. **No agent can merge.** Only a code owner's approval on a green PR
 unlocks the merge button.
@@ -13,7 +13,7 @@ at a human. See [Router](#router).
 
 ## The flow
 
-The full map (every stage, workflow, escalation and fix-loop path, plus
+The full map (every stage, workflow and escalation path, plus
 computed findings) is generated from the workflows and `pipeline-lib.mjs`:
 see **[pipeline-map.md](pipeline-map.md)**. Regenerate it with
 `pnpm pipeline:map` after changing a workflow or `pipeline-lib.mjs`;
@@ -32,13 +32,10 @@ decides what happens next.
 | `stage:planned`           | `plan.yml`, `restart.yml`              | Spec and plan comments posted and auto-approved (or the owner's `/restart planned`). Starts the develop agent.                                                          |
 | `stage:awaiting-approval` | `develop.yml`, `protected-approve.yml` | Protected changes are pushed to a branch with **no PR**; the owner reads the diff and approves or rejects. See [Protected-change approval](#protected-change-approval). |
 | `stage:building`          | `develop.yml`                          | Draft PR open (on the issue and the PR). CI runs.                                                                                                                       |
-| `stage:reviewing`         | `security.yml`                         | Security review posted on the PR.                                                                                                                                       |
-| `stage:fixing`            | `fix.yml`, `restart.yml`               | Fixer is applying review feedback (or the owner's `/restart fixing` gave the PR a fresh fix budget).                                                                    |
 | `stage:human-approval`    | `approval.yml`                         | Everything green. A human reviews the PR and the preview, then approves and merges.                                                                                     |
 | `stage:routing`           | any step                               | A stage reported a problem in an outcome note. `router.yml` decides the next step.                                                                                      |
 | `stage:needs-attention`   | `router.yml`                           | The router handed off. Read its latest `pipeline:route` note and act; only the owner's `/restart` restarts it (3 per issue, lifetime).                                  |
 | `stage:done`              | `done.yml`                             | The PR merged. Set on the PR and its issues; terminal. See [When a PR closes](#when-a-pr-closes).                                                                       |
-| `fix-loop:1` / `:2`       | `fix.yml`                              | Automated fix rounds used. At most two. Cleared on escalation and at `stage:human-approval`.                                                                            |
 
 From `stage:building` on, the **PR** carries the stage; the issue stays at
 `stage:building` until the PR closes. Then both get `stage:done` (merged),
@@ -55,16 +52,15 @@ code, and it writes with the pipeline App's token, so its notes are
 trusted by the router.
 
 - **Merged:** the PR and every linked issue get `stage:done`; every other
-  `stage:*` and every `fix-loop:*` label is removed. The router is not
-  involved. The Project cards move to **Done** (set directly by `done.yml`
+  `stage:*` label is removed. The router is not involved. The Project cards move to **Done** (set directly by `done.yml`
   when `PROJECT_URL` is set, and again by `project-sync.yml` from the label).
 - **Closed without merging:** no code may be silently abandoned. Each
   linked issue that is still open gets an outcome note (stage `pr`,
   problem `pr_closed`, with the PR number and who closed it) and
   `stage:routing`; the router hands it to a human (`stage:needs-attention`).
   An issue is skipped when another open PR is linked to it (a replacement
-  PR), or when it is already closed. The closed PR's `stage:*` and
-  `fix-loop:*` labels are cleared, so no stage picks it up again; its card
+  PR), or when it is already closed. The closed PR's `stage:*` labels are
+  cleared, so no stage picks it up again; its card
   stays where it was (the Project's built-in "Item closed" workflow moves
   it to Done if enabled).
 
@@ -81,13 +77,11 @@ and manual runs); an open issue whose PR was closed still routes.
 | `plan.yml`              | `stage:qualified` added                                                                | Claude (`plan.md`)             | spec + plan comments, `stage:planned` (or an outcome note + `stage:routing`)                                                                                        |
 | `develop.yml`           | `stage:planned` added                                                                  | Claude (`develop.md`)          | branch `issue-<n>-<slug>`, draft PR `Closes #n`, `stage:building`; approvable protected changes: branch only, `stage:awaiting-approval`                             |
 | `protected-approve.yml` | owner comment on an issue; CI requested on a same-repo PR                              | none                           | `/approve-protected` opens the PR and sets `pipeline/protected-approval`; a new PR head recomputes it (see [Protected-change approval](#protected-change-approval)) |
-| `router.yml`            | `stage:routing` added (open issue or PR), or manual                                    | none (optional external brain) | route note, then the target's label (or a `fix.yml` retry dispatch)                                                                                                 |
-| `restart.yml`           | owner `/restart` comment on an issue; a person changes `stage:needs-attention` by hand | none                           | lifetime counter + restart route note + stage label (`fixing`: on the PR, then Pipeline · Fix); or one pointer note to `/restart`                                   |
+| `router.yml`            | `stage:routing` added (open issue or PR), or manual                                    | none (optional external brain) | route note, then the target's label                                                                                                                                 |
+| `restart.yml`           | owner `/restart` comment on an issue; a person changes `stage:needs-attention` by hand | none                           | lifetime counter + restart route note + stage label; or one pointer note to `/restart`                                                                              |
 | `ci.yml`                | every PR                                                                               | none                           | **required check `ci`**: format, lint, typecheck, unit, build, e2e (site)                                                                                           |
-| `security.yml`          | CI succeeded on a PR                                                                   | Gemini (`security-review.md`)  | PR review, `pipeline/security` status, `stage:reviewing`                                                                                                            |
-| `security.yml`          | CI failed on a pipeline PR's head                                                      | none                           | outcome note `ci_failed` + `stage:routing` (router → human)                                                                                                         |
-| `fix.yml`               | review submitted, manual, or router retry                                              | Gemini (`fix.md`)              | one fix commit per round, replies on threads                                                                                                                        |
-| `approval.yml`          | `pipeline/security` status, review submitted, disposition note, manual                 | none                           | `pipeline/gates` status; optional Copilot review request (`REQUIRE_COPILOT`), then `stage:human-approval` + preview comment                                         |
+| `ci-failed.yml`         | CI failed on a pipeline PR's head                                                      | none                           | outcome note `ci_failed` + `stage:routing` (router → human)                                                                                                         |
+| `approval.yml`          | CI succeeded on a PR, review submitted, disposition note, manual                       | none                           | `pipeline/gates` status; optional Copilot review request (`REQUIRE_COPILOT`), then `stage:human-approval` + preview comment                                         |
 | `approval.yml`          | CI requested on a same-repo PR                                                         | none                           | `pipeline/gates` = pending on the new head                                                                                                                          |
 | `disposition.yml`       | comment created on a PR                                                                | none                           | owner's `/disposition` → resolved threads + record notes (see [Review gates](#review-gates-and-dispositions))                                                       |
 | `preview.yml`           | PR opened/updated/closed                                                               | none                           | `https://<owner>.github.io/<repo>/pr-<n>/`, removed on close                                                                                                        |
@@ -115,12 +109,8 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   - plan: JSON schema (`--json-schema`) with two parts, `spec` and `plan`, then the
     auto-approval checks below;
   - develop: JSON schema (`--json-schema`), status and `problem` fields decide the outcome;
-  - security review: exactly one fenced `json` block, parsed and normalised
-    (zero or several blocks fail the review: `pipeline/security` = error,
-    outcome note `invalid_output` → router → human); unknown severities
-    count as blocking;
-  - develop / fix patches: rejected if they touch `.github/`, `CODEOWNERS`,
-    `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`, `tools/security/`,
+  - develop patches: rejected if they touch `.github/`, `CODEOWNERS`,
+    `.claude/`, `.codex/`, `.pipeline/`, `tools/security/`,
     `.npmrc` or `.gitmodules` (**never approvable**: the `forbidden_path`
     hard gate, a local session changes those), or the execution surface of
     `pnpm` and the pre-approved commands (`package.json` and
@@ -131,15 +121,12 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
     and rejects any patch it cannot parse. A develop patch whose protected
     paths are all approvable is not rejected: it is pushed **without a PR**
     and the owner approves it first ([Protected-change
-    approval](#protected-change-approval)). A fix patch never carries
-    protected paths. So **agents cannot add or change dependencies, scripts
+    approval](#protected-change-approval)). So **agents cannot add or change dependencies, scripts
     or projects on their own**: the owner approves each such change once,
     before any PR exists.
-- **Minimal tools.** Security review: Gemini read-only file tools.
-  Plan (spec + plan): Claude `Read, Glob, Grep`. Develop: file edits, `pnpm` and local
-  `git add/commit` only; no push, `gh`, `curl` or web. Fix: file edits only,
-  **no shell**; a separate job with no secrets formats the patch and runs
-  `pnpm verify` before the push job.
+- **Minimal tools.** Plan (spec + plan): Claude `Read, Glob, Grep`. Develop:
+  file edits, `pnpm` and local `git add/commit` only; no push, `gh`, `curl`
+  or web.
 - **Markers count only from the bot.** Anyone can post a comment containing
   `<!-- pipeline-state -->` or `<!-- pipeline:spec -->`. The scripts match a
   marker comment only if `PIPELINE_BOT_LOGIN` wrote it (the preview comment:
@@ -147,12 +134,7 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   as separate fields taken from the bot's comments, with markers in all
   other text neutralised. Editing the bot's spec comment keeps the bot as
   its author, so that still works.
-- **Trusted feedback only.** The fix loop runs only on PRs the pipeline
-  opened (author `PIPELINE_BOT_LOGIN`, branch `issue-<n>-<slug>`), and only
-  on feedback from the pipeline bot, Copilot, or people whose
-  `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR`. Anyone else
-  can comment on this public repo; their text never reaches the fixer.
-- **Trusted code only.** Workflows triggered by `workflow_run`, `status` or
+- **Trusted code only.** Workflows triggered by `workflow_run` or
   reviews load prompts and scripts from the default branch, not from the PR.
   Fork PRs never reach an agent.
 - **No merge path for bots.** The ruleset needs a code-owner approval after
@@ -165,9 +147,9 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
   `main`, and no bot or App can bypass anything. The pipeline App has no
   `workflows` or `administration` permission. `GITHUB_TOKEN` cannot approve
   PRs.
-- **Bounded loops.** Two automated fix rounds per PR. Router loops per item:
-  re-plan 2, re-develop 1, fix retry 1, and 5 routed rounds in
-  total (`ROUTER_CAPS`); after that, a human. See [Router](#router).
+- **Bounded loops.** Router loops per item: re-plan 2, re-develop 1, and 5
+  routed rounds in total (`ROUTER_CAPS`); after that, a human. See
+  [Router](#router).
 - **Notes are trusted by author.** The router reads only outcome and route
   notes written by `PIPELINE_BOT_LOGIN`; anyone can comment on a public repo.
 - **Pinned supply chain.** Every action is pinned to a commit SHA, with the
@@ -175,70 +157,22 @@ unit-tested by `pnpm test:pipeline`, which CI runs) and
 - **Minimal permissions.** Every workflow sets `permissions: {}` at the top
   and grants per job; App tokens are down-scoped per job.
 
-### The fix-loop adapter
-
-`fix.yml`'s first job is deterministic. On each run it:
-
-1. stops (no-op) unless the PR was opened by the pipeline: author is
-   `PIPELINE_BOT_LOGIN` and the head branch is `issue-<n>-<slug>`;
-2. reads the `<!-- pipeline-state -->` comment on the PR (created with the PR);
-3. collects review comments and review bodies from **trusted sources** (the
-   pipeline bot, Copilot, repo owners/members/collaborators) **newer than the state's
-   watermark**, skips ones already handled (**deduped by comment id**),
-   resolved threads, approved and dismissed reviews, Copilot's summary body, and pipeline
-   bookkeeping. Pipeline review bodies count only if marked
-   `<!-- pipeline:actionable -->`. Dedupe is by id; the watermark only moves
-   past items with a final decision. Resolved threads and empty bodies are
-   deferred (the watermark stops before them), so a thread reopened later
-   is still picked up. Inline comments count from their review's
-   submission time;
-4. decides:
-
-   | Labels on the PR | New actionable comments | Action                                                               |
-   | ---------------- | ----------------------- | -------------------------------------------------------------------- |
-   | any              | none                    | nothing (rerunning is safe)                                          |
-   | no `fix-loop:*`  | yes                     | add `fix-loop:1`, run the fixer                                      |
-   | `fix-loop:1`     | yes                     | swap to `fix-loop:2`, run the fixer                                  |
-   | `fix-loop:2`     | yes                     | clear `fix-loop:*`; outcome note `budget_exhausted` → router → human |
-
-5. records the handled ids, the new watermark and the round's batch
-   (`lastBatch`) in the state comment **before** it edits labels or the
-   fixer runs, so a crash cannot spend the same round twice (at worst,
-   that round's items are dropped).
-
-It does nothing while the PR is in `stage:routing` or
-`stage:needs-attention`. When the fixer itself fails, the router may
-**retry** once: it dispatches `fix.yml` with `retry: true`, and the adapter
-replays `lastBatch` under the current `fix-loop:*` label. A retry never
-consumes a new fix round.
-
-The budget resets only when `fix-loop:*` is cleared: by the owner's
-`/restart fixing` (two fresh rounds, counted against the issue's lifetime
-restarts) and when the PR reaches `stage:human-approval` (so later human
-feedback starts at round 1). Escalating keeps `fix-loop:2`, so moving the PR
-out of `stage:needs-attention` by hand does not refill it.
-
-After a successful fix, the push job replies on each inline thread and
-resolves a thread only if **every** comment in it is from the pipeline bot
-or Copilot. A thread a person opened or replied in stays open for them to
-resolve.
-
 ### Concurrency
 
 Every job has a concurrency group `pipeline-issue-<n>-<step>` or
 `pipeline-pr-<n>-<step>`. The step suffix matters: GitHub keeps only one
 pending run per group and cancels the rest, so one shared
 `pipeline-pr-<n>` group would silently drop CI, preview or review runs.
-`fix.yml`'s adapter and `approval.yml` share `pipeline-pr-<n>-state`,
-because both update the state comment. `router.yml` uses
+`approval.yml` uses `pipeline-pr-<n>-state`, because it updates the state
+comment. `router.yml` uses
 `pipeline-item-<n>-router` (issues and PRs share one number space);
 `restart.yml` uses `pipeline-issue-<n>-restart` so two `/restart` comments
 cannot read the same counter.
 
 ## One-time setup
 
-The pipeline workflows react to issue, review, `workflow_run` and `status`
-events, which always run the workflow files **on the default branch**.
+The pipeline workflows react to issue, review and `workflow_run` events,
+which always run the workflow files **on the default branch**.
 Nothing happens until these files are on `main`.
 
 1. **Make the repo public** (or use GitHub Pro/Team) so the ruleset is enforced.
@@ -257,8 +191,6 @@ Nothing happens until these files are on `main`.
    | variable | `PIPELINE_BOT_LOGIN`       | **required**: the App's bot login, e.g. `my-pipeline[bot]`; the only author whose marker comments and notes are trusted                                                                                              |
    | variable | `PIPELINE_OWNER_LOGIN`     | **required for dispositions, protected-change approvals and restarts**: your GitHub login; the only account whose `/disposition`, `/approve-protected`, `/reject-protected` or `/restart` counts. Unset = nobody can |
    | secret   | `CLAUDE_CODE_OAUTH_TOKEN`  | Claude subscription token from `claude setup-token` (Pro/Max); no API billing                                                                                                                                        |
-   | secret   | `GEMINI_API_KEY`           | Gemini API key                                                                                                                                                                                                       |
-   | variable | `GEMINI_MODEL`             | optional, e.g. a specific Gemini model                                                                                                                                                                               |
    | variable | `PROJECT_URL`              | set by `setup-project.sh`; leave unset to run without a Project                                                                                                                                                      |
    | secret   | `PROJECT_TOKEN`            | classic PAT, `project` scope (App tokens cannot reach user-owned Projects)                                                                                                                                           |
    | variable | `REQUIRE_COPILOT`          | optional: exactly `true` makes a Copilot review a required gate ([Copilot review is optional](#copilot-review-is-optional)); unset or anything else = off                                                            |
@@ -307,12 +239,11 @@ Nothing happens until these files are on `main`.
    a plan that is too big goes to you).
 4. **Develop** (5 to 30 min). Claude implements on `issue-<n>-<slug>`, runs
    `pnpm verify`, and the workflow opens a **draft PR** linked to the issue.
-5. **CI, preview, review.** `ci` must pass. The preview comment links
-   `https://<owner>.github.io/<repo>/pr-<n>/`. Gemini's security review
-   follows. Blocking findings become threads and trigger up to two fix rounds.
-6. **Copilot (optional).** Only with `REQUIRE_COPILOT=true`: with CI green,
-   the security status clean and no open threads, the pipeline requests
-   Copilot, and its comments go through the same fix loop. Off (the default),
+5. **CI, preview.** `ci` must pass. The preview comment links
+   `https://<owner>.github.io/<repo>/pr-<n>/`.
+6. **Copilot (optional).** Only with `REQUIRE_COPILOT=true`: with CI green
+   and no open threads, the pipeline requests Copilot; its comments are
+   review threads for you to resolve (or `/disposition`). Off (the default),
    this step is skipped and the PR goes straight to step 7.
 7. **You.** On `stage:human-approval` the PR is marked ready and you are
    requested as code owner. Check the diff and the preview, approve, merge.
@@ -337,22 +268,21 @@ hand does not restart anything (see below).
 account) posts one comment whose whole body is one line:
 
 ```
-/restart <qualified|planned|fixing> <reason, 10+ characters>
+/restart <qualified|planned> <reason, 10+ characters>
 ```
 
-| Stage       | What it does                                                                                                                                                                                                                                                                                                               | Must be in `stage:needs-attention` |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `qualified` | spec + plan again: sets `stage:qualified` on the issue (also for an old item stuck in the deprecated `stage:spec`)                                                                                                                                                                                                         | the issue                          |
-| `planned`   | develop again from the plan already on the issue: sets `stage:planned`                                                                                                                                                                                                                                                     | the issue                          |
-| `fixing`    | the fix loop of the issue's linked open PR: sets `stage:fixing`, clears its `fix-loop:*` labels (`resetFixLoop`, a fresh budget of two rounds), forgets the review items earlier rounds already took (`resetFixItems`: open feedback from a round that failed before it pushed is looked at again) and runs Pipeline · Fix | the PR (the issue is not parked)   |
+| Stage       | What it does                                                                                                       | Must be in `stage:needs-attention` |
+| ----------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
+| `qualified` | spec + plan again: sets `stage:qualified` on the issue (also for an old item stuck in the deprecated `stage:spec`) | the issue                          |
+| `planned`   | develop again from the plan already on the issue: sets `stage:planned`                                             | the issue                          |
 
 `restart.yml` checks the command in full: the commenter is the owner and a
 human, the comment was not edited (only new comments count), the issue is
-open, the item to restart is in `stage:needs-attention`, and the issue has
-fewer than **3** restarts so far. With an open PR on the issue, `qualified`
-and `planned` are refused (they would publish nothing): restart the PR with
-`fixing`, or close it. Any failed check gets one short bot reply and changes
-nothing. An accepted restart, in this order:
+open, the issue is in `stage:needs-attention`, and the issue has fewer than
+**3** restarts so far. With an open PR on the issue, `qualified` and
+`planned` are refused (they would publish nothing): close the PR first. Any
+failed check gets one short bot reply and changes nothing. An accepted
+restart, in this order:
 
 1. adds one to the issue's **lifetime counter** and appends the attempt
    `{id, at, by, reason, stage}` (`id` = `a<count>-<comment id>`) in the
@@ -361,19 +291,17 @@ nothing. An accepted restart, in this order:
    `lifetime resets: n/3` and the latest attempt id;
 2. appends the route note
    `<!-- pipeline:route restart attempt=<id> count=<n>/3 -->` with the reason
-   in a fenced block, on the item that restarts (the issue, or the PR for
-   `fixing`);
+   in a fenced block, on the issue;
 3. applies the stage label.
 
 **The limit.** After 3 restarts an issue is parked for good: a 4th
 `/restart` gets the reply "Lifetime restart limit (3) reached; close the issue
 or fix it in a local session." and changes nothing; the item stays in
-`stage:needs-attention`. `/restart fixing` counts against the same 3.
-(This is a two-week trial: the constant is `MAX_LIFETIME_RESETS` in
+`stage:needs-attention`. (This is a two-week trial: the constant is `MAX_LIFETIME_RESETS` in
 `pipeline-lib.mjs`.)
 
 **Label edits by hand do not restart anything.** Loop budgets (the router's
-caps and the fix rounds) are only ever refreshed by `/restart`. If a person
+caps) are only ever refreshed by `/restart`. If a person
 removes `stage:needs-attention`, or adds a stage label while it is set, the
 item continues with the budget it already used and its next problem goes
 straight back to a human. `restart.yml` posts one note per parking that says
@@ -383,14 +311,11 @@ Which stage for which stop:
 
 - spec + plan / develop (`plan`, `develop` problems): `/restart qualified` or
   `/restart planned`;
-- fix loop (`budget_exhausted`, `agent_error` that used the retry): `/restart
-fixing`. Feedback that arrived while the PR was parked is picked up by the
-  Pipeline · Fix run it starts;
 - approval or CI problems on the PR (`copilot_request_failed`, `ci_failed`): fix
-  the cause. A pushed fix starts CI again, and the next green run starts the
-  security review, which moves the PR on by itself. If it stays parked,
-  `/restart fixing`, then run **Pipeline · Approval** manually with the PR
-  number;
+  the cause (a pushed fix starts CI again), remove `stage:needs-attention`
+  from the PR by hand (**Pipeline · Approval** leaves a parked PR alone) and
+  run **Pipeline · Approval** manually with the PR number; or close the PR
+  and `/restart planned`;
 - closed PR (`pr_closed`, on the issue): reopen the PR, or `/restart
 qualified` / `/restart planned` (re-develop force-pushes its `issue-<n>-`
   branch), or close the issue;
@@ -401,18 +326,15 @@ qualified` / `/restart planned` (re-develop force-pushes its `issue-<n>-`
 **How the budgets follow restarts.** Router caps count the route notes after
 the latest `restart` note (`routeWindow`), or every route note when the item
 was never restarted. A route to a human neither opens a window nor counts as a
-round. `decideFix` keeps `fix-loop:2` when it escalates, so the fix budget
-also stays spent until `/restart fixing` clears it; the other place the fix
-budget resets is a PR reaching `stage:human-approval` (later human feedback
-starts at round 1).
+round.
 
 ## Spec and plan (auto-approval)
 
-`plan.yml` replaced the old two-stage flow (a Gemini spec, then a Claude
+`plan.yml` replaced the old two-stage flow (a spec stage, then a Claude
 plan). One read-only Claude run (`plan.md`, JSON schema) returns two
 separate artifacts, and a deterministic job posts each as its own bot
 comment under the same markers as before (`<!-- pipeline:spec -->`,
-`<!-- pipeline:plan -->`), so develop, fix and the pipeline map read
+`<!-- pipeline:plan -->`), so develop and the pipeline map read
 exactly what they used to:
 
 - `spec`: goal, acceptance criteria (each with a `testable` flag), RTL &
@@ -437,7 +359,7 @@ Planned files that are protected but **approvable** (`package.json`,
 `tools/pipeline-map/`) pass this check. The success outcome note and the plan
 comment then say that the owner must approve them before a PR opens ([Protected-change
 approval](#protected-change-approval)). Any never-approvable path
-(`.github/`, `CODEOWNERS`, `tools/security/`, `.claude/`, `.gemini/`, `.codex/`,
+(`.github/`, `CODEOWNERS`, `tools/security/`, `.claude/`, `.codex/`,
 `.pipeline/`, `.npmrc`, `.gitmodules`) is still `protected_surface`.
 
 The two size limits are constants at the top of the plan section of
@@ -448,7 +370,7 @@ checks fail, the note carries every reason and the highest-priority code
 the workflow.
 
 **Old items in `stage:spec`.** Nothing sets `stage:spec` or starts a stage
-on it any more, so an item that was already there (its Gemini spec comment
+on it any more, so an item that was already there (its spec comment
 stays; the Project card stays in **Spec**) does not move by itself. Add
 `stage:qualified` to run the combined stage: it takes the old spec as an
 earlier version, overwrites both comments and continues to `stage:planned`.
@@ -463,7 +385,7 @@ old way.) If the item already has both a spec and a plan comment you trust,
 ### Outcome notes
 
 Every stage appends one comment per run to the issue (spec, plan,
-develop, pr) or PR (security, fix, approval, ci). It is never edited or upserted,
+develop, pr) or PR (approval, ci). It is never edited or upserted,
 so the history stays readable:
 
 ````
@@ -479,7 +401,7 @@ so the history stays readable:
 ```
 ````
 
-`stage` is one of `spec` (legacy: notes written before spec and plan merged), `plan`, `develop`, `security`, `fix`, `approval`, `ci`, `pr`;
+`stage` is one of `spec` (legacy: notes written before spec and plan merged), `plan`, `develop`, `approval`, `ci`, `pr`;
 `result` is `success` or `problem`. On success the stage moves to its next
 label itself (no extra run). On a problem it sets `stage:routing`.
 `pipeline.mjs outcome <n> <file.json>` posts a note; `pipeline.mjs classify
@@ -489,46 +411,42 @@ forge a marker.
 
 ### Problem codes (`PROBLEMS`)
 
-| Code                        | Reported by    | Meaning                                                                                                                                                                                                              |
-| --------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `invalid_output`            | plan, security | The agent answered, but not in the required shape (plan: a required spec or plan section is missing)                                                                                                                 |
-| `agent_error`               | plan, dev, fix | The run failed: API/quota/timeout, empty output, no changes                                                                                                                                                          |
-| `spec_missing`              | _legacy_       | Old plan-stage note: no spec comment. Still read, no longer written                                                                                                                                                  |
-| `spec_questions`            | plan           | The issue is unclear (blocking questions), or a criterion is not testable                                                                                                                                            |
-| `untestable_criteria`       | _legacy_       | Old plan-stage note: criteria untestable. Still read, no longer written                                                                                                                                              |
-| `verify_failed`             | develop, fix   | `pnpm verify` could not be made green (fix: the secret-free verify job failed on the patch)                                                                                                                          |
-| `plan_gap`                  | develop        | The plan is wrong or incomplete                                                                                                                                                                                      |
-| `budget_exhausted`          | fix            | Both fix rounds used                                                                                                                                                                                                 |
-| `copilot_request_failed`    | approval       | The Copilot review could not be requested (`REQUIRE_COPILOT` on)                                                                                                                                                     |
-| `ci_failed`                 | ci             | CI failed on a pipeline PR's current head (`security.yml`'s `ci-failed` job)                                                                                                                                         |
-| `pr_closed`                 | pr             | The issue's PR was closed without merging and no other open PR is linked (`done.yml`)                                                                                                                                |
-| `protected_surface`         | plan, develop  | **Gate.** The work touches a never-approvable path (`tools/security/`, `.github/`, `CODEOWNERS`, ...) or supply-chain settings                                                                                       |
-| `protected_approval_needed` | develop, fix   | **Gate.** develop: the branch is pushed with no PR and the owner is asked (an outcome note, not routed; the issue waits in `stage:awaiting-approval`). fix: the fix patch carries protected paths and was not pushed |
-| `protected_rejected`        | develop        | The owner rejected the protected changes (`/reject-protected`). Routes to a human; the branch is kept                                                                                                                |
-| `needs_secrets_ci_infra`    | plan, develop  | **Gate.** Needs secrets, CI/workflow changes, infra, a server                                                                                                                                                        |
-| `scope_split`               | plan           | Bigger than size L, or over the auto-approval size limits; split the issue (routes to a human)                                                                                                                       |
-| `embedded_instructions`     | plan           | **Gate.** The issue contains instructions aimed at the agents                                                                                                                                                        |
-| `forbidden_path`            | develop, fix   | **Gate.** `check-patch` rejected the patch: a never-approvable path, or a header it cannot parse                                                                                                                     |
+| Code                        | Reported by   | Meaning                                                                                                                                      |
+| --------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `invalid_output`            | plan          | The agent answered, but not in the required shape (plan: a required spec or plan section is missing)                                         |
+| `agent_error`               | plan, develop | The run failed: API/quota/timeout, empty output, no changes                                                                                  |
+| `spec_missing`              | _legacy_      | Old plan-stage note: no spec comment. Still read, no longer written                                                                          |
+| `spec_questions`            | plan          | The issue is unclear (blocking questions), or a criterion is not testable                                                                    |
+| `untestable_criteria`       | _legacy_      | Old plan-stage note: criteria untestable. Still read, no longer written                                                                      |
+| `verify_failed`             | develop       | `pnpm verify` could not be made green                                                                                                        |
+| `plan_gap`                  | develop       | The plan is wrong or incomplete                                                                                                              |
+| `copilot_request_failed`    | approval      | The Copilot review could not be requested (`REQUIRE_COPILOT` on)                                                                             |
+| `ci_failed`                 | ci            | CI failed on a pipeline PR's current head (`ci-failed.yml`)                                                                                  |
+| `pr_closed`                 | pr            | The issue's PR was closed without merging and no other open PR is linked (`done.yml`)                                                        |
+| `protected_surface`         | plan, develop | **Gate.** The work touches a never-approvable path (`tools/security/`, `.github/`, `CODEOWNERS`, ...) or supply-chain settings               |
+| `protected_approval_needed` | develop       | **Gate.** The branch is pushed with no PR and the owner is asked (an outcome note, not routed; the issue waits in `stage:awaiting-approval`) |
+| `protected_rejected`        | develop       | The owner rejected the protected changes (`/reject-protected`). Routes to a human; the branch is kept                                        |
+| `needs_secrets_ci_infra`    | plan, develop | **Gate.** Needs secrets, CI/workflow changes, infra, a server                                                                                |
+| `scope_split`               | plan          | Bigger than size L, or over the auto-approval size limits; split the issue (routes to a human)                                               |
+| `embedded_instructions`     | plan          | **Gate.** The issue contains instructions aimed at the agents                                                                                |
+| `forbidden_path`            | develop       | **Gate.** `check-patch` rejected the patch: a never-approvable path, or a header it cannot parse                                             |
 
 ### Rules table (`decideByRules`)
 
-| Stage    | Problem                                                | Target                                                      |
-| -------- | ------------------------------------------------------ | ----------------------------------------------------------- |
-| spec     | `invalid_output`                                       | re-plan (legacy note; `stage:qualified`)                    |
-| spec     | `agent_error`                                          | human: "Gemini call failed (quota?), see run"; no loop used |
-| plan     | `agent_error`, `invalid_output`                        | re-plan (`stage:qualified`)                                 |
-| plan     | `spec_questions`, `scope_split`                        | human                                                       |
-| plan     | `spec_missing`, `untestable_criteria`                  | re-plan (legacy notes only)                                 |
-| develop  | `verify_failed`, `agent_error`                         | re-develop (`stage:planned`)                                |
-| develop  | `plan_gap`                                             | re-plan (`stage:qualified`)                                 |
-| develop  | `protected_rejected`                                   | human (the branch is kept for the owner to decide)          |
-| fix      | `agent_error`                                          | retry: `fix.yml` with `retry: true`                         |
-| fix      | `budget_exhausted`                                     | human                                                       |
-| security | `invalid_output`                                       | human                                                       |
-| approval | `copilot_request_failed`                               | human                                                       |
-| ci       | `ci_failed`                                            | human (proposed later: one fixer retry with the CI log)     |
-| pr       | `pr_closed`                                            | human only; never retried (the close was deliberate)        |
-| any      | hard gate, anything unlisted, or no valid outcome note | human                                                       |
+| Stage    | Problem                                                | Target                                                    |
+| -------- | ------------------------------------------------------ | --------------------------------------------------------- |
+| spec     | `invalid_output`                                       | re-plan (legacy note; `stage:qualified`)                  |
+| spec     | `agent_error`                                          | human: "the old spec stage failed, see run"; no loop used |
+| plan     | `agent_error`, `invalid_output`                        | re-plan (`stage:qualified`)                               |
+| plan     | `spec_questions`, `scope_split`                        | human                                                     |
+| plan     | `spec_missing`, `untestable_criteria`                  | re-plan (legacy notes only)                               |
+| develop  | `verify_failed`, `agent_error`                         | re-develop (`stage:planned`)                              |
+| develop  | `plan_gap`                                             | re-plan (`stage:qualified`)                               |
+| develop  | `protected_rejected`                                   | human (the branch is kept for the owner to decide)        |
+| approval | `copilot_request_failed`                               | human                                                     |
+| ci       | `ci_failed`                                            | human                                                     |
+| pr       | `pr_closed`                                            | human only; never retried (the close was deliberate)      |
+| any      | hard gate, anything unlisted, or no valid outcome note | human                                                     |
 
 There is no re-spec target any more: one stage writes both artifacts.
 A leftover `respec` route note in an issue's history is read as a re-plan
@@ -544,7 +462,7 @@ After any brain decides, `clampDecision` applies, and nothing bypasses it:
 - The target must be in `allowedTargets(stage, problem)` (that row's
   target, or human).
 - **Caps** (`ROUTER_CAPS`): re-plan 2 (shared by every row that re-plans),
-  re-develop 1, retry 1, and 5 routed rounds in total per item.
+  re-develop 1, and 5 routed rounds in total per item.
   Rounds are counted from the bot's route notes after the latest `restart`
   note (the owner's `/restart`, see [When it stops](#when-it-stops-at-stageneeds-attention));
   routes to a human do not reset them.
@@ -591,21 +509,15 @@ key or secret exists for it yet.
 
 ### Not automated yet
 
-- **CI failure retry.** `ci_failed` goes to a human. Proposed: one retry
-  through the fixer with the CI log as input, then a human.
-
-- **Security retry.** `security` problems go to a human, because
-  `security.yml` only runs on `workflow_run` after CI. A retry would need a
-  `workflow_dispatch` path in `security.yml` (with the PR number and head
-  SHA) that the router could dispatch, as it does for `fix.yml`.
+- **CI failure retry.** `ci_failed` goes to a human; nothing retries it.
 
 ## Review gates and dispositions
 
-The Gemini security review (and the Copilot review, when
+CI, the review threads and the Copilot review (when
 [`REQUIRE_COPILOT`](#copilot-review-is-optional) is on) are **required gates on the
-PR's head commit**. Every finding is either fixed or explicitly dispositioned
-by the repo owner, and one commit status, **`pipeline/gates`**, sums it all up
-for that exact SHA. The main ruleset requires it, pinned to the pipeline App
+PR's head commit**. Every review thread is either resolved or explicitly
+dispositioned by the repo owner, and one commit status, **`pipeline/gates`**,
+sums it all up for that exact SHA. The main ruleset requires it, pinned to the pipeline App
 (`tools/scripts/pipeline/setup-ruleset.sh`). This is a two-week trial.
 
 ### The gates
@@ -615,21 +527,18 @@ command; pure logic in `evaluateGates`). For the current head all of these
 must hold, checked in this order:
 
 1. **CI**: the `ci` check run succeeded (and the `security` CI job, if it ran).
-2. **Gemini security review**: `pipeline/security` is `success`, **or** it is
-   `failure` and every blocking finding id in the security outcome note for
-   this head has a valid disposition.
-3. **Review threads**: no unresolved thread.
-4. **Copilot**: it reviewed this head. Only when `REQUIRE_COPILOT` is `true`;
+2. **Review threads**: no unresolved thread.
+3. **Copilot**: it reviewed this head. Only when `REQUIRE_COPILOT` is `true`;
    otherwise this gate is `success` with the detail "not required
    (REQUIRE_COPILOT off)".
-5. **`pipeline/protected-approval`**: a pipeline PR that touches protected
+4. **`pipeline/protected-approval`**: a pipeline PR that touches protected
    paths needs the owner's approval of this exact head (status `success`,
    recomputed by the `approval` command, not just read back). A PR with no
    protected paths, and any PR the pipeline did not open, gets `success`
    automatically. See [Protected-change approval](#protected-change-approval).
 
 The status is `success` when all hold, `failure` for a real blocker (CI failed,
-the reviewer errored, a required approval was refused) and `pending` otherwise,
+a required approval was refused) and `pending` otherwise,
 its description naming the first missing gate. A push gives the new SHA no
 status, which blocks the merge; `approval.yml` posts a `pending` one as soon
 as CI is requested so the PR says why it waits. When the gates hold, the
@@ -649,94 +558,29 @@ never leave `pipeline/gates` pending forever for a review nobody licensed).
   and the PR goes to `stage:human-approval` as soon as the other gates hold.
   The state table shows "not required". If Copilot reviews anyway, its threads
   still count as review threads.
-- **On:** the review is requested once per head commit after CI, security and
-  threads hold, and the hand-off waits until Copilot reviewed that commit.
+- **On:** the review is requested once per head commit after CI and threads
+  hold, and the hand-off waits until Copilot reviewed that commit.
 - **To turn it on:** set the variable `REQUIRE_COPILOT` to `true`, and either
   give the secret `COPILOT_REVIEW_TOKEN` the token of a Copilot-licensed user
   or enable automatic Copilot review for the repo, and enable Copilot code
   review (Settings → Copilot → Code review).
 
 **Why one status:** the ruleset can only require named checks. Requiring
-`pipeline/security`, Copilot and thread resolution separately would need a
-status for each and would not express "fixed _or_ dispositioned". One bot-set
-status bound to the SHA, computed by tested code, is the single thing to
-require. Only the App can set it (the ruleset pins its integration id). GitHub has
+CI, Copilot and thread resolution separately would need a status for each and
+would not express "resolved _or_ dispositioned". One bot-set status bound to
+the SHA, computed by tested code, is the single thing to require. Only the App can set it (the ruleset pins its integration id). GitHub has
 no workflow trigger for resolving a thread by hand: resolve through
 `/disposition`, or re-run **Pipeline · Approval** (Actions → run workflow, PR
 number) after resolving one manually.
 
 The bot keeps one **Review gates** comment per PR (`<!-- pipeline:gates -->`,
-edited in place): each gate, the open findings with their ids, and the
+edited in place): each gate, the open Copilot threads with their ids, and the
 dispositions on record.
 
-### When Gemini credit runs out (HTTP 402)
+### Thread ids
 
-Gemini is a paid API. When its prepaid credit is used up, the API answers
-**402 "Your prepayment credits are depleted"** and no review can run. The
-pipeline does not stop there: it **skips the review, releases the PR to human
-approval and says so loudly**, so the owner can still review and merge. This is
-the one deliberate exception to "the review fails closed".
-
-- **Detection.** `security.yml` wipes `gemini-artifacts/` before the review. If
-  the review fails, a trusted script (`pipeline.mjs gemini-billing`) looks for
-  the API's exact error text (`GEMINI_BILLING_ERROR` in `pipeline-lib.mjs`) in
-  the CLI's stderr the action left there. A failed run has no action outputs,
-  so the file is the only record. Any other failure (another API error, quota
-  429, no output, a changed message) is not billing and fails closed as before:
-  `pipeline/security` is `error`, an `invalid_output` outcome, a human.
-- **What the owner sees.** A new bot comment on the PR: **"WARNING: the security
-  review of <sha> was SKIPPED. The Gemini API answered 402 (credits depleted) ...
-  Renew the Google Gemini subscription or credits."** (an outcome note, so it
-  notifies); `pipeline/security` is `success` with the description "SKIPPED:
-  Gemini credits depleted (402), no review ran"; the Review gates comment marks
-  the Gemini row with a warning icon and "SKIPPED"; `pipeline/gates` says
-  "... all satisfied; WARNING: the Gemini review was SKIPPED"; and the hand-off
-  comment starts with a warning that the review did not run and that the change
-  must be read by a person before approving.
-- **What is not skipped.** CI, unresolved threads, the protected-file approval
-  and the required code-owner approval all still apply. Only the automated
-  Gemini review is released, and it is never reported as clean.
-- **After renewing.** Re-run the failed **Pipeline · Security Review** run of
-  that commit (Actions -> re-run). Its real review replaces the skip (the latest
-  outcome note for a head wins) and the gates are re-evaluated. Later commits get
-  the normal review again.
-- **Not covered.** The fix step (`fix.yml`, also Gemini) is unchanged: if it hits
-  402 the round fails as before. A finding that was already raised still needs a
-  fix or a `/disposition`.
-- **Residual risk.** The check trusts the text of the CLI's stderr. For a PR to
-  fake it, the reviewer run would have to fail _and_ print the API's exact error
-  text, which PR content cannot do through the read-only tools; a probe of the
-  API from a trusted step would remove even that (not done).
-
-### Finding ids
-
-- Gemini findings: `S-<8 hex>` = first 8 hex of a sha256 of **file, topic and
-  the evidence line**. Every finding carries a `topic` (one value of the closed
-  list `FINDING_TOPICS` in `pipeline-lib.mjs`, repeated in
-  `.github/prompts/security-review.md`: `xss`, `injection`, `secrets`,
-  `authz`, `path-traversal`, `ssrf`, `workflow-permissions`, `supply-chain`,
-  `unsafe-eval`, `error-handling`, `logic`, `other`) and an `evidence`: the one
-  exact line of code it is about. The line is whitespace-collapsed and must
-  match a whole line of the file at the reviewed head (the publish step reads
-  the file at that commit, falling back to the PR's patch; only files the PR
-  changed). If the same line appears more than once in the file, the ordinal
-  of the copy nearest the reported line is part of the hash, so two identical
-  lines are two findings. Wording, line number, severity, category and the
-  suggested fix are **not** part of the id.
-- **Text fallback.** If `topic` or `evidence` is missing, unknown, not a
-  single line or not found in the file, the id is the older one: sha256 of
-  file, title and detail (lower-cased, punctuation and whitespace collapsed).
-  Such a finding is marked `idBasis: 'text'` and its review comment says the
-  id may change on re-review.
-- The id is shown in the review comment, in the inline thread's hidden marker
-  and in the security outcome note's `details[]` (`head=<sha> blocking=<n>`,
-  then `S-… [severity] file:line title`).
-- Copilot findings: `C-<n>`, `n` = database id of the thread's top comment,
-  listed in the Review gates comment.
-- **One-time migration.** Ids from before this change (title/detail hashes)
-  do not match the new ones. A PR that is already open needs its findings
-  dispositioned once more after its next review. There is no compatibility
-  shim.
+Copilot threads: `C-<n>`, `n` = database id of the thread's top comment,
+listed in the Review gates comment.
 
 ### `/disposition` (owner only)
 
@@ -752,8 +596,8 @@ Three ways to post it, all the owner's **new** comments (never an edit):
    lines) first. A quote block at the top of the body, and blank lines, are
    ignored; the command follows it. A quote in the middle or at the end is
    not.
-3. **A reply inside the finding's own review thread** (the inline thread the
-   security review opened, or a Copilot thread). The short form leaves the id
+3. **A reply inside the finding's own review thread** (a Copilot thread).
+   The short form leaves the id
    out, because the thread names it: `/disposition <kind> <reason>`. The long
    form works too, but its id must be the thread's. One command per reply. In a
    thread that is not a finding thread the command is refused. The bot answers
@@ -772,42 +616,18 @@ The only comment that does not count is an edit of an existing one.
 - Accepted only from `vars.PIPELINE_OWNER_LOGIN` and only from a `User`
   account. Not `author_association`, not the PR author. Unset variable: nobody.
   Others' comments are ignored without a reply. Same-repo branches only.
-- The id must be a blocking finding of the **current head's** security review,
-  or an open Copilot thread on the PR.
-- On acceptance the bot resolves the finding's review thread (Copilot threads
-  and the inline threads the security review opens, so the ruleset's
-  thread-resolution requirement is met), then appends one record note per
-  finding: `<!-- pipeline:disposition id=… kind=… head=<sha> by=<login> comment=<id> -->`
+- The id must be an open Copilot thread on the PR.
+- On acceptance the bot resolves the finding's review thread (so the
+  ruleset's thread-resolution requirement is met), then appends one record
+  note per finding: `<!-- pipeline:disposition id=… kind=… head=<sha> by=<login> comment=<id> -->`
   with the reason in a fenced block. The notes re-run `approval.yml`.
-- The owner's `/disposition` reply in a thread, and the bot's answer, are not
-  feedback for the fixer (replying in a thread submits a review, which would
-  otherwise run it).
 
-### How dispositions bind to SHAs
+### What a disposition records
 
-A record names the head the owner saw. Ids are anchored on the code, not on
-the reviewer's wording, so **after a push or a rebase, a finding with the same
-file, topic and evidence line has the same id on the new head and is still
-covered**: the security review does not open a new thread for it, the gate
-counts it as dispositioned, and the fix loop skips it. A finding that is fixed
-disappears from the next review (that is "fixed").
-
-This is intentional, and the limit of it: **a changed evidence line is a new
-id, a new finding and a new decision.** So is another topic, another file, or
-a second copy of the same line. The other side of the same rule: a
-disposition also covers the finding when something _around_ the unchanged
-line changes (its inputs, its callers). That is not detected; the reason
-recorded with the disposition is what the owner accepted. Findings that fall
-back to the text id (see above) may come back with a new id when the reviewer
-re-words them; that fails toward asking again. Only records made by the owner
-count, and only the bot's own notes are read.
-
-### Fix loop
-
-`fix-adapter` drops findings with a disposition in effect before the fixer
-sees them: the bot's inline finding comments, Copilot threads, and the
-dispositioned items of an actionable review body. An accepted risk is never
-auto-fixed.
+A record names the head the owner saw and the thread id (`C-<n>`). Accepting
+it resolves that thread, so the gates stop counting it; the record stays on
+the PR and the Review gates comment lists it with the owner's reason. Only
+records made by the owner count, and only the bot's own notes are read.
 
 ## Protected-change approval
 
@@ -819,10 +639,10 @@ two-week trial.
 **Which paths.** `pipeline-lib.mjs` has two lists, and `APPROVABLE_PATH_PATTERNS`
 is a strict subset of `FORBIDDEN_PATH_PATTERNS` (a test asserts it):
 
-| Kind                 | Paths                                                                                                                     | What happens                                                        |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| **Approvable**       | any `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tools/workspace-plugin/**`, `tools/pipeline-map/**`         | The owner approves the diff with a command (this section)           |
-| **Never approvable** | `.github/**`, `CODEOWNERS`, `tools/security/**`, `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`, `.npmrc`, `.gitmodules` | `forbidden_path` hard gate, exactly as before; a local session only |
+| Kind                 | Paths                                                                                                             | What happens                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **Approvable**       | any `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tools/workspace-plugin/**`, `tools/pipeline-map/**` | The owner approves the diff with a command (this section)           |
+| **Never approvable** | `.github/**`, `CODEOWNERS`, `tools/security/**`, `.claude/`, `.codex/`, `.pipeline/`, `.npmrc`, `.gitmodules`     | `forbidden_path` hard gate, exactly as before; a local session only |
 
 A patch that touches **any** never-approvable path stays a hard gate, even
 next to approvable ones. Because `.github/**` can never be in a bot-pushed
@@ -885,7 +705,7 @@ the head>` and `/reject-protected <reason>`, and the proposed PR title
 issue=<n> pr=<m> head=<sha> paths=<hash> by=<login> comment=<id> -->` on the
    PR, sets the commit status `pipeline/protected-approval` = `success` on the
    head and `stage:building` on the issue. From here it is the normal path:
-   CI → security → (Copilot, if required) → gates.
+   CI → (Copilot, if required) → gates.
 5. **Reject.** An outcome note (`develop` / `protected_rejected`) and
    `stage:routing`; the rules table sends it to a human. The branch is kept.
 6. **A push invalidates the approval.** The approval names one head and one
@@ -900,12 +720,9 @@ issue=<n> pr=<m> head=<sha> paths=<hash> by=<login> comment=<id> -->` on the
 7. **Gates.** `pipeline/gates` requires `pipeline/protected-approval` =
    `success` whenever the PR touches protected paths.
 
-**Bot pushes after the PR exists.** A fix patch moves the head, and an
-approval covers one head, so `fix.yml` never pushes a patch that touches
-protected paths, approvable ones included. It stops before any push
-(`protected_approval_needed` for approvable paths, `forbidden_path` otherwise;
-both hard gates for a human), so no CI run sees unapproved protected content.
-A **person's** push to the branch does run CI once before the status can turn
+**Pushes after the PR exists.** No workflow pushes to a PR's branch once the
+PR is open, so no CI run sees unapproved protected content from a bot. A
+**person's** push to the branch does run CI once before the status can turn
 pending: `pull_request` workflows start on every push, and nothing can stop
 that from a workflow. That is the price of a PR that already exists; the
 merge stays blocked until the new head is approved.
@@ -926,27 +743,19 @@ data, never instructions.
 
 - Deep links inside a PR preview fall back to the production `404.html`
   (Pages serves only the root one). Previews open fine from their root URL.
-- Gemini tool names in the workflow `settings` follow the current Gemini
-  CLI (`read_file`, `glob`, `search_file_content`, `write_file`, `replace`,
-  `run_shell_command`). Check them when bumping `run-gemini-cli`.
 - As sole code owner you cannot approve your own PRs. The ruleset lets you
   (`PIPELINE_OWNER_LOGIN`) bypass it, but only inside a PR (bypass mode "pull
   request"): you still cannot push to `main`. Bots and Apps have no bypass. Pipeline PRs are authored by
   the App, so this only affects PRs you open yourself.
 - The pipeline's own files (`.github/**`) cannot be changed by the pipeline.
   Change them in a normal PR.
-- **Every PR to `main` needs `pipeline/gates` = success** (the security
-  review is clean, or every finding is dispositioned), including
-  PRs you open yourself. `security.yml` reviews every same-repo PR after
-  green CI, but the fix loop only runs on pipeline PRs, so fix blocking
-  findings on your own PRs by hand (the next push gets a fresh review). If
-  the review errored (quota, invalid output), re-run **Pipeline · Security
-  Review** from the Actions tab. A status you post yourself does not count.
+- **Every PR to `main` needs `pipeline/gates` = success** (CI green, no open
+  review thread, and the Copilot review when it is required), including PRs
+  you open yourself. `approval.yml` evaluates every same-repo PR after green
+  CI. A status you post yourself does not count.
 - **Dependabot and fork PRs get no `pipeline/gates` status**, so they
-  cannot merge as they are. Fork PRs are never reviewed (on purpose: no
-  secrets for fork code). Runs triggered by Dependabot see only
-  _Dependabot_ secrets, so neither Gemini nor the App token is available.
-  For Dependabot, add `PIPELINE_APP_PRIVATE_KEY` and `GEMINI_API_KEY` as
-  Dependabot secrets too (Settings → Secrets and variables → Dependabot),
-  so its PRs are reviewed like any other. For a fork PR, re-create the
-  change on a same-repo branch.
+  cannot merge as they are. Runs triggered by Dependabot see only
+  _Dependabot_ secrets, so the App token is not available. For Dependabot,
+  add `PIPELINE_APP_PRIVATE_KEY` as a Dependabot secret too (Settings →
+  Secrets and variables → Dependabot), so its PRs get the status like any
+  other. For a fork PR, re-create the change on a same-repo branch.

@@ -14,11 +14,11 @@ Nx targets: `generate`, `check`, `test`, `lint`, `typecheck`.
 
 ## Sources
 
-| Source                             | What it contributes                                                                                                                                         |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/*.yml`          | Parsed with `yaml`: name, `on:` triggers, label gates from job `if:`, every `pipeline.mjs <command>` in `run:` steps, `gh pr create` and `git push`         |
-| `.github/scripts/pipeline-lib.mjs` | Imported directly: `STAGES`, `MARKERS`, `FIX_LOOP_*`, and `COMMAND_EFFECTS`, which says what each command writes (checked against `pipeline.mjs` by a test) |
-| [`src/config.mjs`](src/config.mjs) | `EXPECTED_UNGATED`: stages that are set but have no label gate on purpose, and why                                                                          |
+| Source                             | What it contributes                                                                                                                                                    |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/*.yml`          | Parsed with `yaml`: name, `on:` triggers, label gates from job `if:`, every `pipeline.mjs <command>` in `run:` steps, `gh pr create` and `git push`                    |
+| `.github/scripts/pipeline-lib.mjs` | Imported directly: `STAGES`, `MARKERS`, `FIX_LOOP_*` (optional), and `COMMAND_EFFECTS`, which says what each command writes (checked against `pipeline.mjs` by a test) |
+| [`src/config.mjs`](src/config.mjs) | `EXPECTED_UNGATED`: stages that are set but have no label gate on purpose, and why                                                                                     |
 
 Nothing is special-cased per workflow or stage: a new stage, workflow or
 command shows up on the map as soon as the sources mention it. A new

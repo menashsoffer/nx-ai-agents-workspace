@@ -7,35 +7,28 @@ import {
   COPILOT_REVIEWER,
   GATES_CONTEXT,
   MARKERS,
-  MAX_LIFETIME_RESETS,
   PROTECTED_CONTEXT,
   STAGE_STATUS,
   allowedTargets,
   applyLabels,
   branchIssueEligible,
   branchName,
-  buildSecurityReview,
   clearStages,
   checkDispositionAuthor,
   checkPatch,
   classifyPatch,
   classifyThreads,
   classifyDevelop,
-  classifyFix,
   classifyPlan,
   collectRouterInput,
   decideCiFailed,
-  decideFix,
-  decideFixRetry,
   decideProtectedCommand,
   decideRestart,
   decideRestartHint,
   dispositionKinds,
-  dispositionsInEffect,
   emptyState,
   evaluateApproval,
   evaluateProtectedApproval,
-  isGeminiBillingError,
   isPipelinePr,
   isPipelineBranch,
   issueForAgents,
@@ -47,9 +40,7 @@ import {
   parseDispositionNotes,
   parseProtectedApprovedNotes,
   parseRequireCopilot,
-  parseSecurityReport,
   parseState,
-  patchNewLines,
   planPrClosed,
   planRoute,
   prClosedOutcome,
@@ -67,19 +58,10 @@ import {
   renderPrompt,
   renderSpecComment,
   renderState,
-  resetFixItems,
-  resetFixLoop,
   routerSkip,
-  sameLogin,
-  securityIdsForHead,
-  securityOutcomeDetails,
-  securitySkippedForHead,
-  securitySkippedOutcome,
-  selectActionable,
   shouldMarkReady,
   stageTransition,
   threadOfComment,
-  threadsToResolve,
   validateDispositions,
 } from './pipeline-lib.mjs';
 import { decideExternal } from './router-external.mjs';
@@ -199,19 +181,9 @@ function writeOutcome(number, input, { route = true } = {}) {
  */
 const ownerLogin = () => process.env.PIPELINE_OWNER_LOGIN ?? '';
 
-/** Dispositions the owner made on a PR: finding id -> kind. */
-function dispositionsOf(comments) {
-  return dispositionKinds({
-    records: parseDispositionNotes(comments, botLogin()),
-    ownerLogin: ownerLogin(),
-  });
-}
-
 /**
- * Sets the `pipeline/gates` commit status on `sha` unless its latest value
- * is already this one. `statuses` are the commit's statuses, newest first.
- * approval.yml runs on the `pipeline/security` context only, so this
- * status does not re-trigger it.
+ * Sets a commit status on `sha` unless its latest value for `context` is
+ * already this one. `statuses` are the commit's statuses, newest first.
  */
 function setStatus(context, sha, { state, description }, statuses) {
   const current = statuses.find((s) => s.context === context);
@@ -281,14 +253,6 @@ const classifiers = {
       publishResult: f['publish-result'],
       raw: readIf(f.result),
       patchRejected: f['patch-rejected'] === 'true',
-    }),
-  fix: (f) =>
-    classifyFix({
-      fixResult: f['job-result'],
-      verifyResult: f['verify-result'],
-      pushResult: f['push-result'],
-      patchRejected: f['patch-rejected'] === 'true',
-      patchProtected: f['patch-protected'],
     }),
 };
 
@@ -381,7 +345,6 @@ const commands = {
     if (skip) {
       console.log(`route: skipped (${skip})`);
       setOutput('target', '');
-      setOutput('retry_pr', '');
       return;
     }
     let external = null;
@@ -412,10 +375,6 @@ const commands = {
     postComment(n, r.body);
     setStage(n, r.stage);
     setOutput('target', r.final.target);
-    setOutput(
-      'retry_pr',
-      r.final.target === 'retry' && r.outcome?.stage === 'fix' ? String(n) : '',
-    );
   },
 
   // COMMENT_AUTHOR overrides the author to match, for comments posted with
@@ -471,272 +430,6 @@ const commands = {
     if (!accepted.includes(res.kind)) process.exit(1);
   },
 
-  'init-state'([pr]) {
-    const n = num(pr);
-    if (findBotComment(n, MARKERS.state)) return;
-    const created = api(`pulls/${n}`).created_at;
-    writeState(n, { ...emptyState(), watermark: created });
-  },
-
-  // `mode` is 'retry' when the router re-runs a round whose fixer failed.
-  'fix-adapter'([pr, outFile, mode]) {
-    const n = num(pr);
-    const bot = botLogin();
-    const p = api(`pulls/${n}`);
-    if (
-      !isPipelinePr({
-        author: p.user?.login,
-        headRef: p.head?.ref,
-        headRepo: p.head?.repo?.full_name,
-        repo: `${OWNER}/${NAME}`,
-        botLogin: bot,
-      })
-    ) {
-      console.log(
-        `fix-adapter: noop (PR #${n} by ${p.user?.login} on ${p.head?.ref} was not opened by the pipeline)`,
-      );
-      writeFileSync(outFile, '[]');
-      setOutput('action', 'noop');
-      setOutput('loop', '');
-      return;
-    }
-    const retry = mode === 'retry';
-    const labels = labelsOf(n);
-    const state = readState(n);
-    const threads = reviewThreads(n);
-    const resolvedCommentIds = new Set(
-      threads.filter((t) => t.isResolved).flatMap((t) => t.commentIds),
-    );
-    // Findings the owner accepted are not fixed (see dispositionsInEffect).
-    const dispositioned = new Set(
-      dispositionsOf(list(`issues/${n}/comments`)).keys(),
-    );
-    const { actionable, watermark } = selectActionable({
-      reviews: list(`pulls/${n}/reviews`),
-      reviewComments: list(`pulls/${n}/comments`),
-      resolvedCommentIds,
-      state,
-      botLogin: bot,
-      onlyKeys: retry ? new Set(state.lastBatch) : null,
-      dispositioned,
-      ownerLogin: ownerLogin(),
-    });
-    const decision = retry
-      ? decideFixRetry({ labels, batch: actionable })
-      : decideFix({ labels, actionable });
-    console.log(
-      `fix-adapter: ${decision.action} (${decision.reason ?? `loop ${decision.loop}${retry ? ', retry' : ''}`})`,
-    );
-    writeFileSync(outFile, JSON.stringify(actionable, null, 2));
-    setOutput('action', decision.action);
-    setOutput('loop', String(decision.loop ?? ''));
-    if (decision.action === 'noop') return;
-    if (retry) {
-      setStage(n, 'stage:fixing');
-      return;
-    }
-
-    // Record before acting: a rerun with no newer comments is a no-op, and
-    // a crash after this line cannot spend the same round twice.
-    const next = {
-      ...state,
-      watermark,
-      handled: [
-        ...new Set([...state.handled, ...actionable.map((a) => a.key)]),
-      ],
-      lastBatch: actionable.map((a) => a.key),
-    };
-    const edit = { add: decision.add, remove: decision.remove };
-    writeState(n, next, applyLabels(labels, edit));
-    editLabels(n, edit);
-    if (decision.action === 'escalate')
-      writeOutcome(n, {
-        stage: 'fix',
-        result: 'problem',
-        problem: 'budget_exhausted',
-        details: [
-          `${decision.reason}; ${actionable.length} new review item(s) remain.`,
-        ],
-      });
-  },
-
-  'fix-reply'([pr, sha, itemsFile]) {
-    const n = num(pr);
-    const items = JSON.parse(readFileSync(itemsFile, 'utf8'));
-    const autoResolve = [botLogin(), ...COPILOT_LOGINS];
-    const short = sha.slice(0, 7);
-    for (const it of items.filter((i) => i.kind === 'inline')) {
-      api(`pulls/${n}/comments/${it.id}/replies`, {
-        method: 'POST',
-        body: {
-          body: `${MARKERS.fixReply}\nAddressed in ${short} (automated fix). Please re-check.`,
-        },
-      });
-    }
-    // Resolve only all-bot threads; any human comment keeps it open.
-    for (const t of threadsToResolve(
-      reviewThreads(n),
-      items.filter((i) => i.kind === 'inline').map((i) => i.id),
-      autoResolve,
-    ))
-      resolveThread(t.id);
-    const reviewItems = items.filter((i) => i.kind === 'review');
-    if (reviewItems.length) {
-      api(`issues/${n}/comments`, {
-        method: 'POST',
-        body: {
-          body: `${MARKERS.fixReply}\nAddressed review feedback from ${reviewItems
-            .map((i) => `@${i.author}`)
-            .join(', ')} in ${short} (automated fix).`,
-        },
-      });
-    }
-  },
-
-  // Did the Gemini CLI fail with the API's 402 (credits depleted)? Reads the
-  // CLI's stderr the action left in the workspace and sets the `billing`
-  // output. No file, or any other text, is `false`. The file is capped and
-  // only searched for one fixed string; nothing from it is executed.
-  'gemini-billing'([file]) {
-    let text = '';
-    try {
-      text = readFileSync(file, 'utf8').slice(0, 1_000_000);
-    } catch {
-      // no stderr recorded: not a billing failure
-    }
-    setOutput('billing', String(isGeminiBillingError(text)));
-  },
-
-  'security-publish'([pr, sha, responseFile, promptVer]) {
-    const n = num(pr);
-    const head = api(`pulls/${n}`).head.sha;
-    if (head !== sha) {
-      console.log(`Head moved (${head}); skipping stale review of ${sha}.`);
-      return;
-    }
-    const bot = botLogin();
-    const already = list(`pulls/${n}/reviews`).some(
-      (r) =>
-        sameLogin(r.user?.login, bot) &&
-        r.body?.includes(`${MARKERS.securityReview} sha=${sha}`),
-    );
-    if (already) {
-      console.log('Security review for this commit already posted.');
-      return;
-    }
-    const status = (state, description) =>
-      api(`statuses/${sha}`, {
-        method: 'POST',
-        body: {
-          state,
-          context: 'pipeline/security',
-          description: description.slice(0, 140),
-        },
-      });
-    // Gemini answered 402 (credit used up): release the PR to human approval
-    // with a loud note instead of failing the review. Only when the review
-    // job says so (security.yml matches the API's exact 402 message); any
-    // other failure still ends in the fail-closed path below. The note is
-    // written before the status, because the status is what re-runs approval.
-    if (
-      process.env.REVIEW_RESULT !== 'success' &&
-      process.env.REVIEW_BILLING === 'true'
-    ) {
-      writeOutcome(n, securitySkippedOutcome({ sha, promptVer }));
-      setStage(n, 'stage:reviewing');
-      status(
-        'success',
-        'SKIPPED: Gemini credits depleted (402), no review ran',
-      );
-      setOutput('skipped', 'billing');
-      console.log(`Security review of ${sha.slice(0, 7)} skipped: Gemini 402.`);
-      return;
-    }
-    // Finding ids anchor on a code line the reviewer quotes; parseSecurityReport
-    // checks that it is a line of the file at the reviewed head. Only files the
-    // PR changed are read (the path comes from reviewer output). The file's
-    // content at `sha` is the source; the PR patch (added and context lines)
-    // is the fallback when it cannot be read.
-    const files = list(`pulls/${n}/files`);
-    const lineCache = new Map();
-    const readLines = (file) => {
-      if (lineCache.has(file)) return lineCache.get(file);
-      const changed = files.find(
-        (f) => f.filename === file && f.status !== 'removed',
-      );
-      let lines = null;
-      if (changed) {
-        try {
-          const c = api(`contents/${encodeURI(file)}?ref=${sha}`);
-          if (c?.encoding === 'base64' && typeof c.content === 'string')
-            lines = Buffer.from(c.content, 'base64')
-              .toString('utf8')
-              .split(/\r?\n/);
-        } catch {
-          // fall back to the patch
-        }
-        lines ??= changed.patch ? patchNewLines(changed.patch) : null;
-      }
-      lineCache.set(file, lines);
-      return lines;
-    };
-    const report = parseSecurityReport(readFileSync(responseFile, 'utf8'), {
-      readLines,
-    });
-    if (!report.ok) {
-      status('error', report.error);
-      writeOutcome(n, {
-        stage: 'security',
-        result: 'problem',
-        problem: 'invalid_output',
-        summary: `Security review stopped: ${report.error}.`,
-        prompt_version: `security-review.md@${promptVer}`,
-      });
-      process.exitCode = 1;
-      return;
-    }
-    // Findings the owner already decided on carry over by id: they open no
-    // new thread on this head.
-    const dispositioned = dispositionsOf(list(`issues/${n}/comments`));
-    const review = buildSecurityReview({
-      report,
-      sha,
-      files,
-      promptVer,
-      dispositioned,
-    });
-    const post = (body, comments) =>
-      api(`pulls/${n}/reviews`, {
-        method: 'POST',
-        body: { commit_id: sha, event: 'COMMENT', body, comments },
-      });
-    try {
-      post(review.body, review.comments);
-    } catch {
-      // Line mapping rejected: fall back to one actionable body.
-      post(review.fallbackBody, []);
-    }
-    const counts = review.clean
-      ? 'No blocking findings'
-      : `${review.blockingCount} blocking finding(s)${review.dispositionedCount ? `, ${review.dispositionedCount} dispositioned` : ''}`;
-    // The details list every blocking finding by id: approval and
-    // /disposition read them back (securityIdsForHead). Everything approval
-    // reads is written before the status, which is what triggers it.
-    writeOutcome(n, {
-      stage: 'security',
-      result: 'success',
-      summary: `Security review of ${sha.slice(0, 7)}: ${review.clean ? 'clean' : counts}.`,
-      details: securityOutcomeDetails({
-        sha,
-        findings: review.blockingFindings,
-      }),
-      prompt_version: `security-review.md@${promptVer}`,
-    });
-    setStage(n, 'stage:reviewing');
-    status(review.clean ? 'success' : 'failure', counts);
-    setOutput('clean', String(review.clean));
-  },
-
   approval([pr]) {
     const n = num(pr);
     const bot = botLogin();
@@ -752,8 +445,6 @@ const commands = {
       return runs.length ? runs[0].conclusion : undefined;
     };
     const statuses = api(`commits/${head}/statuses?per_page=100`);
-    const stateOf = (context) =>
-      statuses.find((s) => s.context === context)?.state;
     const comments = list(`issues/${n}/comments`);
     const threads = reviewThreads(n);
     const copilotReviewedHead = list(`pulls/${n}/reviews`).some(
@@ -766,26 +457,12 @@ const commands = {
     setStatus(PROTECTED_CONTEXT, head, protectedEval, statuses);
     const records = parseDispositionNotes(comments, bot);
     const kinds = dispositionKinds({ records, ownerLogin: ownerLogin() });
-    const securityFindings = securityIdsForHead({
-      comments,
-      botLogin: bot,
-      sha: head,
-    });
-    const securitySkipped = securitySkippedForHead({
-      comments,
-      botLogin: bot,
-      sha: head,
-    });
     const decision = evaluateApproval({
       prState: p.state,
       labels,
       headSha: head,
       ciConclusion: conclusionOf('ci') ?? null,
       securityJobConclusion: conclusionOf('security'),
-      securityState: stateOf('pipeline/security'),
-      securityFindings,
-      securitySkipped,
-      dispositioned: new Set(kinds.keys()),
       unresolvedThreads: threads.filter((t) => !t.isResolved).length,
       copilotReviewedHead,
       requireCopilot: requireCopilot(),
@@ -802,18 +479,13 @@ const commands = {
         `gates: ${decision.gates.state} (${decision.gates.description})`,
       );
       setGatesStatus(head, decision.gates, statuses);
-      const open = [
-        ...(securityFindings?.findings ?? [])
-          .filter((f) => !kinds.has(f.id))
-          .map((f) => ({ id: f.id, source: 'Gemini', text: f.text })),
-        ...classifyThreads(threads, bot)
-          .filter((t) => t.source === 'copilot' && !t.thread.isResolved)
-          .map((t) => ({
-            id: t.id,
-            source: 'Copilot',
-            text: `${t.thread.path ?? ''}${t.thread.line ? `:${t.thread.line}` : ''} ${t.thread.first?.body ?? ''}`,
-          })),
-      ];
+      const open = classifyThreads(threads)
+        .filter((t) => t.source === 'copilot' && !t.thread.isResolved)
+        .map((t) => ({
+          id: t.id,
+          source: 'Copilot',
+          text: `${t.thread.path ?? ''}${t.thread.line ? `:${t.thread.line}` : ''} ${t.thread.first?.body ?? ''}`,
+        }));
       const body = renderGatesComment({
         head,
         gates: decision.gates,
@@ -862,8 +534,7 @@ const commands = {
         result: 'success',
         summary: `Handed to human approval at ${head.slice(0, 7)}.`,
       });
-      // Later human feedback starts a fresh fix budget.
-      editLabels(n, resetFixLoop(labels, 'stage:human-approval'));
+      editLabels(n, stageTransition(labels, 'stage:human-approval'));
       // Only for the PRs the pipeline opened as drafts. A failure here must
       // not end the hand-off: the outcome and label are written already, and
       // the comment and state below are what keep it from repeating.
@@ -897,10 +568,7 @@ const commands = {
         MARKERS.humanApproval,
         [
           `### Ready for human approval`,
-          securitySkipped
-            ? `**WARNING: the Gemini security review did NOT run on \`${head.slice(0, 7)}\`.** The Gemini API answered 402 (credits depleted). Renew the Google Gemini subscription or credits, and read this change yourself before approving. (To get the review afterwards, re-run the failed **Pipeline · Security Review** run for this commit.)`
-            : '',
-          `CI is green, ${securitySkipped ? '' : 'the Gemini security review is clean or every finding is dispositioned, '}${requireCopilot() ? `Copilot has reviewed \`${head.slice(0, 7)}\`, ` : ''}all threads are resolved and \`${GATES_CONTEXT}\` is green.`,
+          `CI is green, ${requireCopilot() ? `Copilot has reviewed \`${head.slice(0, 7)}\`, ` : ''}all threads are resolved and \`${GATES_CONTEXT}\` is green.`,
           `**Preview:** ${url}`,
           `Code owners have been requested for review. Merging is a human decision; no agent can merge.`,
           stillDraft
@@ -937,8 +605,8 @@ const commands = {
       {
         state: 'pending',
         description: requireCopilot()
-          ? 'Waiting for CI, the Gemini review and the Copilot review'
-          : 'Waiting for CI and the Gemini review',
+          ? 'Waiting for CI and the Copilot review'
+          : 'Waiting for CI',
       },
       statuses,
     );
@@ -973,12 +641,11 @@ const commands = {
       console.log('disposition: not a command');
       return;
     }
-    const bot = botLogin();
     let threads = null;
     // Where the answer goes: the thread for a thread reply, else the PR.
     let replyTo = null;
     if (inThread) {
-      threads = classifyThreads(reviewThreads(n), bot);
+      threads = classifyThreads(reviewThreads(n));
       const c = api(`pulls/comments/${cid}`);
       const entry = threadOfComment(threads, {
         commentId: cid,
@@ -1010,15 +677,9 @@ const commands = {
     if (p.state !== 'open' || p.head.repo?.full_name !== `${OWNER}/${NAME}`)
       return reject('the pull request is closed or from a fork');
     const head = p.head.sha;
-    const security = securityIdsForHead({
-      comments: list(`issues/${n}/comments`),
-      botLogin: bot,
-      sha: head,
-    });
-    threads ??= classifyThreads(reviewThreads(n), bot);
+    threads ??= classifyThreads(reviewThreads(n));
     const checked = validateDispositions({
       commands: parsed.commands,
-      geminiIds: new Set(security?.ids),
       copilotIds: new Set(
         threads
           .filter((t) => t.source === 'copilot' && !t.thread.isResolved)
@@ -1079,9 +740,8 @@ const commands = {
   // checks everything; a comment that cannot be honoured gets one short
   // reply and changes nothing. Accepted: the issue's lifetime counter and
   // attempt list are written FIRST (a crash after that costs a restart,
-  // never gives one away), then the restart route note lands on the item
-  // that restarts and its stage label is applied. For `fixing` that item is
-  // the linked open PR, and `fix_pr` asks restart.yml to run Pipeline · Fix.
+  // never gives one away), then the restart route note lands on the issue
+  // and its stage label is applied.
   restart([number, commentId]) {
     const n = num(number);
     const cid = num(commentId);
@@ -1104,7 +764,7 @@ const commands = {
             repo,
           }) === n,
       )
-      .map((p) => ({ number: p.number, labels: p.labels.map((l) => l.name) }));
+      .map((p) => ({ number: p.number }));
     const labels = item.labels.map((l) => l.name);
     const decision = decideRestart({
       comment: {
@@ -1141,24 +801,9 @@ const commands = {
       return;
     }
 
-    const { target } = decision;
-    writeState(
-      n,
-      decision.state,
-      target.kind === 'issue' ? applyLabels(labels, target.edit) : labels,
-    );
-    postComment(target.number, decision.note);
-    editLabels(target.number, target.edit);
-    if (target.kind === 'pr') {
-      // A round that failed before pushing left its items marked handled:
-      // forget them, or the run below finds no new feedback and does nothing.
-      writeState(target.number, resetFixItems(readState(target.number)));
-      postComment(
-        n,
-        `Restart ${decision.count}/${MAX_LIFETIME_RESETS} accepted: the fix loop of PR #${target.number} has a fresh budget and Pipeline · Fix runs next.`,
-      );
-      setOutput('fix_pr', String(target.number));
-    }
+    writeState(n, decision.state, applyLabels(labels, decision.edit));
+    postComment(n, decision.note);
+    editLabels(n, decision.edit);
   },
 
   // A person moved an item out of stage:needs-attention by hand (restart.yml,
@@ -1350,8 +995,6 @@ const commands = {
           }),
         },
       });
-      if (!findBotComment(pr.number, MARKERS.state))
-        writeState(pr.number, { ...emptyState(), watermark: pr.created_at });
       setStage(pr.number, 'stage:building');
     }
     // The note before the status: gates recompute from the notes.
@@ -1452,7 +1095,7 @@ const commands = {
     setStage(issue, 'stage:awaiting-approval');
   },
 
-  // CI failed on a PR (security.yml, workflow_run). Pipeline PRs only:
+  // CI failed on a PR (ci-failed.yml, workflow_run). Pipeline PRs only:
   // appends a `ci_failed` outcome note for the router.
   'ci-failed'([pr, sha, runUrl]) {
     const n = num(pr);
@@ -1472,9 +1115,7 @@ const commands = {
       result: 'problem',
       problem: decision.problem,
       summary: `CI failed on the agent PR at ${sha.slice(0, 7)}.`,
-      details: [
-        'Push a fix to the branch, or take the PR over by hand. The next green CI run starts the security review again.',
-      ],
+      details: ['Push a fix to the branch, or take the PR over by hand.'],
       run_url: runUrl,
     });
   },
@@ -1610,12 +1251,12 @@ const commands = {
     if (!plan.act) return;
     const pr = num(plan.pr.number);
     if (plan.pr.labels === 'done')
-      editLabels(pr, resetFixLoop(labelsOf(pr), 'stage:done'));
+      editLabels(pr, stageTransition(labelsOf(pr), 'stage:done'));
     else editLabels(pr, clearStages(labelsOf(pr)));
     for (const i of plan.issues) {
       const n = num(i.number);
       if (i.action === 'done')
-        editLabels(n, resetFixLoop(labelsOf(n), 'stage:done'));
+        editLabels(n, stageTransition(labelsOf(n), 'stage:done'));
       else if (i.action === 'route')
         writeOutcome(n, prClosedOutcome({ pr, closedBy: plan.closedBy }));
     }

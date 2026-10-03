@@ -1,21 +1,19 @@
 name: Pipeline · Approval
 
 # Review gates and the hand-off to humans. For a PR's head commit this
-# evaluates the gates (CI, the Gemini security review clean or every finding
-# dispositioned, review threads resolved, the Copilot review when it is
-# required, and for a pipeline PR with protected paths the owner's approval
+# evaluates the gates (CI, review threads resolved, the Copilot review when it
+# is required, and for a pipeline PR with protected paths the owner's approval
 # of this head) and sets the `pipeline/gates` commit status, a required check
-# of the main ruleset. When CI is green, the security review passes and no
-# review thread is open, and once every gate holds: label
-# stage:human-approval, mark the PR ready (this requests CODEOWNERS) and
-# comment the preview URL.
+# of the main ruleset. Once CI is green, no review thread is open and every
+# gate holds: label stage:human-approval, mark the PR ready (this requests
+# CODEOWNERS) and comment the preview URL.
 #
 # The Copilot review is OPTIONAL and off by default (the repo needs a
 # Copilot licence). It is on only when the repo variable REQUIRE_COPILOT is
 # exactly `true`; unset, empty or anything else (`TRUE`, `1`, `false`) is
 # off. Off: the Copilot gate reads "not required", no review is requested
 # and the PR goes straight to human approval. On: the review is requested
-# (REST, once per head commit) after CI, security and threads hold, and the
+# (REST, once per head commit) after CI and threads hold, and the
 # hand-off waits for Copilot to review that commit. To turn it on, set
 # REQUIRE_COPILOT to `true` and either give COPILOT_REVIEW_TOKEN a
 # Copilot-licensed user's token or enable automatic Copilot review on the
@@ -25,19 +23,18 @@ name: Pipeline · Approval
 # approval, and no agent or bot is a code owner or bypass actor.
 # docs/pipeline.md, "Review gates and dispositions".
 on: # zizmor: ignore[dangerous-triggers]
-  # Posted by security.yml (App token, so it triggers workflows).
-  status:
   pull_request_review:
     types: [submitted]
   # The bot's disposition record note (disposition.yml, App token) and its
   # protected-approval record on the PR (protected-approve.yml).
   issue_comment:
     types: [created]
-  # A new head has no gates status yet: give it a pending one at once.
-  # Runs the default branch's workflow, reads nothing from the run.
+  # CI finished on a PR: evaluate its gates. A new head has no gates status
+  # yet: give it a pending one when CI is requested. Runs the default
+  # branch's workflow, reads nothing from the run.
   workflow_run:
     workflows: [CI]
-    types: [requested]
+    types: [requested, completed]
   workflow_dispatch:
     inputs:
       pr:
@@ -59,7 +56,11 @@ jobs:
       github.event.comment.user.login == vars.PIPELINE_BOT_LOGIN &&
       (startsWith(github.event.comment.body, '<!-- pipeline:disposition') ||
       startsWith(github.event.comment.body, '<!-- pipeline:protected-approved'))) ||
-      (github.event_name == 'status' && github.event.context == 'pipeline/security'))
+      (github.event_name == 'workflow_run' && github.event.action == 'completed' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.pull_requests[0].number))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -70,19 +71,13 @@ jobs:
       - id: pr
         env:
           GH_TOKEN: ${{ github.token }}
-          N: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
-          SHA: ${{ github.event.sha }}
+          N: ${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || inputs.pr }}
           EVENT: ${{ github.event_name }}
         run: |
           if [[ "$EVENT" == "issue_comment" ]]; then
             # A comment carries no head repo: only open same-repo PRs count.
             gh api "repos/$GITHUB_REPOSITORY/pulls/$N" \
               | jq -e --arg repo "$GITHUB_REPOSITORY" '.state == "open" and .head.repo.full_name == $repo' > /dev/null || N=""
-          fi
-          if [[ -z "$N" && "$EVENT" == "status" ]]; then
-            # status event: find the open same-repo PR whose head is this commit.
-            N=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
-              --jq "[.[] | select(.state == \"open\" and .head.sha == \"$SHA\" and .head.repo.full_name == \"$GITHUB_REPOSITORY\")][0].number // empty")
           fi
           echo "pr=$N" >> "$GITHUB_OUTPUT"
 
@@ -91,7 +86,7 @@ jobs:
     if: ${{ needs.resolve.outputs.pr != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Shared with fix.yml's adapter: both read-modify-write the state comment.
+    # One run at a time per PR: it read-modify-writes the state comment.
     concurrency:
       group: pipeline-pr-${{ needs.resolve.outputs.pr }}-state
       cancel-in-progress: false
@@ -137,6 +132,7 @@ jobs:
     if: >-
       vars.PIPELINE_APP_CLIENT_ID != '' &&
       github.event_name == 'workflow_run' &&
+      github.event.action == 'requested' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.pull_requests[0].number

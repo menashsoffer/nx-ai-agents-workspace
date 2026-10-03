@@ -168,46 +168,6 @@ export function checkClaudeSafetySwitches(settings) {
   return problems;
 }
 
-// Gemini CLI, https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md:
-// `mcpServers.<name>.trust` ("bypass all tool call confirmations"),
-// `general.defaultApprovalMode` (`yolo` approves everything),
-// `hooksConfig.enabled: false` ("no hooks will be executed") and
-// `tools.allowed` (tools that "bypass the confirmation dialog"; shell entries
-// there are Gemini's equivalent of an A1 allow-list, which this repo ships
-// without).
-const GEMINI_SAFE_APPROVAL_MODES = ['default', 'auto_edit', 'plan'];
-
-export function checkGeminiSafetySwitches(settings) {
-  const problems = [];
-  for (const [name, server] of Object.entries(settings?.mcpServers ?? {})) {
-    if (server?.trust !== undefined && server.trust !== false)
-      problems.push(
-        `A6: .gemini/settings.json MCP server "${name}" has trust enabled (skips every confirmation).`,
-      );
-  }
-  const mode = settings?.general?.defaultApprovalMode;
-  if (mode !== undefined && !GEMINI_SAFE_APPROVAL_MODES.includes(mode)) {
-    problems.push(
-      `A6: .gemini/settings.json general.defaultApprovalMode "${mode}" is not one of ${GEMINI_SAFE_APPROVAL_MODES.join(', ')}.`,
-    );
-  }
-  if (
-    settings?.hooksConfig?.enabled !== undefined &&
-    settings.hooksConfig.enabled !== true
-  ) {
-    problems.push(
-      'A6: .gemini/settings.json hooksConfig.enabled turns off every hook.',
-    );
-  }
-  for (const tool of settings?.tools?.allowed ?? []) {
-    if (/^(run_shell_command|ShellTool)\b/.test(String(tool)))
-      problems.push(
-        `A6: .gemini/settings.json tools.allowed pre-approves shell commands ("${tool}").`,
-      );
-  }
-  return problems;
-}
-
 // Codex has no published config reference reachable from here; the values are
 // the serde names in openai/codex codex-rs/protocol (`AskForApproval`:
 // untrusted | on-request | on-failure | never | granular; `SandboxMode`:
@@ -293,18 +253,15 @@ export function checkRepoAiConfig(root) {
   // settings.local.json is personal and gitignored; a committed one is shared
   // config and is held to the same rules.
   const local = '.claude/settings.local.json';
-  const gemini = readJson('.gemini/settings.json') ?? {};
   const codex = readText('.codex/config.toml');
   return [
     ...claudeChecks(claude),
     ...(isCommitted(root, local)
       ? claudeChecks(readJson(local)).map((p) => `${local}: ${p}`)
       : []),
-    ...checkGeminiSafetySwitches(gemini),
     ...checkCodexSafetySwitches(codex),
     ...checkMcpServers([
       { where: '.mcp.json', servers: readJson('.mcp.json')?.mcpServers },
-      { where: '.gemini/settings.json', servers: gemini.mcpServers },
       { where: '.codex/config.toml', servers: parseCodexMcpServers(codex) },
     ]),
   ];

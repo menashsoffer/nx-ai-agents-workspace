@@ -102,8 +102,8 @@ jobs:
         run: |
           rm -rf .pipeline
           # Drop uncommitted tool files in protected dirs (committed ones are rejected below).
-          git checkout -- .claude .gemini 2>/dev/null || true
-          git clean -fdq -- .claude .gemini
+          git checkout -- .claude 2>/dev/null || true
+          git clean -fdq -- .claude
           if [[ -n "$(git status --porcelain)" ]]; then
             git add -A
             git commit -m "Add remaining agent changes"
@@ -195,9 +195,6 @@ jobs:
           RESULT: ${{ needs.implement.outputs.result }}
           VERSION: ${{ needs.implement.outputs.prompt_version }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
-          # Only shapes the state table (init-state).
-          REQUIRE_COPILOT: ${{ vars.REQUIRE_COPILOT }}
           PROTECTED: ${{ steps.guard.outputs.protected }}
         run: |
           if [[ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[].number')" ]]; then
@@ -224,7 +221,6 @@ jobs:
           url=$(gh pr create --repo "$GITHUB_REPOSITORY" --draft --base "$DEFAULT_BRANCH" \
             --head "$BRANCH" --title "$title" --body-file body.md)
           pr=${url##*/}
-          node .github/scripts/pipeline.mjs init-state "$pr"
           node .github/scripts/pipeline.mjs set-stage "$pr" stage:building
           jq -n --arg s "Draft PR #$pr opened." --arg v "develop.md@$VERSION" \
             '{stage: "develop", result: "success", summary: $s, prompt_version: $v}' > outcome.json

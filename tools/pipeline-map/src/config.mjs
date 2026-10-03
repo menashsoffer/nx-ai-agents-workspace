@@ -19,14 +19,6 @@ export const EXPECTED_UNGATED = {
     kind: 'event',
     reason: 'opening the PR (not the label) starts CI and the preview',
   },
-  'stage:reviewing': {
-    kind: 'event',
-    reason: 'the review and commit status it posts drive the next step',
-  },
-  'stage:fixing': {
-    kind: 'event',
-    reason: 'the fix push re-runs CI, which restarts the review',
-  },
   'stage:awaiting-approval': {
     kind: 'human',
     reason:

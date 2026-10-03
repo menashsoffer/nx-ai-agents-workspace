@@ -35,8 +35,6 @@ mutation($field: ID!) {
       { name: "Planned",         color: GREEN,  description: "stage:planned" }
       { name: "Awaiting approval", color: YELLOW, description: "stage:awaiting-approval" }
       { name: "Building",        color: PURPLE, description: "stage:building" }
-      { name: "Reviewing",       color: PURPLE, description: "stage:reviewing" }
-      { name: "Fixing",          color: YELLOW, description: "stage:fixing" }
       { name: "Human approval",  color: ORANGE, description: "stage:human-approval" }
       { name: "Routing",         color: PINK,   description: "stage:routing" }
       { name: "Needs attention", color: RED,    description: "stage:needs-attention" }

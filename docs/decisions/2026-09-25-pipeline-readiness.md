@@ -1,6 +1,6 @@
 # Pipeline readiness dry run
 
-- Status: report; the readiness gate **FAILED** (see the last line)
+- Status: report; the readiness gate **FAILED** (see the last line). Superseded by [2026-10-03-remove-gemini-stages](2026-10-03-remove-gemini-stages.md): the stages it exercised were removed.
 - Date: 2026-09-25 (runs from 2026-09-24 23:50Z to 2026-09-25 01:07Z)
 
 ## Context

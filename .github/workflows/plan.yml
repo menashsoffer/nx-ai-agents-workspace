@@ -7,7 +7,7 @@ name: Pipeline · Plan
 # two comments (pipeline:spec, pipeline:plan), appends a success outcome
 # note and sets stage:planned. Any check fails, or the agent reports a
 # problem or the run fails: it appends a problem outcome note and sets
-# stage:routing instead. (This replaces the old Gemini spec.yml.)
+# stage:routing instead. (This replaces the old spec.yml.)
 on:
   issues:
     types: [labeled]
