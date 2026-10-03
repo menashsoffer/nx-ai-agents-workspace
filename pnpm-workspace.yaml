@@ -25,3 +25,11 @@ minimumReleaseAge: 4320
 overrides:
   # GHSA-7w5x-hrqm-74c2 (high, DoS). Remove once nx depends on smol-toml >=1.7.1.
   smol-toml: '>=1.7.1'
+  # GHSA-c29m-xwm3-cm6r (high, ReDoS) and 11 more, all fixed in 1.20.0. nx pins
+  # axios 1.18.1. Remove once nx depends on axios >=1.20.0.
+  axios: '^1.20.0'
+  # GHSA-qhr7-859c-m2p7, GHSA-6j4f-fj2g-mc7p (high, DoS), GHSA-q2hr-2g5m-vwhr
+  # (moderate), all fixed in 5.0.12. nx pins brace-expansion 5.0.9. Scoped to 5.x:
+  # minimatch 3 and 9 need the unaffected 1.x and 2.x. Remove once nx depends on
+  # brace-expansion >=5.0.12.
+  'brace-expansion@5.0.9': '5.0.12'
