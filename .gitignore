@@ -63,3 +63,6 @@ storybook-static
 
 # multi-agent pipeline scratch data (never committed)
 .pipeline
+
+# graphify code map: generated into the site's public/ by deploy.yml only
+apps/site/public/code-map
