@@ -37,6 +37,22 @@ test('localizeHtml rejects any other third-party asset', () => {
   );
 });
 
+test('localizeHtml rejects third-party assets written in other legal HTML', () => {
+  for (const extra of [
+    '<script src = "https://x.test/a.js"></script>',
+    '<script src=https://x.test/a.js></script>',
+    '<script src=//x.test/a.js></script>',
+    '<link rel=stylesheet href = //x.test/a.css>',
+  ]) {
+    assert.throws(() => localizeHtml(page(extra)), /third-party assets/, extra);
+  }
+});
+
+test('localizeHtml keeps a page with only local assets', () => {
+  const html = localizeHtml(page('<link rel="icon" href="data:,">'));
+  assert.match(html, /vis-network\.min\.js/);
+});
+
 test('verifyIntegrity accepts matching bytes and rejects others', () => {
   const bytes = Buffer.from('console.log(1)');
   const sri = `sha384-${createHash('sha384').update(bytes).digest('base64')}`;

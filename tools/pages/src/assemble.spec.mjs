@@ -67,6 +67,27 @@ describe('assemble', () => {
     ).toThrow(/P1[\s\S]*P1/);
   });
 
+  it.each([
+    [
+      'spaces around =',
+      '<script src = "https://cdn.example.com/x.js"></script>',
+    ],
+    ['an unquoted value', '<script src=https://cdn.example.com/x.js></script>'],
+    [
+      'an unquoted protocol-relative URL',
+      '<link rel=stylesheet href=//cdn.example.com/x.css>',
+    ],
+  ])('rejects a third-party asset written with %s (P1)', (_name, head) => {
+    const storybookDir = fixture({ 'index.html': html() });
+    expect(() =>
+      assemble({
+        siteDir: fixture({ 'index.html': html(head) }),
+        storybookDir,
+        outDir: fixture({}),
+      }),
+    ).toThrow(/P1: third-party asset in index\.html/);
+  });
+
   it('explains a missing build', () => {
     expect(() =>
       assemble({

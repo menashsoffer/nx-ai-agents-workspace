@@ -18,13 +18,10 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findExternalAssets } from '../../tools/pages/src/external-assets.mjs';
 
 const VIS_SCRIPT =
   /<script\s+src="https:\/\/unpkg\.com\/vis-network@(\d+\.\d+\.\d+)\/standalone\/umd\/vis-network\.min\.js"\s+integrity="(sha384-[A-Za-z0-9+/=]+)"[^>]*><\/script>/;
-
-/** Absolute or protocol-relative URLs in <script src> / <link href>. */
-const EXTERNAL_ASSET =
-  /<(?:script[^>]*\ssrc|link[^>]*\shref)=["']((?:https?:)?\/\/[^"']+)["']/gi;
 
 /** Finds graphify's pinned vis-network tag: `{ version, integrity }`. */
 export function findVisNetwork(html) {
@@ -53,7 +50,7 @@ export function localizeHtml(html) {
   const local = html
     .replace(VIS_SCRIPT, '<script src="vis-network.min.js"></script>')
     .replace(/<title>[^<]*<\/title>/, '<title>מפת קוד</title>');
-  const external = [...local.matchAll(EXTERNAL_ASSET)].map(([, url]) => url);
+  const external = findExternalAssets(local);
   if (external.length) {
     throw new Error(
       `graph.html still loads third-party assets: ${external.join(', ')}`,

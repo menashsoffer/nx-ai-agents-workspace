@@ -35,11 +35,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # Node only (for code-map.mjs); no pnpm install.
-      - uses: ./.github/actions/setup
-        with:
-          install: 'false'
-
       - name: Install graphify (pinned)
         run: |
           python3 -m venv "$RUNNER_TEMP/graphify-venv"
@@ -50,6 +45,10 @@ jobs:
           graphify="$RUNNER_TEMP/graphify-venv/bin/graphify"
           "$graphify" extract . --code-only --out "$RUNNER_TEMP/graphify"
           "$graphify" cluster-only "$RUNNER_TEMP/graphify" --no-label
+
+      # After the extract, so the graph never sees node_modules. code-map.mjs
+      # needs the workspace install (jsdom, shared with tools/pages).
+      - uses: ./.github/actions/setup
 
       # graph.html -> index.html without the unpkg script (P1), + graph.json.
       - name: Build the static code-map/ folder

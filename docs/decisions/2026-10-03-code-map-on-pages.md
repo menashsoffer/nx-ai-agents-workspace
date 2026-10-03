@@ -27,6 +27,13 @@ on it except `pr-*/`, so any second writer of a path would be overwritten.
   file from the npm tarball, checks it against the SRI hash graphify pins in
   the tag, and rewrites the tag to the local copy. Any other third-party
   asset, a missing tag or a hash mismatch fails the job.
+- Third-party assets are found by parsing the HTML (jsdom) and resolving each
+  `<script src>`, `<link href>` and `<base href>` with the URL parser, in
+  `tools/pages/src/external-assets.mjs`; `assemble.mjs` and `code-map.mjs`
+  share it. A regex over the source missed legal HTML (spaces around `=`,
+  unquoted values, entities, `\\host`, `<template>`), and an unparsable URL
+  counts as third-party. For that reason `code-map` also runs the workspace
+  install, after the graph is extracted.
 - graphify stays out of `package.json` and the lockfile: pip, CI only.
 - `apps/site/public/code-map` is git-ignored; the folder never exists in the
   tree.

@@ -20,6 +20,7 @@ import {
 } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findExternalAssets } from './external-assets.mjs';
 
 export const RESERVED_PATHS = ['storybook'];
 
@@ -32,10 +33,6 @@ function* walk(dir) {
     else yield path;
   }
 }
-
-/** Absolute http(s) or protocol-relative URLs in <script src> / <link href>. */
-const EXTERNAL_ASSET =
-  /<(?:script[^>]*\ssrc|link[^>]*\shref)=["']((?:https?:)?\/\/[^"']+)["']/gi;
 
 export function assemble({
   siteDir = join(workspaceRoot, 'apps/site/dist'),
@@ -69,9 +66,7 @@ export function assemble({
     if (file.endsWith('.map'))
       problems.push(`P2: source map in artifact: ${rel}`);
     if (file.endsWith('.html')) {
-      for (const [, url] of readFileSync(file, 'utf8').matchAll(
-        EXTERNAL_ASSET,
-      )) {
+      for (const url of findExternalAssets(readFileSync(file, 'utf8'))) {
         problems.push(`P1: third-party asset in ${rel}: ${url}`);
       }
     }
