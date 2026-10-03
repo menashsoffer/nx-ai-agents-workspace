@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Single source of truth for every AI coding assistant working in this repo
-(Claude Code, Codex, Copilot, Gemini, Grok, ...). Tool-specific files only
+(Claude Code, Codex, Copilot, Grok, ...). Tool-specific files only
 point here. Humans: see `README.md` and `docs/`.
 
 ## This project
@@ -44,7 +44,7 @@ docs/              architecture, conventions, decisions (ADRs); read before big 
 
 If you are running inside the pipeline (`.github/workflows/`), your prompt
 in `.github/prompts/` is authoritative for your step. Never edit `.github/`,
-`CODEOWNERS`, `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`, `tools/security/`,
+`CODEOWNERS`, `.claude/`, `.codex/`, `.pipeline/`, `tools/security/`,
 `.npmrc` or `.gitmodules` there; such patches are rejected. Package manifests,
 the lockfile, `pnpm-workspace.yaml`, `tools/workspace-plugin/` and
 `tools/pipeline-map/` only as the plan lists them: the branch is then pushed
@@ -80,7 +80,7 @@ Project names are short: `site`, `site-e2e`, `pages-e2e`, `sandbox`, `ui`,
 3. If you changed routes or user-visible flows in `site`, `pnpm e2e` passes; if
    you changed routing, assets, the base path or Storybook, `pnpm e2e:pages` too.
 4. If you changed dependencies, workflows, or anything in `.claude/`,
-   `.gemini/`, `.codex/` or `tools/security/`, `pnpm security` passes.
+   `.codex/` or `tools/security/`, `pnpm security` passes.
    **Exit code 2 means the checks were NOT run** (unsupported platform). Say so
    in your summary; never report it as passing. CI is authoritative.
 5. If you made an architectural decision, add a short ADR in `docs/decisions/`.
@@ -157,7 +157,7 @@ Module boundaries are enforced by ESLint via tags in `package.json`:
 
 Do **not** change these unless the user explicitly asks for that change:
 `.github/workflows/`, `.github/dependabot.yml`, `.github/zizmor.yml`, `.claude/settings.json`,
-`.claude/hooks/`, `.gemini/`, `.codex/`, the supply-chain settings in
+`.claude/hooks/`, `.codex/`, the supply-chain settings in
 `pnpm-workspace.yaml` (`allowBuilds`, `strictDepBuilds`, `minimumReleaseAge`,
 `overrides`), `packageManager` in `package.json`, `tools/security/`,
 `tools/workspace-plugin/` (its generators run through pre-approved
@@ -176,7 +176,7 @@ and `FORBIDDEN_PATH_PATTERNS` in `.github/scripts/pipeline-lib.mjs`):
   diff and comments `/approve-protected <sha>`. The approval covers that
   commit only.
 - **Never approvable, local session only:** `.github/**`, `CODEOWNERS`,
-  `tools/security/**`, `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`,
+  `tools/security/**`, `.claude/`, `.codex/`, `.pipeline/`,
   `.npmrc`, `.gitmodules`. A patch touching any of them is rejected, whatever
   else is in it.
 

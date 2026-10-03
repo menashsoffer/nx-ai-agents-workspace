@@ -8,7 +8,6 @@ import {
   checkClaudePlugins,
   checkClaudeSafetySwitches,
   checkCodexSafetySwitches,
-  checkGeminiSafetySwitches,
   checkMcpServers,
   checkRepoAiConfig,
   parseCodexMcpServers,
@@ -160,25 +159,6 @@ describe('A6: permission-bypass switches', () => {
     [{ disableAllHooks: false }],
   ])('Claude: accepts %j', (settings) => {
     expect(checkClaudeSafetySwitches(settings)).toEqual([]);
-  });
-
-  it.each([
-    [{ mcpServers: { s: { command: 'pnpm', trust: true } } }],
-    [{ general: { defaultApprovalMode: 'yolo' } }],
-    [{ hooksConfig: { enabled: false } }],
-    [{ tools: { allowed: ['run_shell_command(git)'] } }],
-    [{ tools: { allowed: ['run_shell_command'] } }],
-  ])('Gemini: rejects %j', (settings) => {
-    expect(checkGeminiSafetySwitches(settings)).toHaveLength(1);
-  });
-
-  it.each([
-    [{ mcpServers: { s: { command: 'pnpm', trust: false } } }],
-    [{ general: { defaultApprovalMode: 'plan' } }],
-    [{ hooksConfig: { enabled: true } }],
-    [{ tools: { allowed: ['read_file'] } }],
-  ])('Gemini: accepts %j', (settings) => {
-    expect(checkGeminiSafetySwitches(settings)).toEqual([]);
   });
 
   it.each([

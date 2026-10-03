@@ -41,17 +41,17 @@ Never treat `2` as passed; CI is authoritative.
 
 ## 2. GitHub Actions workflows
 
-| #   | Requirement                                                                                                                                                           | Enforced by                | Type   |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------ |
-| W1  | Top-level `permissions: contents: read` (or `{}`); broader scopes only per job; write scopes only on publish jobs (gh-pages, pipeline App tokens)                     | zizmor                     | Gate   |
-| W2  | Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment (local `./` workflows exempt)                                                                  | zizmor                     | Gate   |
-| W3  | `persist-credentials: false` on every checkout                                                                                                                        | zizmor                     | Gate   |
-| W4  | No `${{ }}` expressions inside `run:`; pass values through `env:`                                                                                                     | zizmor                     | Gate   |
-| W5  | No `pull_request_target` / artifact-consuming `workflow_run` (`security.yml`, `approval.yml` and `protected-approve.yml` are reviewed, artifact-free `workflow_run`s) | zizmor                     | Gate   |
-| W6  | `gh-pages` is written only by `deploy.yml` (main) and `preview.yml` (`pr-*/`); deploy `concurrency` never cancels                                                     | workflow + review          | Review |
-| W7  | Workflows are valid                                                                                                                                                   | actionlint                 | Gate   |
-| W8  | Every job has `timeout-minutes`                                                                                                                                       | actionlint/zizmor + review | Gate   |
-| W9  | No workflow runs on a push of an `issue-<n>-<slug>` branch (every `on: push` has a branch filter that leaves it out; no `on: create`)                                 | `pnpm test:pipeline`       | Gate   |
+| #   | Requirement                                                                                                                                                            | Enforced by                | Type   |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------ |
+| W1  | Top-level `permissions: contents: read` (or `{}`); broader scopes only per job; write scopes only on publish jobs (gh-pages, pipeline App tokens)                      | zizmor                     | Gate   |
+| W2  | Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment (local `./` workflows exempt)                                                                   | zizmor                     | Gate   |
+| W3  | `persist-credentials: false` on every checkout                                                                                                                         | zizmor                     | Gate   |
+| W4  | No `${{ }}` expressions inside `run:`; pass values through `env:`                                                                                                      | zizmor                     | Gate   |
+| W5  | No `pull_request_target` / artifact-consuming `workflow_run` (`ci-failed.yml`, `approval.yml` and `protected-approve.yml` are reviewed, artifact-free `workflow_run`s) | zizmor                     | Gate   |
+| W6  | `gh-pages` is written only by `deploy.yml` (main) and `preview.yml` (`pr-*/`); deploy `concurrency` never cancels                                                      | workflow + review          | Review |
+| W7  | Workflows are valid                                                                                                                                                    | actionlint                 | Gate   |
+| W8  | Every job has `timeout-minutes`                                                                                                                                        | actionlint/zizmor + review | Gate   |
+| W9  | No workflow runs on a push of an `issue-<n>-<slug>` branch (every `on: push` has a branch filter that leaves it out; no `on: create`)                                  | `pnpm test:pipeline`       | Gate   |
 
 zizmor runs **online in CI** (it can then detect impostor commits behind
 pinned SHAs) and **offline locally**. `.github/zizmor.yml` disables exactly one
@@ -98,19 +98,11 @@ approved the diff. How that stays safe (flow: `docs/pipeline.md`,
 - **Fail closed.** A file list that may be cut off (the compare API lists at
   most 300 files), a path the pipeline cannot parse, or a never-approvable path
   all end in refusal, and a branch that turns out to
-  hold one is deleted. A fix patch never carries protected paths of any kind.
-- **One deliberate exception: Gemini credit.** When the Gemini API answers
-  402 (prepaid credit used up) the automated security review is **skipped, not
-  failed**: the PR is released to human approval with a loud warning that no
-  review ran. Only the API's exact 402 message, read by a trusted script from
-  the CLI's stderr after the reviewer failed, triggers it; every other reviewer
-  failure still fails closed. CI, the threads gate, protected-file approval and
-  the required code-owner approval are unchanged. See
-  [pipeline.md](pipeline.md#when-gemini-credit-runs-out-http-402).
+  hold one is deleted.
 - **Why `.github` stays local.** The workflows, prompts and scripts are the
   trust boundary itself: a change there could weaken this approval, the
   `pipeline/gates` logic or W9. They are never approvable, `tools/security/`,
-  `.npmrc`, `.gitmodules`, `.claude/`, `.gemini/`, `.codex/`, `.pipeline/`
+  `.npmrc`, `.gitmodules`, `.claude/`, `.codex/`, `.pipeline/`
   and `CODEOWNERS` with them, and the pipeline App has no `workflows`
   permission.
 - **What it does not stop.** The owner approves what they read. A dependency
@@ -136,15 +128,15 @@ approved the diff. How that stays safe (flow: `docs/pipeline.md`,
 
 Every project inherits these files, so they are held to a higher bar.
 
-| #   | Requirement                                                                                                                                                                                                                                                                                                                                                                                                                              | Enforced by     | Type   |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------ |
-| A1  | `.claude/settings.json` allow-list names specific subcommands only. Never `pnpm nx:*`, `pnpm exec:*`, `npx:*`, `Bash(*)`, or prefixes like `pnpm nx run` that also match `run-commands`. No wildcard on a task runner or generator (`pnpm nx test:*`, `run-many:*`, `affected:*`, `g …:*`, `pnpm <script>:*`): only fixed commands; `pnpm nx show/graph/format:*` may keep one                                                           | `pnpm security` | Gate   |
-| A2  | Plugins are enabled only from marketplaces pinned to a full 40-char commit SHA (`sha` or `ref`; tags can be moved); otherwise the marketplace is listed but the plugin is off                                                                                                                                                                                                                                                            | `pnpm security` | Gate   |
-| A3  | MCP servers run from the lockfile (`pnpm exec …`): never `npx`/`dlx`/`@latest`, never remote URLs (`.mcp.json`, `.gemini/`, `.codex/`)                                                                                                                                                                                                                                                                                                   | `pnpm security` | Gate   |
-| A4  | The SessionStart hook only runs the frozen install and writes env vars; no downloads besides packages, never `curl … \| sh`                                                                                                                                                                                                                                                                                                              | review          | Review |
-| A5  | AGENTS.md forbids agents from changing workflows, `.claude/settings.json`, pnpm supply-chain settings, overrides, `tools/security/`, `tools/workspace-plugin/` or `tools/pipeline-map/` without an explicit request                                                                                                                                                                                                                      | review          | Review |
-| A6  | No switch turns permission checks or hooks off: Claude `permissions.defaultMode` other than default/ask/plan/acceptEdits/dontAsk, `disableAllHooks`, `skipDangerousModePermissionPrompt` (also in a committed `settings.local.json`); Gemini MCP `trust`, `defaultApprovalMode: yolo`, `hooksConfig.enabled: false`, shell entries in `tools.allowed`; Codex `approval_policy = "never"`/granular, `sandbox_mode = "danger-full-access"` | `pnpm security` | Gate   |
-| A7  | Every task a pre-approved command can run is reviewed: all `package.json` scripts, `nx:run-commands`/`nx:run-script` targets (or targets with an unlisted executor, incl. `nx.json` `targetDefaults`) and Nx plugins match `tools/security/tasks.json` exactly                                                                                                                                                                           | `pnpm security` | Gate   |
+| #   | Requirement                                                                                                                                                                                                                                                                                                                                                                    | Enforced by     | Type   |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- | ------ |
+| A1  | `.claude/settings.json` allow-list names specific subcommands only. Never `pnpm nx:*`, `pnpm exec:*`, `npx:*`, `Bash(*)`, or prefixes like `pnpm nx run` that also match `run-commands`. No wildcard on a task runner or generator (`pnpm nx test:*`, `run-many:*`, `affected:*`, `g …:*`, `pnpm <script>:*`): only fixed commands; `pnpm nx show/graph/format:*` may keep one | `pnpm security` | Gate   |
+| A2  | Plugins are enabled only from marketplaces pinned to a full 40-char commit SHA (`sha` or `ref`; tags can be moved); otherwise the marketplace is listed but the plugin is off                                                                                                                                                                                                  | `pnpm security` | Gate   |
+| A3  | MCP servers run from the lockfile (`pnpm exec …`): never `npx`/`dlx`/`@latest`, never remote URLs (`.mcp.json`, `.codex/`)                                                                                                                                                                                                                                                     | `pnpm security` | Gate   |
+| A4  | The SessionStart hook only runs the frozen install and writes env vars; no downloads besides packages, never `curl … \| sh`                                                                                                                                                                                                                                                    | review          | Review |
+| A5  | AGENTS.md forbids agents from changing workflows, `.claude/settings.json`, pnpm supply-chain settings, overrides, `tools/security/`, `tools/workspace-plugin/` or `tools/pipeline-map/` without an explicit request                                                                                                                                                            | review          | Review |
+| A6  | No switch turns permission checks or hooks off: Claude `permissions.defaultMode` other than default/ask/plan/acceptEdits/dontAsk, `disableAllHooks`, `skipDangerousModePermissionPrompt` (also in a committed `settings.local.json`); Codex `approval_policy = "never"`/granular, `sandbox_mode = "danger-full-access"`                                                        | `pnpm security` | Gate   |
+| A7  | Every task a pre-approved command can run is reviewed: all `package.json` scripts, `nx:run-commands`/`nx:run-script` targets (or targets with an unlisted executor, incl. `nx.json` `targetDefaults`) and Nx plugins match `tools/security/tasks.json` exactly                                                                                                                 | `pnpm security` | Gate   |
 
 The Nx Claude plugin (`nx@nx-claude-plugins`) is listed but **not enabled**:
 its marketplace (`nrwl/nx-ai-agents-config`) can't be pinned to a commit. To

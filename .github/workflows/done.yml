@@ -3,8 +3,8 @@ name: Pipeline · Done
 # A PR closed. Linked issues: closingIssuesReferences, or else the issue a
 # same-repo `issue-<n>-<slug>` head branch names (see planPrClosed in
 # pipeline-lib.mjs).
-# - Merged: the PR and its issues get stage:done (every other stage:* and
-#   fix-loop:* label removed) and move to "Done" in the Project. No router.
+# - Merged: the PR and its issues get stage:done (every other stage:* label
+#   removed) and move to "Done" in the Project. No router.
 # - Closed without merging: each linked issue that is still open and has no
 #   other open PR gets a `pr_closed` outcome note and stage:routing; the
 #   router hands it to a human. The closed PR's stage labels are cleared.

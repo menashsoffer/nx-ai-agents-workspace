@@ -15,17 +15,12 @@ export const STAGES = [
   // never moves an item out of it (see routerSkip).
   'stage:awaiting-approval',
   'stage:building',
-  'stage:reviewing',
-  'stage:fixing',
   'stage:human-approval',
   'stage:routing',
   'stage:needs-attention',
   // Terminal: the PR merged. Set only by done.yml, on the PR and its issues.
   'stage:done',
 ];
-
-export const FIX_LOOP_1 = 'fix-loop:1';
-export const FIX_LOOP_2 = 'fix-loop:2';
 
 /** Project "Status" option name for every stage label. */
 export const STAGE_STATUS = {
@@ -35,8 +30,6 @@ export const STAGE_STATUS = {
   'stage:planned': 'Planned',
   'stage:awaiting-approval': 'Awaiting approval',
   'stage:building': 'Building',
-  'stage:reviewing': 'Reviewing',
-  'stage:fixing': 'Fixing',
   'stage:human-approval': 'Human approval',
   'stage:routing': 'Routing',
   'stage:needs-attention': 'Needs attention',
@@ -53,15 +46,10 @@ export const MARKERS = {
   // are append-only history: never upserted, never edited.
   outcome: '<!-- pipeline:outcome',
   route: '<!-- pipeline:route',
-  fixReply: '<!-- pipeline:fix-reply -->',
-  securityReview: 'pipeline:security-review',
-  // Prefixes with attributes. `finding` opens a blocking Gemini finding's
-  // inline review comment (maps a review thread to its finding id);
-  // `disposition` is the bot's record of an owner's /disposition command.
-  finding: '<!-- pipeline:finding',
+  // Prefix with attributes: the bot's record of an owner's /disposition command.
   disposition: '<!-- pipeline:disposition',
   // The bot's one-line answer inside a review thread where the owner posted
-  // /disposition. Never feedback for the fixer (see selectActionable).
+  // /disposition.
   dispositionReply: '<!-- pipeline:disposition-reply -->',
   // Prefixes with attributes. `protectedApproval` is the bot's approval
   // request on an issue (one per pushed head); `protectedApproved` is its
@@ -70,8 +58,6 @@ export const MARKERS = {
   protectedApproved: '<!-- pipeline:protected-approved',
   // One upserted comment per PR: the review gates and their open findings.
   gates: '<!-- pipeline:gates -->',
-  // A pipeline-authored review body that the fixer must act on.
-  actionable: '<!-- pipeline:actionable -->',
   // The one-time pointer to /restart after a person moved an item out of
   // stage:needs-attention by hand (see decideRestartHint).
   restartHint: '<!-- pipeline:restart-hint -->',
@@ -79,10 +65,6 @@ export const MARKERS = {
 
 export const COPILOT_REVIEWER = 'copilot-pull-request-reviewer[bot]';
 export const COPILOT_LOGINS = [COPILOT_REVIEWER, 'Copilot'];
-
-// Humans whose review feedback may reach the fixer. Anyone else can comment
-// on a public repo, so their text never becomes agent input.
-const TRUSTED_ASSOCIATIONS = ['OWNER', 'MEMBER', 'COLLABORATOR'];
 
 // Agent-produced patches may not carry these without a human. The pipeline's
 // own workflows, prompts and scripts are the trust boundary. Package
@@ -100,7 +82,6 @@ const NEVER_APPROVABLE_PATH_PATTERNS = [
   /(^|\/)CODEOWNERS$/,
   /^\.pipeline\//,
   /^\.claude\//,
-  /^\.gemini\//,
   /^\.codex\//,
   // Security gates.
   /^tools\/security\//,
@@ -125,9 +106,6 @@ export const FORBIDDEN_PATH_PATTERNS = [
   ...APPROVABLE_PATH_PATTERNS,
 ];
 
-const BLOCKING_SEVERITIES = new Set(['critical', 'high', 'medium']);
-const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'];
-
 // ---------------------------------------------------------------- labels
 
 /** Labels to add/remove so that `target` is the only stage label. */
@@ -137,6 +115,29 @@ export function stageTransition(currentLabels, target) {
     add: currentLabels.includes(target) ? [] : [target],
     remove: currentLabels.filter((l) => STAGES.includes(l) && l !== target),
   };
+}
+
+/**
+ * Label edits that leave no stage: for a PR closed without merging, which no
+ * stage may pick up again.
+ */
+export function clearStages(labels) {
+  return {
+    add: [],
+    remove: labels.filter((l) => STAGES.includes(l)),
+  };
+}
+
+/** `labels` after `editLabels(..., { add, remove })`. */
+export const applyLabels = (labels, { add = [], remove = [] }) => [
+  ...new Set([...labels.filter((l) => !remove.includes(l)), ...add]),
+];
+
+// Stages in which automation must leave a PR alone.
+function parkedIn(labels) {
+  return ['stage:needs-attention', 'stage:routing'].find((l) =>
+    labels.includes(l),
+  );
 }
 
 // ---------------------------------------------------------------- naming
@@ -166,7 +167,7 @@ export const isPipelineBranch = (name) =>
   PIPELINE_BRANCH.test(String(name ?? ''));
 
 /** GitHub logins are case-insensitive. */
-export const sameLogin = (a, b) =>
+const sameLogin = (a, b) =>
   Boolean(a && b) && String(a).toLowerCase() === String(b).toLowerCase();
 
 /**
@@ -217,10 +218,7 @@ function escapeUntrusted(text) {
 const CONTEXT_FORMATS = {
   repository: /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/,
   issue: /^#[1-9]\d*$/,
-  'pull request': /^#[1-9]\d*$/,
   branch: PIPELINE_BRANCH,
-  'head commit': /^[0-9a-f]{40}$/,
-  'fix loop': /^[12] of 2$/,
   'prompt version': /^[\w./-]+\.md@[\w.-]+$/,
   'pipeline bot login': /^[A-Za-z0-9-]+(?:\[bot\])?$/,
 };
@@ -592,11 +590,6 @@ export const MAX_LIFETIME_RESETS = 3;
 
 export function emptyState() {
   return {
-    watermark: null,
-    handled: [],
-    // Keys of the review items the latest fix round was started for, so a
-    // routed retry can replay that round (see decideFixRetry).
-    lastBatch: [],
     copilotRequestedFor: null,
     humanApprovalFor: null,
     // Lifetime /restart counter of an ISSUE, written only by the bot's
@@ -622,8 +615,9 @@ const sanitizeAttempts = (value) =>
 
 /**
  * Parses the state comment. Old state has no restart fields, and bad values
- * fall back to 0 / []. The counter is never below the number of recorded
- * attempts, so a damaged `resetCount` cannot hand out free restarts.
+ * fall back to 0 / []; fields this version does not know are dropped. The
+ * counter is never below the number of recorded attempts, so a damaged
+ * `resetCount` cannot hand out free restarts.
  */
 export function parseState(body) {
   const m = STATE_DATA.exec(String(body ?? ''));
@@ -639,7 +633,8 @@ export function parseState(body) {
         : 0;
     return {
       ...emptyState(),
-      ...raw,
+      copilotRequestedFor: raw.copilotRequestedFor ?? null,
+      humanApprovalFor: raw.humanApprovalFor ?? null,
       resetCount: Math.max(count, attempts.length),
       attempts,
     };
@@ -654,14 +649,13 @@ export function parseState(body) {
  */
 export function renderState(state, labels = [], { requireCopilot } = {}) {
   const stage = labels.find((l) => l.startsWith('stage:')) ?? '-';
-  const loop = labels.find((l) => l.startsWith('fix-loop:')) ?? '-';
   return [
     MARKERS.state,
     '**Pipeline state.** Managed by automation. Please do not edit.',
     '',
-    `| stage | fix loop | review items handled | Copilot requested for | human approval for |`,
-    `| --- | --- | --- | --- | --- |`,
-    `| \`${stage}\` | \`${loop}\` | ${state.handled.length} | ${requireCopilot === false ? 'not required' : short(state.copilotRequestedFor)} | ${short(state.humanApprovalFor)} |`,
+    `| stage | Copilot requested for | human approval for |`,
+    `| --- | --- | --- |`,
+    `| \`${stage}\` | ${requireCopilot === false ? 'not required' : short(state.copilotRequestedFor)} | ${short(state.humanApprovalFor)} |`,
     '',
     `lifetime resets: ${state.resetCount ?? 0}/${MAX_LIFETIME_RESETS} · latest attempt: ${state.attempts?.length ? `\`${state.attempts.at(-1).id}\`` : '-'}`,
     '',
@@ -734,620 +728,6 @@ export function issueForAgents({ issue, comments, botLogin }) {
   };
 }
 
-// ---------------------------------------------------------------- fix loop
-
-const hasPipelineMarker = (body) => /<!-- pipeline[-:]/.test(body ?? '');
-
-/**
- * Where review feedback comes from. Only these sources reach the fixer:
- * the pipeline bot, Copilot, and humans who are owners, members or
- * collaborators. Everything else is dropped before it can reach a prompt.
- */
-export function feedbackSource({ user, author_association }, botLogin) {
-  const login = user?.login;
-  if (sameLogin(login, botLogin)) return 'pipeline';
-  if (COPILOT_LOGINS.some((l) => sameLogin(l, login))) return 'copilot';
-  if (user?.type !== 'Bot' && TRUSTED_ASSOCIATIONS.includes(author_association))
-    return 'human';
-  return null;
-}
-
-/**
- * Review feedback the fixer should act on: inline comments and review
- * bodies that are (a) from a trusted source (feedbackSource), (b) not
- * already handled (deduped by key in `state.handled`), (c) at or after the
- * state watermark, (d) not in a resolved thread, (e) not pipeline
- * bookkeeping. With `onlyKeys` (a routed retry), (b) and (c) are replaced
- * by "key is in onlyKeys"; the trust filters still apply.
- *
- * Each item ends as actionable, dropped for good, or deferred (resolved
- * thread that may be reopened, empty comment or review body that may be
- * edited). Findings with a disposition in effect (`dispositioned`: ids from
- * dispositionsInEffect) are dropped for good: the pipeline's inline finding
- * comments, Copilot's threads (named by their top comment) and, in an
- * actionable review body, the finding items themselves. The returned `watermark` only moves past items with a final
- * decision: it stops at the oldest deferred one, so deferred items are
- * scanned again next time. Inline comments count from their review's
- * submission, since comments drafted in a pending review are older than
- * the review that publishes them.
- */
-export function selectActionable({
-  reviews = [],
-  reviewComments = [],
-  resolvedCommentIds = new Set(),
-  state = emptyState(),
-  botLogin = '',
-  ignoreLogins = ['github-actions[bot]'],
-  onlyKeys = null,
-  dispositioned = new Set(),
-  ownerLogin = '',
-}) {
-  const handled = new Set(state.handled);
-  const since = state.watermark ? Date.parse(state.watermark) : -Infinity;
-  const ignored = (item) =>
-    ignoreLogins.includes(item.user?.login) || !feedbackSource(item, botLogin);
-  const submitted = new Map(reviews.map((r) => [r.id, r.submitted_at]));
-  const dismissed = new Set(
-    reviews.filter((r) => r.state === 'DISMISSED').map((r) => r.id),
-  );
-  const withInline = new Set(
-    reviewComments.map((c) => c.pull_request_review_id),
-  );
-  const final = [];
-  const deferred = [];
-
-  const actionable = [];
-  const scan = (key, at, decide) => {
-    const t = Date.parse(at);
-    if (Number.isNaN(t)) return; // not submitted yet
-    if (onlyKeys) {
-      if (!onlyKeys.has(key)) return;
-    } else {
-      if (handled.has(key)) return final.push({ t, at });
-      if (t < since) return;
-    }
-    const item = decide();
-    if (item === DEFER) return deferred.push(t);
-    final.push({ t, at });
-    if (item) actionable.push({ key, ...item });
-  };
-
-  for (const c of reviewComments) {
-    const reviewAt = submitted.get(c.pull_request_review_id);
-    const at =
-      reviewAt && Date.parse(reviewAt) > Date.parse(c.created_at)
-        ? reviewAt
-        : c.created_at;
-    scan(`c${c.id}`, at, () => {
-      if (ignored(c) || dismissed.has(c.pull_request_review_id)) return null;
-      const body = (c.body ?? '').trim();
-      if (body.includes(MARKERS.fixReply)) return null;
-      // An owner's /disposition reply in a finding's thread (and the bot's
-      // answer to it) is bookkeeping: replying in a thread submits a review,
-      // which runs the fixer before the thread is resolved.
-      if (body.includes(MARKERS.dispositionReply)) return null;
-      if (
-        ownerLogin &&
-        sameLogin(c.user?.login, ownerLogin) &&
-        !parseDispositionComment(body).ignore
-      )
-        return null;
-      if (dispositioned.size) {
-        const own = sameLogin(c.user?.login, botLogin)
-          ? inlineFindingId(body)
-          : null;
-        const copilot = COPILOT_LOGINS.some((l) => sameLogin(l, c.user?.login))
-          ? copilotThreadId(c.in_reply_to_id ?? c.id)
-          : null;
-        if (dispositioned.has(own) || dispositioned.has(copilot)) return null;
-      }
-      if (!body || resolvedCommentIds.has(c.id)) return DEFER;
-      return {
-        kind: 'inline',
-        id: c.id,
-        author: c.user?.login,
-        path: c.path,
-        line: c.line ?? c.original_line ?? null,
-        diffHunk: c.diff_hunk,
-        body,
-      };
-    });
-  }
-  for (const r of reviews) {
-    scan(`r${r.id}`, r.submitted_at, () => {
-      // Approvals carry no requests; a dismissed review was withdrawn.
-      if (ignored(r) || ['APPROVED', 'DISMISSED'].includes(r.state))
-        return null;
-      if (COPILOT_LOGINS.includes(r.user?.login)) return null; // summary only
-      const body = (r.body ?? '').trim();
-      if (hasPipelineMarker(body) && !body.includes(MARKERS.actionable))
-        return null;
-      // An empty body may be edited later, unless the review's content is
-      // in its inline comments (the usual case), which are scanned above.
-      if (!body) return withInline.has(r.id) ? null : DEFER;
-      const cut = dropDispositioned(body, dispositioned);
-      if (cut.total > 0 && cut.remaining === 0) return null;
-      return {
-        kind: 'review',
-        id: r.id,
-        author: r.user?.login,
-        state: r.state,
-        body: cut.body,
-      };
-    });
-  }
-
-  const limit = Math.min(...deferred); // Infinity when nothing is deferred
-  let watermark = state.watermark;
-  let best = since;
-  for (const f of final)
-    if (f.t <= limit && f.t > best) [best, watermark] = [f.t, f.at];
-  return { actionable, watermark };
-}
-
-const DEFER = Symbol('defer');
-
-/**
- * Review threads fix-reply may resolve: unresolved, containing one of the
- * fixed inline items, and with **every** comment written by an
- * auto-resolve login (the pipeline bot, Copilot). A thread where a person
- * wrote anything stays open for them.
- */
-export function threadsToResolve(threads, itemIds, autoResolveLogins) {
-  const ids = new Set(itemIds);
-  const auto = (login) => autoResolveLogins.some((l) => sameLogin(l, login));
-  return threads.filter(
-    (t) =>
-      !t.isResolved &&
-      t.commentIds.some((id) => ids.has(id)) &&
-      t.authors.length > 0 &&
-      t.authors.every(auto),
-  );
-}
-
-/**
- * A PR's fix state after the owner's `/restart fixing`: the review items the
- * fix loop already took (`handled`, `lastBatch`) and the watermark are
- * forgotten, so feedback that is still open (an unresolved thread from a round
- * that failed before it pushed anything) is looked at again. Without this a
- * restart gets a fresh budget but finds nothing new, and the PR waits at
- * `stage:fixing` with nothing running. Everything else in the state stays.
- * Resolved threads, dispositioned findings and the bot's own replies are still
- * skipped by selectActionable, so only real open feedback comes back.
- */
-export const resetFixItems = (state) => ({
-  ...state,
-  watermark: null,
-  handled: [],
-  lastBatch: [],
-});
-
-const FIX_LOOPS = [FIX_LOOP_1, FIX_LOOP_2];
-const isFixLoop = (l) => String(l).startsWith('fix-loop:');
-
-/**
- * Label edits that make `stage` the only stage and clear the fix budget
- * (every `fix-loop:*` label).
- */
-export function resetFixLoop(labels, stage) {
-  const t = stageTransition(labels, stage);
-  return {
-    add: t.add,
-    remove: [...t.remove, ...labels.filter(isFixLoop)],
-  };
-}
-
-/**
- * Label edits that leave no stage and no fix budget: for a PR closed
- * without merging, which no stage may pick up again.
- */
-export function clearStages(labels) {
-  return {
-    add: [],
-    remove: labels.filter((l) => STAGES.includes(l) || isFixLoop(l)),
-  };
-}
-
-/** `labels` after `editLabels(..., { add, remove })`. */
-export const applyLabels = (labels, { add = [], remove = [] }) => [
-  ...new Set([...labels.filter((l) => !remove.includes(l)), ...add]),
-];
-
-/**
- * The fix-loop state machine. No new feedback -> noop (idempotent reruns).
- * none -> fix-loop:1 -> fix-loop:2 -> escalate (an outcome note with
- * `budget_exhausted`; the router hands it to a human). `add`/`remove` are
- * the complete label edits. Escalating keeps `fix-loop:2`: moving the PR
- * out of stage:needs-attention by hand must not give it a fresh budget.
- * Only the owner's `/restart fixing` (resetFixLoop) clears the labels.
- */
-export function decideFix({ labels, actionable }) {
-  const parked = parkedIn(labels);
-  if (parked) return { action: 'noop', reason: `PR is parked in ${parked}` };
-  if (actionable.length === 0)
-    return { action: 'noop', reason: 'no new actionable review comments' };
-  if (labels.includes(FIX_LOOP_2))
-    return {
-      action: 'escalate',
-      reason: 'fix loop budget (2) exhausted',
-      add: [],
-      remove: [],
-    };
-  const loop = labels.includes(FIX_LOOP_1) ? 2 : 1;
-  const t = stageTransition(labels, 'stage:fixing');
-  return {
-    action: 'fix',
-    loop,
-    add: [...t.add, FIX_LOOPS[loop - 1]],
-    remove: [...t.remove, ...(loop === 2 ? [FIX_LOOP_1] : [])],
-  };
-}
-
-/**
- * A routed retry of a fix round whose agent failed: replay the same batch
- * (state.lastBatch) under the current fix-loop label. It never consumes a
- * new round, so the fix-loop budget stays exactly as decideFix defines it.
- */
-export function decideFixRetry({ labels, batch }) {
-  const parked = parkedIn(labels);
-  if (parked) return { action: 'noop', reason: `PR is parked in ${parked}` };
-  const loop = labels.includes(FIX_LOOP_2)
-    ? 2
-    : labels.includes(FIX_LOOP_1)
-      ? 1
-      : 0;
-  if (!loop) return { action: 'noop', reason: 'no fix round to retry' };
-  if (batch.length === 0)
-    return { action: 'noop', reason: 'the last fix batch has no open items' };
-  return { action: 'fix', loop, retry: true };
-}
-
-// Stages in which automation must leave a PR alone.
-function parkedIn(labels) {
-  return ['stage:needs-attention', 'stage:routing'].find((l) =>
-    labels.includes(l),
-  );
-}
-
-// ---------------------------------------------------------------- security
-
-/**
- * Extracts and validates the JSON report from the reviewer's reply. The
- * reply must hold exactly one fenced `json` block: with two, injected PR
- * content could append a clean report after the real one. Zero or several
- * blocks is an error, which the workflow treats as a failed review.
- */
-export function parseSecurityReport(text, { readLines } = {}) {
-  const src = String(text ?? '');
-  const opens = src.match(/```[ \t]*json\b/gi) ?? [];
-  const fences = [...src.matchAll(/```json[ \t]*\r?\n([\s\S]*?)\r?\n```/g)];
-  if (opens.length !== 1 || fences.length !== 1)
-    return {
-      ok: false,
-      error: `reviewer output must contain exactly one json block, found ${opens.length}`,
-    };
-  const raw = fences[0][1];
-  let obj;
-  try {
-    obj = JSON.parse(raw);
-  } catch {
-    return { ok: false, error: 'reviewer output is not valid JSON' };
-  }
-  if (!obj || typeof obj !== 'object' || !Array.isArray(obj.findings))
-    return { ok: false, error: 'reviewer output has no findings array' };
-  const parsed = obj.findings.map((f) => {
-    const finding = {
-      severity: SEVERITIES.includes(String(f.severity).toLowerCase())
-        ? String(f.severity).toLowerCase()
-        : 'medium', // unknown severity: fail safe, treat as blocking
-      category: f.category === 'correctness' ? 'correctness' : 'security',
-      file: typeof f.file === 'string' ? f.file.replace(/^\.?\//, '') : null,
-      line: Number.isInteger(f.line) && f.line > 0 ? f.line : null,
-      title: String(f.title ?? 'Untitled finding').slice(0, 200),
-      detail: String(f.detail ?? '').slice(0, 4000),
-      suggestion: String(f.suggestion ?? '').slice(0, 4000),
-    };
-    const anchor = verifiedAnchor(
-      {
-        file: finding.file,
-        line: finding.line,
-        topic: f.topic,
-        evidence: f.evidence,
-      },
-      readLines,
-    );
-    const withAnchor = { ...finding, ...anchor };
-    return {
-      id: findingId(withAnchor),
-      ...withAnchor,
-      idBasis: hasEvidenceId(withAnchor) ? 'evidence' : 'text',
-    };
-  });
-  // The same finding reported twice is one finding (one id, one thread);
-  // the more severe copy wins.
-  const byId = new Map();
-  for (const f of parsed) {
-    const seen = byId.get(f.id);
-    if (
-      !seen ||
-      SEVERITIES.indexOf(f.severity) < SEVERITIES.indexOf(seen.severity)
-    )
-      byId.set(f.id, f);
-  }
-  return {
-    ok: true,
-    summary: String(obj.summary ?? '').slice(0, 4000),
-    findings: [...byId.values()],
-  };
-}
-
-/**
- * The closed list of finding topics. The reviewer picks one per finding
- * (security-review.md lists the same values); it is one third of a finding's
- * stable id, so it must not be free text.
- */
-export const FINDING_TOPICS = [
-  'xss',
-  'injection',
-  'secrets',
-  'authz',
-  'path-traversal',
-  'ssrf',
-  'workflow-permissions',
-  'supply-chain',
-  'unsafe-eval',
-  'error-handling',
-  'logic',
-  'other',
-];
-
-/** A code line with whitespace collapsed, for comparing and hashing. */
-const normalizeLine = (t) =>
-  String(t ?? '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-/**
- * The `topic` and `evidence` a finding may use for its id, after checking
- * them against the file at the reviewed head. `readLines(file)` returns the
- * file's lines (null: unreadable). A topic outside FINDING_TOPICS, missing,
- * multi-line or empty evidence, or evidence that is not a whole line of the
- * file gives `{ topic: null, evidence: null }`: the id then falls back to
- * the finding's text. When the line occurs several times in the file,
- * `occurrence` is the 1-based ordinal of the copy nearest the reported line,
- * so two identical lines are two findings, not one.
- */
-function verifiedAnchor({ file, line, topic, evidence }, readLines) {
-  const none = { topic: null, evidence: null };
-  const t = String(topic ?? '')
-    .trim()
-    .toLowerCase();
-  if (!FINDING_TOPICS.includes(t)) return none;
-  const raw = String(evidence ?? '').trim();
-  const norm = normalizeLine(raw);
-  if (!file || !norm || /[\r\n]/.test(raw)) return none;
-  const lines = readLines?.(file);
-  if (!Array.isArray(lines)) return none;
-  const at = lines.flatMap((l, i) =>
-    normalizeLine(l) === norm ? [i + 1] : [],
-  );
-  if (!at.length) return none;
-  if (at.length === 1) return { topic: t, evidence: norm };
-  const nearest = line
-    ? at.reduce((a, b) => (Math.abs(b - line) < Math.abs(a - line) ? b : a))
-    : at[0];
-  return { topic: t, evidence: norm, occurrence: at.indexOf(nearest) + 1 };
-}
-
-const hasEvidenceId = ({ topic, evidence }) =>
-  FINDING_TOPICS.includes(topic) && Boolean(normalizeLine(evidence));
-
-/**
- * Stable id of a Gemini finding: `S-` + 8 hex of a sha256.
- *
- * With a topic and an evidence line (parseSecurityReport checked them
- * against the file), the hash covers file, topic and the whitespace-collapsed
- * evidence line, plus the occurrence ordinal when that line appears more
- * than once in the file. Wording, line number, severity, category and the
- * suggested fix are not part of it, so the same problem keeps its id when
- * the reviewer re-words it or a rebase moves the line; a different line or
- * topic is a different finding and needs its own decision.
- *
- * Without them it falls back to the text: file, title and detail, lower-cased
- * with punctuation and whitespace collapsed. That id changes when the
- * reviewer re-words the finding (`idBasis: 'text'`, flagged in the review).
- */
-export function findingId(f) {
-  const { file, title, detail } = f;
-  const norm = (t) =>
-    String(t ?? '')
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, ' ')
-      .trim();
-  const key = hasEvidenceId(f)
-    ? [
-        'evidence',
-        String(file ?? ''),
-        f.topic,
-        normalizeLine(f.evidence),
-        f.occurrence ? String(f.occurrence) : '',
-      ]
-    : [String(file ?? ''), norm(title), norm(detail)];
-  return `S-${createHash('sha256').update(key.join('\n')).digest('hex').slice(0, 8)}`;
-}
-
-/** The lines of the new version of a file that a patch shows (added and context). */
-export function patchNewLines(patch) {
-  const out = [];
-  let inHunk = false;
-  for (const row of String(patch ?? '').split('\n')) {
-    if (/^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/.test(row)) {
-      inHunk = true;
-      continue;
-    }
-    if (!inHunk || row.startsWith('-') || row.startsWith('\\')) continue;
-    out.push(row.slice(1));
-  }
-  return out;
-}
-
-const isBlocking = (f) => BLOCKING_SEVERITIES.has(f.severity);
-
-/** New-file line numbers a review comment may target, from a file's patch. */
-export function commentableLines(patch) {
-  const lines = new Set();
-  let n = 0;
-  for (const row of String(patch ?? '').split('\n')) {
-    const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(row);
-    if (h) {
-      n = Number(h[1]);
-      continue;
-    }
-    if (n === 0 || row.startsWith('-') || row.startsWith('\\')) continue;
-    lines.add(n++);
-  }
-  return lines;
-}
-
-function findingMarkdown(f, idAtEnd = true) {
-  return [
-    `**[${f.severity}] ${f.category}: ${f.title}**${idAtEnd ? ` · \`${f.id}\`` : ''}`,
-    f.detail,
-    f.suggestion ? `**Suggested fix:** ${f.suggestion}` : '',
-    f.idBasis === 'text'
-      ? '_No stable code anchor: this id may change on re-review._'
-      : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-}
-
-/** An inline review comment. The marker ties its thread to the finding id. */
-function renderFinding(f) {
-  return `${MARKERS.finding} id=${f.id} -->\n${findingMarkdown(f)}`;
-}
-
-const findingWhere = (f) =>
-  `${f.file ?? '(general)'}${f.line ? `:${f.line}` : ''}`;
-
-/**
- * A finding as a top-level list item in a review body: the id first, every
- * other line indented, so dropDispositioned can cut exactly this item.
- */
-function findingBullet(f) {
-  const [first, ...rest] = findingMarkdown(f, false).split('\n');
-  return [
-    `- \`${f.id}\` ${findingWhere(f)}: ${first}`,
-    ...rest.map((l) => (l ? `  ${l}` : '')),
-  ].join('\n');
-}
-
-/**
- * Turns a parsed report into a PR review. Blocking findings on commentable
- * lines become inline comments (each is a thread that must be resolved);
- * blocking findings elsewhere go in the body, which is then marked
- * actionable. Non-blocking findings are informational. `dispositioned`
- * (finding id -> kind) holds findings the owner already decided on: they
- * stay blocking findings (the review is not clean) but open no thread and
- * are not actionable, so a finding that carries over to a new head does not
- * come back as an open thread.
- */
-export function buildSecurityReview({
-  report,
-  sha,
-  files,
-  promptVer,
-  dispositioned = new Map(),
-}) {
-  const lineMap = new Map(
-    files.map((f) => [f.filename, commentableLines(f.patch)]),
-  );
-  const blocking = report.findings.filter(isBlocking);
-  const carried = blocking.filter((f) => dispositioned.has(f.id));
-  const open = blocking.filter((f) => !dispositioned.has(f.id));
-  const inline = [];
-  const inlineFindings = [];
-  const inBody = [];
-  for (const f of open) {
-    if (f.file && f.line && lineMap.get(f.file)?.has(f.line)) {
-      inline.push({
-        path: f.file,
-        line: f.line,
-        side: 'RIGHT',
-        body: renderFinding(f),
-      });
-      inlineFindings.push(f);
-    } else inBody.push(f);
-  }
-  const info = report.findings.filter((f) => !isBlocking(f));
-  const clean = blocking.length === 0;
-  const body = [
-    `<!-- ${MARKERS.securityReview} sha=${sha} verdict=${clean ? 'clean' : 'changes'} prompt=${promptVer} -->`,
-    inBody.length ? MARKERS.actionable : '',
-    `### Security & correctness review: ${clean ? 'clean' : `${blocking.length} blocking finding(s)`}${carried.length ? ` (${carried.length} already dispositioned)` : ''}`,
-    `Reviewed commit \`${sha.slice(0, 7)}\`. Automated review; the required human approval still applies.`,
-    report.summary,
-    inBody.length
-      ? `#### Blocking findings not attached to a diff line\n\n${inBody.map(findingBullet).join('\n')}`
-      : '',
-    carried.length
-      ? `#### Already dispositioned by the owner\n\n${carried
-          .map(
-            (f) =>
-              `- \`${f.id}\` [${f.severity}] ${findingWhere(f)} ${f.title} (${dispositioned.get(f.id)})`,
-          )
-          .join('\n')}`
-      : '',
-    info.length
-      ? `<details><summary>${info.length} non-blocking note(s)</summary>\n\n${info
-          .map(
-            (f) =>
-              `- [${f.severity}] \`${f.id}\` ${f.file ?? ''}${f.line ? `:${f.line}` : ''} ${f.title}: ${f.detail}`,
-          )
-          .join('\n')}\n\n</details>`
-      : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-  // Used when GitHub rejects the inline comments: the same findings as
-  // list items in one actionable body.
-  const fallbackBody = inline.length
-    ? [
-        body,
-        inBody.length ? '' : MARKERS.actionable,
-        '#### Findings',
-        ...inlineFindings.map(findingBullet),
-      ]
-        .filter(Boolean)
-        .join('\n\n')
-    : body;
-  return {
-    clean,
-    body,
-    fallbackBody,
-    comments: inline,
-    // The finding behind each entry of `comments`, same order.
-    inlineFindings,
-    blockingFindings: blocking,
-    blockingCount: blocking.length,
-    dispositionedCount: carried.length,
-  };
-}
-
-/**
- * The `details` of a security outcome note: the reviewed commit, the number
- * of blocking findings and one line per finding, id first. approval and
- * /disposition read the ids back with securityIdsForHead.
- */
-export function securityOutcomeDetails({ sha, findings }) {
-  return [
-    `head=${sha} blocking=${findings.length}`,
-    ...findings.map(
-      (f) => `${f.id} [${f.severity}] ${findingWhere(f)} ${f.title}`,
-    ),
-  ];
-}
-
 // ---------------------------------------------------------------- dispositions
 
 export const DISPOSITION_KINDS = [
@@ -1359,9 +739,8 @@ const DISPOSITION_MIN_REASON = 10;
 const DISPOSITION_MAX_REASON = 500;
 const DISPOSITION_MAX_LINES = 20;
 
-// `S-` ids are Gemini findings (findingId); `C-<n>` is the Copilot review
-// thread whose top comment has database id n.
-const FINDING_ID = /^(?:S-[0-9a-f]{8}|C-\d{1,15})$/;
+// `C-<n>` is the Copilot review thread whose top comment has database id n.
+const FINDING_ID = /^C-\d{1,15}$/;
 
 /** Id of a Copilot review thread: `C-` + its top comment's database id. */
 export const copilotThreadId = (topCommentId) => `C-${topCommentId}`;
@@ -1448,7 +827,7 @@ export function parseDispositionComment(body, { thread } = {}) {
       );
     const [, id, kind, reason] = m;
     if (!FINDING_ID.test(id))
-      return fail(i, 'the finding id must look like S-1a2b3c4d or C-123456');
+      return fail(i, 'the finding id must look like C-123456');
     if (thread && id !== thread.id)
       return fail(i, `this thread is ${thread.id}; the command names ${id}`);
     if (!DISPOSITION_KINDS.includes(kind))
@@ -1500,22 +879,12 @@ export function checkDispositionAuthor({ login, type, ownerLogin }) {
 }
 
 /**
- * Checks parsed commands against what can be dispositioned right now:
- * blocking Gemini findings of the current head's review (`geminiIds`) and
- * open Copilot threads (`copilotIds`). One unknown id rejects all.
+ * Checks parsed commands against what can be dispositioned right now: open
+ * Copilot threads (`copilotIds`). One unknown id rejects all.
  */
-export function validateDispositions({
-  commands,
-  geminiIds = new Set(),
-  copilotIds = new Set(),
-}) {
+export function validateDispositions({ commands, copilotIds = new Set() }) {
   for (const { id } of commands) {
-    if (id.startsWith('S-') && !geminiIds.has(id))
-      return {
-        ok: false,
-        error: `${id} is not a blocking finding of the security review of the current commit`,
-      };
-    if (id.startsWith('C-') && !copilotIds.has(id))
+    if (!copilotIds.has(id))
       return { ok: false, error: `${id} is not an open Copilot review thread` };
   }
   return { ok: true };
@@ -1556,7 +925,7 @@ export function renderDispositionNote({
 }
 
 const DISPOSITION_HEADER =
-  /^<!-- pipeline:disposition id=(S-[0-9a-f]{8}|C-\d{1,15}) kind=(accepted-risk|false-positive|out-of-scope) head=([0-9a-f]{7,40}) by=([\w.[\]-]+) comment=(\d+) -->\n/;
+  /^<!-- pipeline:disposition id=(C-\d{1,15}) kind=(accepted-risk|false-positive|out-of-scope) head=([0-9a-f]{7,40}) by=([\w.[\]-]+) comment=(\d+) -->\n/;
 
 /**
  * The disposition records written by the pipeline bot. Anyone can paste a
@@ -1582,12 +951,9 @@ export function parseDispositionNotes(comments, botLogin) {
 }
 
 /**
- * Dispositions in effect, as finding id -> kind (the latest record wins). A
+ * Dispositions in effect, as thread id -> kind (the latest record wins). A
  * record counts only if the owner made it (`by` is the pipeline owner; with
- * no owner, none count). It is bound to the head it was recorded on, but ids
- * are content-based (findingId): after a push, the same finding on the new
- * head has the same id, so the record still covers it. A finding that was
- * fixed is simply not in the new head's review.
+ * no owner, none count).
  */
 export function dispositionKinds({ records, ownerLogin }) {
   return new Map(
@@ -1597,147 +963,15 @@ export function dispositionKinds({ records, ownerLogin }) {
   );
 }
 
-/** Finding ids whose disposition is in effect (see dispositionKinds). */
-export const dispositionsInEffect = (input) =>
-  new Set(dispositionKinds(input).keys());
-
-// ---------------------------------------------------------------- findings
-
-// ---------------------------------------------------------------- gemini credit
-
 /**
- * What the Gemini CLI prints on stderr when the Gemini API answers 402 (the
- * prepaid credit is used up). security.yml sets the review job's `billing`
- * output when the action's error output contains exactly this text (a test
- * keeps the two in step), so any other failure of the reviewer, or a changed
- * message, still fails the review closed.
+ * Sorts review threads into the ones the owner can disposition. `threads`
+ * come from github.mjs reviewThreads (with `first` = the top comment).
+ * Copilot threads start with a Copilot comment and have an id a disposition
+ * can name; other threads (people) are only counted.
  */
-export const GEMINI_BILLING_ERROR =
-  '_ApiError: {"error":{"code":402,"message":"Your prepayment credits are depleted';
-
-/** Whether a Gemini CLI stderr text holds the API's 402 credit-depleted error. */
-export const isGeminiBillingError = (text) =>
-  String(text ?? '').includes(GEMINI_BILLING_ERROR);
-
-const securitySkippedDetail = (sha) => `head=${sha} skipped=billing`;
-
-/**
- * The outcome note of a security review that was SKIPPED because Gemini
- * answered 402. It is a success (nothing to route: the PR goes on to human
- * approval) whose text says plainly that no review ran, and whose first
- * detail line is what securitySkippedForHead reads back.
- */
-export function securitySkippedOutcome({ sha, promptVer }) {
-  return {
-    stage: 'security',
-    result: 'success',
-    summary: `WARNING: the security review of ${String(sha).slice(0, 7)} was SKIPPED. The Gemini API answered 402 (credits depleted), so no automated review ran. Renew the Google Gemini subscription or credits.`,
-    details: [securitySkippedDetail(sha)],
-    prompt_version: `security-review.md@${promptVer}`,
-  };
-}
-
-/**
- * Whether the latest security outcome note of the pipeline bot for `sha` is a
- * skipped review (a later real review of the same commit, after the credit
- * was renewed and the review re-run, replaces it).
- */
-export function securitySkippedForHead({ comments, botLogin, sha }) {
-  let skipped = false;
-  for (const c of comments) {
-    if (!sameLogin(c.user?.login, botLogin)) continue;
-    const parsed = parseOutcome(c.body);
-    if (!parsed.ok) continue;
-    const { outcome } = parsed;
-    if (outcome.stage !== 'security' || outcome.result !== 'success') continue;
-    const first = outcome.details[0] ?? '';
-    if (first === securitySkippedDetail(sha)) skipped = true;
-    else if (new RegExp(`^head=${sha} blocking=\\d+$`).test(first))
-      skipped = false;
-  }
-  return skipped;
-}
-
-/**
- * The blocking findings recorded for `sha` in the latest security outcome
- * note of the pipeline bot (see securityOutcomeDetails), or null when that
- * commit has no such note. `complete` is false when the note could not list
- * every blocking finding (the outcome's detail list is capped).
- */
-export function securityIdsForHead({ comments, botLogin, sha }) {
-  let found = null;
-  for (const c of comments) {
-    if (!sameLogin(c.user?.login, botLogin)) continue;
-    const parsed = parseOutcome(c.body);
-    if (!parsed.ok) continue;
-    const { outcome } = parsed;
-    if (outcome.stage !== 'security' || outcome.result !== 'success') continue;
-    const head = /^head=([0-9a-f]+) blocking=(\d+)$/.exec(
-      outcome.details[0] ?? '',
-    );
-    if (!head || head[1] !== sha) continue;
-    const findings = outcome.details
-      .slice(1)
-      .map((d) => /^(S-[0-9a-f]{8}) (.*)$/.exec(d))
-      .filter(Boolean)
-      .map((m) => ({ id: m[1], text: m[2] }));
-    found = { findings, blocking: Number(head[2]) };
-  }
-  if (!found) return null;
-  const ids = [...new Set(found.findings.map((f) => f.id))];
-  return {
-    ids,
-    findings: found.findings,
-    blocking: found.blocking,
-    complete: ids.length >= found.blocking,
-  };
-}
-
-const BULLET_ID = /^- `(S-[0-9a-f]{8})` /;
-const FINDING_COMMENT = /^<!-- pipeline:finding id=(S-[0-9a-f]{8}) -->/;
-
-/** Finding id of an inline comment the security publisher wrote, if any. */
-export const inlineFindingId = (body) =>
-  FINDING_COMMENT.exec(String(body ?? ''))?.[1] ?? null;
-
-/**
- * Cuts the dispositioned findings out of a review body (the list items
- * findingBullet writes: an id line plus indented lines). Returns the new
- * body and how many id-bearing items there were and remain.
- */
-export function dropDispositioned(body, dispositioned) {
-  const kept = [];
-  let total = 0;
-  let remaining = 0;
-  let skipping = false;
-  for (const line of String(body ?? '').split('\n')) {
-    const m = BULLET_ID.exec(line);
-    if (m) {
-      total++;
-      skipping = dispositioned.has(m[1]);
-      if (!skipping) remaining++;
-    } else if (skipping && (line === '' || line.startsWith('  '))) {
-      continue;
-    } else skipping = false;
-    if (!skipping) kept.push(line);
-  }
-  return { body: kept.join('\n'), total, remaining };
-}
-
-/**
- * Sorts review threads into the findings the owner can disposition.
- * `threads` come from github.mjs reviewThreads (with `first` = the top
- * comment). Gemini threads are the bot's inline finding comments, Copilot
- * threads start with a Copilot comment; other threads (people) are only
- * counted. Every thread has an id a disposition can name.
- */
-export function classifyThreads(threads, botLogin) {
+export function classifyThreads(threads) {
   return threads.map((t) => {
     const first = t.first ?? {};
-    const gemini = sameLogin(first.author, botLogin)
-      ? inlineFindingId(first.body)
-      : null;
-    if (gemini) return { source: 'gemini', id: gemini, thread: t };
     if (COPILOT_LOGINS.some((l) => sameLogin(l, first.author)))
       return { source: 'copilot', id: copilotThreadId(first.id), thread: t };
     return { source: 'other', id: null, thread: t };
@@ -2218,19 +1452,15 @@ export const GATES_CONTEXT = 'pipeline/gates';
 const CI_FAILED = ['failure', 'timed_out'];
 
 /**
- * The review gates for one head commit, in order: ci, Gemini security
- * review (clean, or every finding fixed away or dispositioned), review
- * threads, Copilot review (only when `requireCopilot`), protected-file
- * approval. Returns the checks
- * and the value for the `pipeline/gates` commit status:
+ * The review gates for one head commit, in order: ci, review threads,
+ * Copilot review (only when `requireCopilot`), protected-file approval.
+ * Returns the checks and the value for the `pipeline/gates` commit status:
  * - `success`: every check holds;
- * - `failure`: a real blocker (ci failed, the reviewer errored, a required
- *   approval was refused);
+ * - `failure`: a real blocker (ci failed, a required approval was refused);
  * - `pending` otherwise, its description naming the first missing check.
  *
- * `securityFindings` is securityIdsForHead for this head (null: none);
- * `dispositioned` is dispositionsInEffect; `securityJobConclusion` is the
- * `security` CI job's check run (undefined: no such run);
+ * `securityJobConclusion` is the `security` CI job's check run (undefined:
+ * no such run);
  * `protectedRequired` / `protectedApprovalState` come from
  * evaluateProtectedApproval (`required`, `state`). `requireCopilot`
  * (parseRequireCopilot, the REQUIRE_COPILOT variable) turns the Copilot
@@ -2239,10 +1469,6 @@ const CI_FAILED = ['failure', 'timed_out'];
 export function evaluateGates({
   ciConclusion,
   securityJobConclusion,
-  securityState,
-  securityFindings = null,
-  securitySkipped = false,
-  dispositioned = new Set(),
   unresolvedThreads = 0,
   copilotReviewedHead = false,
   requireCopilot = false,
@@ -2281,46 +1507,6 @@ export function evaluateGates({
       'CI',
       `the security job is ${securityJobConclusion ?? 'running'}`,
     );
-  })();
-
-  const security = (() => {
-    const label = 'Gemini security review';
-    // A review skipped for Gemini credit is released, loudly: the row says
-    // so and the hand-off comment tells the owner to review the change.
-    if (securityState === 'success' && securitySkipped)
-      return {
-        ...ok(
-          'security',
-          label,
-          'SKIPPED: Gemini credits depleted (402), no automated review ran',
-        ),
-        warn: true,
-      };
-    if (securityState === 'success') return ok('security', label, 'clean');
-    if (securityState === 'error')
-      return fail('security', label, 'the review failed to run');
-    if (securityState !== 'failure')
-      return wait('security', label, `review is ${securityState ?? 'missing'}`);
-    if (!securityFindings)
-      return wait(
-        'security',
-        label,
-        'findings are not recorded for this commit',
-      );
-    if (!securityFindings.complete)
-      return wait(
-        'security',
-        label,
-        'the findings list is incomplete: fix findings',
-      );
-    const open = securityFindings.ids.filter((id) => !dispositioned.has(id));
-    if (open.length)
-      return wait(
-        'security',
-        label,
-        `${open.length} of ${securityFindings.ids.length} finding(s) need a fix or a /disposition`,
-      );
-    return ok('security', label, 'all findings dispositioned');
   })();
 
   const threads =
@@ -2364,7 +1550,7 @@ export function evaluateGates({
               : 'the approval status is not set yet',
           );
 
-  const checks = [ci, security, threads, copilot, protectedApproval];
+  const checks = [ci, threads, copilot, protectedApproval];
   const failed = checks.find((c) => c.state === 'failure');
   const missing = checks.find((c) => c.state !== 'success');
   const blocker = failed ?? missing;
@@ -2372,18 +1558,9 @@ export function evaluateGates({
     state: failed ? 'failure' : missing ? 'pending' : 'success',
     description: blocker
       ? `${blocker.label}: ${blocker.detail}`
-      : `${[
-          'CI',
-          ...(security.warn ? [] : ['Gemini review']),
-          ...(requireCopilot ? ['Copilot review'] : []),
-          'threads',
-        ]
+      : `${['CI', ...(requireCopilot ? ['Copilot review'] : []), 'threads']
           .join(', ')
-          .replace(/, ([^,]*)$/, ' and $1')} all satisfied${
-          security.warn
-            ? '; WARNING: the Gemini review was SKIPPED (credits depleted)'
-            : ''
-        }`,
+          .replace(/, ([^,]*)$/, ' and $1')} all satisfied`,
     blockedBy: blocker?.key ?? null,
     checks,
   };
@@ -2420,8 +1597,7 @@ export function renderGatesComment({
     '| gate | state | detail |',
     '| --- | --- | --- |',
     ...gates.checks.map(
-      (c) =>
-        `| ${c.label} | ${c.warn ? '⚠️' : GATE_ICON[c.state]} | ${gateCell(c.detail)} |`,
+      (c) => `| ${c.label} | ${GATE_ICON[c.state]} | ${gateCell(c.detail)} |`,
     ),
   ];
   if (open.length) {
@@ -2487,12 +1663,12 @@ export const parseRequireCopilot = (value) => value === 'true';
 /**
  * Gate for the Copilot review (only when `requireCopilot`) and the
  * human-approval hand-off. All deterministic (see evaluateGates): CI
- * green, the Gemini review clean or dispositioned, zero unresolved
- * threads and, with the Copilot gate on, Copilot reviewed the head. With
- * it off, no Copilot review is requested and the PR goes straight to
- * human approval once the other gates hold. Whatever the action, `gates` is the value for the `pipeline/gates`
- * status of this head (null when the PR is not open). A parked PR is left
- * alone, but its status still says what holds.
+ * green, zero unresolved threads and, with the Copilot gate on, Copilot
+ * reviewed the head. With it off, no Copilot review is requested and the PR
+ * goes straight to human approval once the other gates hold. Whatever the
+ * action, `gates` is the value for the `pipeline/gates` status of this head
+ * (null when the PR is not open). A parked PR is left alone, but its status
+ * still says what holds.
  */
 export function evaluateApproval({
   prState,
@@ -2500,10 +1676,6 @@ export function evaluateApproval({
   headSha,
   ciConclusion,
   securityJobConclusion,
-  securityState,
-  securityFindings,
-  securitySkipped = false,
-  dispositioned,
   unresolvedThreads,
   copilotReviewedHead,
   requireCopilot = false,
@@ -2516,10 +1688,6 @@ export function evaluateApproval({
   const gates = evaluateGates({
     ciConclusion,
     securityJobConclusion,
-    securityState,
-    securityFindings,
-    securitySkipped,
-    dispositioned,
     unresolvedThreads,
     copilotReviewedHead,
     requireCopilot,
@@ -2530,7 +1698,7 @@ export function evaluateApproval({
   if (parked) return { action: 'noop', reason: `PR is in ${parked}`, gates };
   // Copilot is asked to review only once everything before it holds.
   const before = gates.checks
-    .filter((c) => ['ci', 'security', 'threads'].includes(c.key))
+    .filter((c) => ['ci', 'threads'].includes(c.key))
     .find((c) => c.state !== 'success');
   if (before) return { action: 'wait', reason: before.detail, gates };
   if (requireCopilot && !copilotReviewedHead) {
@@ -2597,7 +1765,7 @@ export function branchIssueEligible({ issue, merged, mergedAt }) {
  *   PR with no linked issue and no stage label is not a pipeline item.
  * - closed unmerged: each still-open issue without a replacement PR gets a
  *   `pr_closed` outcome note (the router hands it to a human). The closed
- *   PR's stage and fix-loop labels are cleared. No linked issue: nothing.
+ *   PR's stage labels are cleared. No linked issue: nothing.
  */
 export function planPrClosed({ pr, issues = [] }) {
   const noop = (reason) => ({ act: false, reason, pr: null, issues: [] });
@@ -2677,8 +1845,6 @@ export const OUTCOME_STAGES = [
   // Spec + plan, one Claude run (plan.yml).
   'plan',
   'develop',
-  'security',
-  'fix',
   'approval',
   'ci',
   // The PR itself: closed without merging (done.yml). Noted on the issue.
@@ -2695,7 +1861,6 @@ export const PROBLEMS = [
   'untestable_criteria', // legacy (read-only): the old plan stage found untestable criteria
   'verify_failed', // develop: `pnpm verify` could not be made green
   'plan_gap', // develop: the plan is wrong or incomplete
-  'budget_exhausted', // fix: both fix rounds used
   'copilot_request_failed', // approval: could not request Copilot
   'ci_failed', // ci: CI failed on a pipeline PR's current head
   'pr_closed', // pr: the issue's PR was closed without merging
@@ -2706,8 +1871,7 @@ export const PROBLEMS = [
   'scope_split',
   'embedded_instructions',
   'forbidden_path',
-  // The patch needs the owner's approval (a request was posted, no PR yet),
-  // or a fix patch carried protected paths and was not pushed.
+  // The patch needs the owner's approval (a request was posted, no PR yet).
   'protected_approval_needed',
 ];
 
@@ -2785,8 +1949,6 @@ const STAGE_TITLE = {
   spec: 'Spec',
   plan: 'Plan',
   develop: 'Development',
-  security: 'Security review',
-  fix: 'Fix',
   approval: 'Approval',
   ci: 'CI',
   pr: 'Pull request',
@@ -2800,7 +1962,6 @@ const PROBLEM_TEXT = {
   untestable_criteria: 'the acceptance criteria are not testable',
   verify_failed: '`pnpm verify` does not pass',
   plan_gap: 'the plan is wrong or incomplete',
-  budget_exhausted: 'the fix-loop budget (2 rounds) is used up',
   copilot_request_failed: 'the Copilot review could not be requested',
   ci_failed: 'CI failed on the agent PR',
   pr_closed: 'the pull request was closed without merging',
@@ -2886,7 +2047,7 @@ export function parseOutcome(body) {
 // ---------------------------------------------------------------- router
 
 /** Where the router can send work next. Never `stage:routing` itself. */
-export const ROUTE_TARGETS = ['replan', 'redevelop', 'retry', 'human'];
+export const ROUTE_TARGETS = ['replan', 'redevelop', 'human'];
 
 /**
  * Old route notes may name a target that no longer exists. Reading one maps
@@ -2898,26 +2059,22 @@ export const LEGACY_ROUTE_TARGETS = Object.freeze({ respec: 'replan' });
 export const ROUTER_CAPS = Object.freeze({
   replan: 2,
   redevelop: 1,
-  retry: 1,
   global: 5,
 });
 
 /** An external brain's pick is used only at or above this confidence. */
 const EXTERNAL_MIN_CONFIDENCE = 0.8;
 
-/** Stage label each target sets. `retry` re-runs the stage that failed. */
+/** Stage label each target sets. */
 export const TARGET_STAGE = {
   // plan.yml (spec + plan) starts on stage:qualified.
   replan: 'stage:qualified',
   redevelop: 'stage:planned',
   human: 'stage:needs-attention',
 };
-export const RETRY_STAGE = { fix: 'stage:fixing' };
 
-export function targetStage(target, fromStage) {
-  const stage =
-    target === 'retry' ? RETRY_STAGE[fromStage] : TARGET_STAGE[target];
-  return stage ?? TARGET_STAGE.human;
+export function targetStage(target) {
+  return TARGET_STAGE[target] ?? TARGET_STAGE.human;
 }
 
 // The rules table (docs/pipeline.md "Router"). Anything not listed: human.
@@ -2934,7 +2091,7 @@ const RULES = [
     stage: 'spec',
     problems: ['agent_error'],
     target: 'human',
-    reason: 'Gemini call failed (quota?), see run',
+    reason: 'the old spec stage failed, see run',
   },
   {
     stage: 'plan',
@@ -2975,32 +2132,13 @@ const RULES = [
     reason: 'the developer found a gap in the plan',
   },
   {
-    stage: 'fix',
-    problems: ['agent_error'],
-    target: 'retry',
-    reason: 'the fixer failed',
-  },
-  {
-    stage: 'fix',
-    problems: ['budget_exhausted'],
-    target: 'human',
-    reason: 'both automated fix rounds are used',
-  },
-  {
-    stage: 'security',
-    problems: ['invalid_output'],
-    target: 'human',
-    reason: 'the security review could not be parsed',
-  },
-  {
     stage: 'approval',
     problems: ['copilot_request_failed'],
     target: 'human',
     reason:
       'the Copilot review could not be requested (is Copilot code review enabled, and does COPILOT_REVIEW_TOKEN have access?)',
   },
-  // For now a human. Proposed next step: one retry through the fixer with
-  // the CI log, then a human.
+  // For now a human.
   {
     stage: 'ci',
     problems: ['ci_failed'],
@@ -3059,8 +2197,8 @@ export function decideByRules({ outcome }) {
 }
 
 /**
- * The route notes that count against the caps: the routes to replan,
- * redevelop or retry that come AFTER the latest `restart` note (see
+ * The route notes that count against the caps: the routes to replan or
+ * redevelop that come AFTER the latest `restart` note (see
  * parseRestartNote; `routes` is oldest first and may hold restart entries,
  * `{ target: 'restart' }`). With no restart on record, every route counts.
  *
@@ -3265,7 +2403,6 @@ export function collectRouterInput({ comments = [], botLogin }) {
 const TARGET_TEXT = {
   replan: 're-plan',
   redevelop: 're-develop',
-  retry: 'retry',
   human: 'a human',
 };
 
@@ -3283,7 +2420,7 @@ export function renderRoute({ final, outcome, history = {}, mode, external }) {
     external: external ?? null,
     questions: cleanList(final.questions),
   };
-  const stage = targetStage(final.target, outcome?.stage);
+  const stage = targetStage(final.target);
   const lines = [
     `${MARKERS.route} target=${final.target} round=${final.round} -->`,
   ];
@@ -3313,7 +2450,7 @@ export function renderRoute({ final, outcome, history = {}, mode, external }) {
       lines.push('', '#### Open questions', ...open.map((q) => `- ${q}`));
     lines.push(
       '',
-      `Answer or fix the cause, then the repo owner restarts it with \`/restart <qualified|planned|fixing> <reason>\` on the issue (docs/pipeline.md, "When it stops at stage:needs-attention"). Only /restart opens a fresh loop budget, and an issue gets ${MAX_LIFETIME_RESETS} restarts in its lifetime.`,
+      `Answer or fix the cause, then the repo owner restarts it with \`/restart <qualified|planned> <reason>\` on the issue (docs/pipeline.md, "When it stops at stage:needs-attention"). Only /restart opens a fresh loop budget, and an issue gets ${MAX_LIFETIME_RESETS} restarts in its lifetime.`,
     );
   } else {
     lines.push(
@@ -3366,7 +2503,7 @@ export function planRoute({
   });
   return {
     final,
-    stage: targetStage(final.target, outcome?.stage),
+    stage: targetStage(final.target),
     outcome,
     allowed,
     body: renderRoute({
@@ -3381,21 +2518,20 @@ export function planRoute({
 
 // ---------------------------------------------------------------- restart
 
-/** `/restart <stage>` -> the stage label it sets. `fixing` acts on the PR. */
+/** `/restart <stage>` -> the stage label it sets. */
 export const RESTART_STAGES = Object.freeze({
   qualified: 'stage:qualified',
   planned: 'stage:planned',
-  fixing: 'stage:fixing',
 });
 export const RESTART_MIN_REASON = 10;
 export const RESTART_MAX_REASON = 300;
 
 const RESTART_USAGE =
-  'expected `/restart <qualified|planned|fixing> <reason, 10+ characters>`';
+  'expected `/restart <qualified|planned> <reason, 10+ characters>`';
 
 /**
  * Parses a comment as the /restart command. The whole body must be exactly
- *   /restart <qualified|planned|fixing> <reason, 10+ characters>
+ *   /restart <qualified|planned> <reason, 10+ characters>
  * on one line. A comment that does not start with /restart is
  * `{ ok: false, ignore: true }` (ordinary discussion). The body is data:
  * nothing from it is executed, and error texts never repeat it.
@@ -3428,9 +2564,9 @@ export function parseRestartComment(body) {
 }
 
 /**
- * The route note the bot appends for an accepted restart, on the item whose
- * loop restarts (the issue, or the PR for `fixing`). collectRouterInput
- * reads it back: routeWindow counts route notes only after the latest one.
+ * The route note the bot appends for an accepted restart, on the issue whose
+ * loop restarts. collectRouterInput reads it back: routeWindow counts route
+ * notes only after the latest one.
  */
 function renderRestartNote({ attempt, count }) {
   return [
@@ -3465,18 +2601,16 @@ export function parseRestartNote(body) {
  * - `reply` + `reason`: a command that cannot be honoured; nothing changes.
  *   With `limit: true` the reason is the whole reply text;
  * - `restart` + `stage`, `attempt`, `state` (the issue's next state), `note`
- *   (the route note to append) and `target` `{ kind, number, edit }`: the
- *   item whose label edit applies (the issue, or for `fixing` its linked
- *   open PR, whose fix-loop labels are cleared by resetFixLoop).
+ *   (the route note to append) and `edit` (the issue's label edit).
  * Checks, in order: commenter (the owner, a User), one exact command, the
- * comment was not edited, an open issue, the item to restart is in
- * stage:needs-attention (the issue; for `fixing` the linked PR) and finally
- * the lifetime limit (`state.resetCount` < MAX_LIFETIME_RESETS).
+ * comment was not edited, an open issue, the issue is in
+ * stage:needs-attention, it has no open pull request and finally the
+ * lifetime limit (`state.resetCount` < MAX_LIFETIME_RESETS).
  *
  * `comment` is `{ id, body, login, type, createdAt }`; `issue` is `{ number,
  * state, isPullRequest, labels }`; `state` the issue's parsed state;
- * `pullRequests` the open pipeline PRs on this issue's branch, `{ number,
- * labels }` each.
+ * `pullRequests` the open pipeline PRs on this issue's branch, `{ number }`
+ * each.
  */
 export function decideRestart({
   comment,
@@ -3509,34 +2643,13 @@ export function decideRestart({
   if (issue?.state !== 'open') return reply('the issue is closed');
 
   const { stage, reason } = parsed;
-  const parked = 'stage:needs-attention';
-  let target;
-  if (stage === 'fixing') {
-    if (pullRequests.length === 0)
-      return reply('the issue has no open pull request to restart');
-    if (pullRequests.length > 1)
-      return reply('the issue has more than one open pull request');
-    const [pr] = pullRequests;
-    if (!pr.labels?.includes(parked))
-      return reply(`pull request #${pr.number} is not in ${parked}`);
-    target = {
-      kind: 'pr',
-      number: pr.number,
-      edit: resetFixLoop(pr.labels, RESTART_STAGES.fixing),
-    };
-  } else {
-    if (!issue.labels?.includes(parked))
-      return reply(`the issue is not in ${parked}`);
-    if (pullRequests.length)
-      return reply(
-        `pull request #${pullRequests[0].number} is still open for this issue: restart it with \`/restart fixing <reason>\` or close it first`,
-      );
-    target = {
-      kind: 'issue',
-      number: issue.number,
-      edit: stageTransition(issue.labels, RESTART_STAGES[stage]),
-    };
-  }
+  if (!issue.labels?.includes('stage:needs-attention'))
+    return reply('the issue is not in stage:needs-attention');
+  if (pullRequests.length)
+    return reply(
+      `pull request #${pullRequests[0].number} is still open for this issue: close it first`,
+    );
+  const edit = stageTransition(issue.labels, RESTART_STAGES[stage]);
   if (state.resetCount >= MAX_LIFETIME_RESETS)
     return {
       action: 'reply',
@@ -3562,7 +2675,7 @@ export function decideRestart({
       resetCount: count,
       attempts: [...state.attempts, attempt],
     },
-    target,
+    edit,
     note: renderRestartNote({ attempt, count }),
   };
 }
@@ -3613,7 +2726,7 @@ export function renderRestartHint() {
   return [
     MARKERS.restartHint,
     `\`stage:needs-attention\` was changed by hand. That does **not** open a fresh loop budget: this item keeps the budget it already used, so its next problem goes straight back to a human.`,
-    `To restart it on purpose, the repo owner comments on the issue: \`/restart <qualified|planned|fixing> <reason, 10+ characters>\`. An issue gets ${MAX_LIFETIME_RESETS} restarts in its lifetime.`,
+    `To restart it on purpose, the repo owner comments on the issue: \`/restart <qualified|planned> <reason, 10+ characters>\`. An issue gets ${MAX_LIFETIME_RESETS} restarts in its lifetime.`,
   ].join('\n\n');
 }
 
@@ -3888,7 +3001,7 @@ const footer = (promptVer, what) =>
 
 /**
  * The spec comment (marker `pipeline:spec`, added by upsert-comment) for an
- * approved result. develop/fix read it as Markdown, so the headings are
+ * approved result. develop reads it as Markdown, so the headings are
  * fixed.
  */
 export function renderSpecComment(result, promptVer = 'plan.md@unknown') {
@@ -4007,57 +3120,6 @@ export function classifyDevelop({
   };
 }
 
-/** Fix step (the fixer or its push failed). */
-export function classifyFix({
-  fixResult,
-  verifyResult,
-  pushResult,
-  patchRejected,
-  patchProtected,
-}) {
-  // A fix moves the branch head, and an approval covers one head only: a
-  // fix patch never carries protected content, approvable or not. It is
-  // refused before anything is pushed, so no CI run sees it.
-  if (patchRejected && patchProtected === 'approvable')
-    return {
-      stage: 'fix',
-      result: 'problem',
-      problem: 'protected_approval_needed',
-      summary:
-        'Fix stopped: the fix touches protected files and was not pushed.',
-      details: [
-        'The fix patch changes approvable protected paths (a manifest, the lockfile, a generator). Nothing was pushed: an approval covers one commit, so push this change yourself, then the owner approves the new head (the pipeline posts a new request).',
-      ],
-    };
-  if (patchRejected)
-    return {
-      stage: 'fix',
-      result: 'problem',
-      problem: 'forbidden_path',
-      details: ['check-patch rejected the fix: it touches protected paths.'],
-    };
-  // The fixer has no shell; the secret-free verify job runs the checks.
-  if (fixResult === 'success' && verifyResult && verifyResult !== 'success')
-    return {
-      stage: 'fix',
-      result: 'problem',
-      problem: 'verify_failed',
-      details: [
-        `Verify job: ${verifyResult}. \`pnpm verify\` failed on the fixer's patch (after formatting), or the patch did not apply.`,
-      ],
-    };
-  if (fixResult === 'success' && pushResult === 'success')
-    return { stage: 'fix', result: 'success', summary: 'Fix pushed.' };
-  return {
-    stage: 'fix',
-    result: 'problem',
-    problem: 'agent_error',
-    details: [
-      `Fixer job: ${fixResult}; push job: ${pushResult}. The fixer made no usable change, or the branch moved.`,
-    ],
-  };
-}
-
 // ---------------------------------------------------------------- effects
 
 /**
@@ -4070,9 +3132,8 @@ export function classifyFix({
  * - markers: MARKERS keys of comments it upserts (one per item, edited);
  * - appends: MARKERS keys of notes, comments or reviews it adds (history);
  * - emits: GitHub events it causes that can trigger workflows
- *   (`pull_request_review` = review posted or Copilot requested,
- *   `status` = commit status, `issue_comment` = a disposition record note);
- * - loops: fix-loop labels it manages;
+ *   (`pull_request_review` = Copilot requested, `issue_comment` = a
+ *   disposition record note);
  * - args: effects taken from the command line, as positional index or flag
  *   (`stage`: stage label, `marker`: MARKERS key to upsert).
  */
@@ -4099,12 +3160,7 @@ export const COMMAND_EFFECTS = {
     emits: [],
   },
   route: {
-    stages: [
-      ...new Set([
-        ...Object.values(TARGET_STAGE),
-        ...Object.values(RETRY_STAGE),
-      ]),
-    ].sort(),
+    stages: [...new Set(Object.values(TARGET_STAGE))].sort(),
     problems: [TARGET_STAGE.human],
     markers: [],
     appends: ['route'],
@@ -4116,23 +3172,6 @@ export const COMMAND_EFFECTS = {
     appends: [],
     emits: [],
     args: { marker: 1 },
-  },
-  'init-state': { stages: [], markers: ['state'], appends: [], emits: [] },
-  'fix-adapter': {
-    stages: ['stage:fixing', 'stage:routing'],
-    problems: ['stage:routing'],
-    markers: ['state'],
-    appends: ['outcome'],
-    emits: [],
-    loops: [FIX_LOOP_1, FIX_LOOP_2],
-  },
-  'fix-reply': { stages: [], markers: [], appends: ['fixReply'], emits: [] },
-  'security-publish': {
-    stages: ['stage:reviewing', 'stage:routing'],
-    problems: ['stage:routing'],
-    markers: [],
-    appends: ['actionable', 'finding', 'outcome', 'securityReview'],
-    emits: ['pull_request_review', 'status'],
   },
   'ci-failed': {
     stages: ['stage:routing'],
@@ -4177,13 +3216,12 @@ export const COMMAND_EFFECTS = {
   'protected-decision': {
     stages: ['stage:building', 'stage:routing'],
     problems: ['stage:routing'],
-    markers: ['state'],
+    markers: [],
     appends: ['outcome', 'protectedApproved'],
     emits: ['issue_comment', 'pull_request'],
   },
   // The owner's /restart: the issue's lifetime counter (state comment), a
-  // restart route note and the target's stage label (an issue's stage, or
-  // for `fixing` the linked PR's, with its fix-loop labels cleared).
+  // restart route note and the issue's stage label.
   restart: {
     stages: Object.values(RESTART_STAGES).sort(),
     markers: ['state'],

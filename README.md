@@ -86,7 +86,6 @@ pnpm new:spike <name>       # new sandbox experiment
 | Claude Code    | `CLAUDE.md` → imports `AGENTS.md`; `.claude/settings.json` (narrow allow-list, SessionStart hook; Nx plugin listed but opt-in, see `docs/security.md`) |
 | OpenAI Codex   | `AGENTS.md`; `.codex/config.toml` (Nx MCP via `pnpm exec`)                                                                                             |
 | GitHub Copilot | `AGENTS.md`, `.github/copilot-instructions.md`, `.github/skills/`                                                                                      |
-| Gemini CLI     | `AGENTS.md` via `.gemini/settings.json` (`contextFileName`), Nx MCP via `pnpm exec`                                                                    |
 | Grok Build     | `AGENTS.md` (native)                                                                                                                                   |
 
 Edit rules in **`AGENTS.md` only**; the other files just point to it. Nx
