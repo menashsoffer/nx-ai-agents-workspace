@@ -34,4 +34,18 @@ describe('lib generator', () => {
       '"dom"',
     );
   });
+
+  it('creates ui libs with default shared scope, DOM types and no .babelrc', async () => {
+    await libGenerator(tree, { name: 'widgets', type: 'ui' });
+
+    const config = readProjectConfiguration(tree, 'widgets');
+    expect(config.tags).toEqual(['type:ui', 'scope:shared']);
+    expect(tree.read('libs/widgets/tsconfig.lib.json', 'utf-8')).toContain(
+      '"dom"',
+    );
+    expect(tree.read('libs/widgets/tsconfig.spec.json', 'utf-8')).toContain(
+      '"dom"',
+    );
+    expect(tree.exists('libs/widgets/.babelrc')).toBe(false);
+  });
 });

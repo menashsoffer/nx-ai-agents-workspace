@@ -51,4 +51,12 @@ describe('app generator', () => {
       'scope:product',
     );
   });
+
+  it('uses an explicit port instead of the next free one', async () => {
+    await appGenerator(tree, { name: 'admin-panel', port: 5000 });
+
+    expect(tree.read('apps/admin-panel/vite.config.mts', 'utf-8')).toContain(
+      'port: 5000',
+    );
+  });
 });
