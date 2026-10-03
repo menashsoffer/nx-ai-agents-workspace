@@ -1,31 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { watchRequests } from './watch-requests';
 
 // Must match BASE in playwright.config.mts.
 const BASE = '/tmpl-smoke/';
-
-/** Records failed and cross-origin requests made by a page. */
-function watchRequests(page: Page) {
-  const failed: string[] = [];
-  const thirdParty: string[] = [];
-  page.on('response', (response) => {
-    if (
-      response.status() >= 400 &&
-      response.request().resourceType() !== 'document'
-    ) {
-      failed.push(`${response.status()} ${response.url()}`);
-    }
-  });
-  page.on('request', (request) => {
-    const url = new URL(request.url());
-    if (
-      !['localhost', '127.0.0.1'].includes(url.hostname) &&
-      url.protocol.startsWith('http')
-    ) {
-      thirdParty.push(request.url());
-    }
-  });
-  return { failed, thirdParty };
-}
 
 test.describe('site under the Pages base path', () => {
   test('1+2: root renders RTL Hebrew and every asset loads same-origin', async ({
