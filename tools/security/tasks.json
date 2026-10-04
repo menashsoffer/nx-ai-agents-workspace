@@ -1,5 +1,5 @@
 {
-  "$comment": "A7 (docs/security.md): the reviewed task definitions. Every package.json script, every nx:run-commands / nx:run-script target (or target with an executor not listed under executors) and every Nx plugin must match an entry here exactly, because pre-approved agent commands (pnpm verify, pnpm nx run-many, ...) run them. Changing this file is a security review: check that each command runs only reviewed, protected code.",
+  "$comment": "A7 (docs/security.md): the reviewed task definitions. Every package.json script, every nx:run-commands / nx:run-script target (or target with an executor not listed under executors) and every Nx plugin, and the git-hook commands (simple-git-hooks, lint-staged), must match an entry here exactly, because pre-approved agent commands (pnpm verify, pnpm nx run-many, ...) run them. Changing this file is a security review: check that each command runs only reviewed, protected code.",
   "scripts": {
     "package.json#dev": "nx run site:dev",
     "package.json#build": "nx run-many -t build",
@@ -26,6 +26,14 @@
     "package.json#pages:build": "nx run-many -t build build-storybook -p site ui docs && node tools/pages/src/assemble.mjs",
     "package.json#pages:serve": "node tools/pages/src/serve.mjs",
     "package.json#security": "node tools/security/src/run.mjs"
+  },
+  "gitHooks": {
+    "package.json#simple-git-hooks": {
+      "pre-commit": "pnpm exec lint-staged"
+    },
+    "package.json#lint-staged": {
+      "*": "prettier --write --ignore-unknown"
+    }
   },
   "targets": {
     "apps/docs/package.json#build": {

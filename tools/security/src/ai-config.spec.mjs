@@ -33,6 +33,16 @@ describe('A1: Claude permission allow-list', () => {
     'Bash(pnpm new:app:*)',
     'Bash(pnpm verify:*)',
     'Bash(pnpm test *)',
+    'Bash(bash -c:*)',
+    'Bash(sh -c:*)',
+    'Bash(python3:*)',
+    'Bash(perl:*)',
+    'Bash(make:*)',
+    'Bash(find:*)',
+    'Bash(awk:*)',
+    'Bash(deno:*)',
+    'Bash(git -c:*)',
+    'Bash(**)',
   ])('rejects %s', (rule) => {
     expect(
       checkClaudePermissions({ permissions: { allow: [rule] } }),
@@ -46,6 +56,9 @@ describe('A1: Claude permission allow-list', () => {
     'Bash(pnpm nx show:*)',
     'Bash(pnpm nx graph:*)',
     'Bash(pnpm nx format:write:*)',
+    'Bash(node tools/pipeline-map/src/cli.mjs --check)',
+    'Bash(git status:*)',
+    'Bash(ls:*)',
     'Read(docs/**)',
   ])('accepts %s', (rule) => {
     expect(checkClaudePermissions({ permissions: { allow: [rule] } })).toEqual(
@@ -124,8 +137,28 @@ describe('A3: MCP servers', () => {
     [{ command: 'pnpm', args: ['exec', 'x@latest'] }],
     [{ url: 'https://mcp.example.com' }],
     [{ type: 'sse' }],
+    [{ command: 'bash', args: ['-c', 'npx evil-mcp'] }],
+    [{ unparsed: 'mcp_servers.a = { command = "npx" }' }],
   ])('rejects %j', (server) => {
     expect(check(server).length).toBeGreaterThan(0);
+  });
+
+  it('parses multi-line args and ignores comments', () => {
+    const toml =
+      '[mcp_servers.a]\ncommand = "pnpm" # local\nargs = [\n  "exec", # lockfile\n  "nx",\n]\n';
+    expect(parseCodexMcpServers(toml)).toEqual({
+      a: { command: 'pnpm', args: ['exec', 'nx'] },
+    });
+  });
+
+  it('marks forms it cannot read so A3 reports them', () => {
+    const inline = parseCodexMcpServers(
+      'mcp_servers.a = { command = "npx", args = ["x"] }',
+    );
+    expect(inline.a.unparsed).toContain('command = "npx"');
+    const odd = parseCodexMcpServers('[mcp_servers.b]\ncommand = pnpm\n');
+    expect(odd.b.unparsed).toBe('command = pnpm');
+    expect(checkMcpServers([{ where: 'x', servers: inline }])).toHaveLength(1);
   });
 
   it('parses Codex TOML tables', () => {
@@ -167,6 +200,9 @@ describe('A6: permission-bypass switches', () => {
     '[profiles.fast]\napproval_policy = "never"',
     'profiles.fast.sandbox_mode = "danger-full-access" # yolo',
     'approval_policy = { granular = { sandbox_approval = true } }',
+    'profiles.x = { approval_policy = "never" }',
+    '"sandbox_mode" = "danger-full-access"',
+    "profiles.x = { sandbox_mode = 'danger-full-access', y = 1 }",
   ])('Codex: rejects %j', (toml) => {
     expect(checkCodexSafetySwitches(toml)).toHaveLength(1);
   });
@@ -175,6 +211,9 @@ describe('A6: permission-bypass switches', () => {
     '',
     'approval_policy = "on-request"\nsandbox_mode = "workspace-write"',
     '[profiles.x]\nsandbox_mode = "read-only"',
+    '# approval_policy = "never" is what we avoid',
+    'my_approval_policy = "never"',
+    'profiles.x = { approval_policy = "untrusted" }',
   ])('Codex: accepts %j', (toml) => {
     expect(checkCodexSafetySwitches(toml)).toEqual([]);
   });

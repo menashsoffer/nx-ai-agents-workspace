@@ -32,6 +32,11 @@ describe('validateExceptions', () => {
     ['missing owner', { owner: undefined }, /owner/],
     ['_TODO_ owner', { owner: '_TODO_OWNER_' }, /owner/],
     ['owner without @', { owner: 'someone' }, /owner/],
+    [
+      'placeholder owner from the docs',
+      { owner: '@your-github-user' },
+      /placeholder/,
+    ],
     ['unknown control', { control: 'X9' }, /unknown control/],
     ['short reason', { reason: 'because' }, /20 characters/],
     ['more than 90 days', { expires: '2027-01-01' }, /90 days/],

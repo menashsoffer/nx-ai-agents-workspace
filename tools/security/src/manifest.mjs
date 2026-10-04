@@ -11,7 +11,12 @@ export function validateManifest(manifest, today = new Date()) {
     problems.push('tools.json: "reviewed" must be YYYY-MM-DD.');
   } else {
     const ageDays = Math.floor((today.getTime() - reviewed) / 86_400_000);
-    if (ageDays > MAX_REVIEW_AGE_DAYS) {
+    if (ageDays < 0) {
+      // A date in the future would keep the 120-day clock from ever starting.
+      problems.push(
+        `tools.json: "reviewed" is in the future (${manifest.reviewed}).`,
+      );
+    } else if (ageDays > MAX_REVIEW_AGE_DAYS) {
       problems.push(
         `tools.json: last reviewed ${manifest.reviewed} (${ageDays} days ago, limit ${MAX_REVIEW_AGE_DAYS}). Check for new tool releases, bump versions + sha256, update "reviewed".`,
       );

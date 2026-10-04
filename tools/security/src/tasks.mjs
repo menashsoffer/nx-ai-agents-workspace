@@ -2,8 +2,9 @@
 // pre-approved command (`pnpm verify`, `pnpm nx run-many`, `pnpm nx test`, ...)
 // must be defined by reviewed config. Package scripts, `nx:run-commands` /
 // `nx:run-script` targets, targets with unlisted executors and Nx plugins are
-// compared against tools/security/tasks.json (protected, reviewed); anything
-// new or changed fails.
+// compared against tools/security/tasks.json (protected, reviewed), as are the
+// git-hook commands (`simple-git-hooks`, `lint-staged`) that `git commit`
+// runs; anything new or changed fails.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -12,6 +13,10 @@ import { isDeepStrictEqual } from 'node:util';
 const SKIP_DIRS = new Set(['node_modules', '.git', '.nx']);
 const PROJECT_FILES = new Set(['package.json', 'project.json']);
 const SHELL_EXECUTORS = ['nx:run-commands', 'nx:run-script'];
+// Git hooks run on `git commit`, which agents may run without asking, and their
+// commands live in package.json config, not in `scripts`.
+const GIT_HOOK_KEYS = ['simple-git-hooks', 'lint-staged'];
+const GIT_HOOK_FILE = /^\.?(simple-git-hooks|lintstagedrc|lint-staged\.config)/;
 
 /** Relative (posix) paths of every package.json / project.json under root. */
 export function findProjectFiles(root) {
@@ -40,7 +45,8 @@ function executorOf(target) {
 
 /**
  * @param {{ scripts: Record<string,string>, targets: Record<string,unknown>,
- *   executors: string[], nxPlugins: string[] }} allowlist
+ *   gitHooks: Record<string,unknown>, executors: string[],
+ *   nxPlugins: string[] }} allowlist
  * @param {{ path: string, json: any }[]} files package.json / project.json
  * @param {any} nxJson
  * @returns {string[]} problems
@@ -48,9 +54,10 @@ function executorOf(target) {
 export function checkTasks(allowlist, files, nxJson) {
   const problems = [];
   const reviewed = (key, value, kind) => {
-    if (!(key in allowlist[kind])) {
+    const pinned = allowlist[kind] ?? {};
+    if (!(key in pinned)) {
       problems.push(`A7: ${key} is not in tools/security/tasks.json.`);
-    } else if (!isDeepStrictEqual(allowlist[kind][key], value)) {
+    } else if (!isDeepStrictEqual(pinned[key], value)) {
       problems.push(
         `A7: ${key} differs from the reviewed entry in tools/security/tasks.json.`,
       );
@@ -73,6 +80,11 @@ export function checkTasks(allowlist, files, nxJson) {
       // `nx:run-script` targets. Both are pinned.
       for (const [name, command] of Object.entries(json?.scripts ?? {})) {
         reviewed(`${path}#${name}`, command, 'scripts');
+      }
+      for (const hookKey of GIT_HOOK_KEYS) {
+        if (json && hookKey in json) {
+          reviewed(`${path}#${hookKey}`, json[hookKey], 'gitHooks');
+        }
       }
     }
     const targets = path.endsWith('project.json')
@@ -105,9 +117,19 @@ export function checkRepoTasks(root, allowlistPath) {
     json: readJson(join(root, path)),
   }));
   const nxJsonPath = join(root, 'nx.json');
-  return checkTasks(
-    readJson(allowlistPath),
-    files,
-    existsSync(nxJsonPath) ? readJson(nxJsonPath) : {},
-  );
+  // Hook config in its own file (or husky) is not covered by the allow-list.
+  const hookFiles = readdirSync(root)
+    .filter((name) => GIT_HOOK_FILE.test(name) || name === '.husky')
+    .map(
+      (name) =>
+        `A7: ${name} defines git hooks outside package.json; put the hook config in package.json so tools/security/tasks.json can pin it.`,
+    );
+  return [
+    ...checkTasks(
+      readJson(allowlistPath),
+      files,
+      existsSync(nxJsonPath) ? readJson(nxJsonPath) : {},
+    ),
+    ...hookFiles,
+  ];
 }
