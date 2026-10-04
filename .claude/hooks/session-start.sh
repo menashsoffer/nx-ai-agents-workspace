@@ -16,6 +16,6 @@ PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pnpm install --frozen-lockfile
 if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -d /opt/pw-browsers ]; then
   chromium=$(find /opt/pw-browsers -maxdepth 3 -path '*chromium-*/chrome-linux*/chrome' -type f 2>/dev/null | sort -V | tail -n 1)
   if [ -n "$chromium" ]; then
-    echo "export PLAYWRIGHT_CHROMIUM_PATH=\"$chromium\"" >> "$CLAUDE_ENV_FILE"
+    printf 'export PLAYWRIGHT_CHROMIUM_PATH=%q\n' "$chromium" >> "$CLAUDE_ENV_FILE"
   fi
 fi

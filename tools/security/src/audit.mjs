@@ -3,16 +3,42 @@ import { spawnSync } from 'node:child_process';
 
 const GATING = ['high', 'critical'];
 
-/** Parses `pnpm audit --json` output into [{ id, severity, module, paths }]. */
+/**
+ * Parses `pnpm audit --json` output into [{ id, severity, module, paths }].
+ * Throws on anything that is not a real advisory report: pnpm prints
+ * `{"error":...}` (which also starts with `{`) when the registry is
+ * unreachable, and an empty list from that would read as "no advisories".
+ */
 export function parseAudit(json) {
   const report = JSON.parse(json);
-  return Object.values(report.advisories ?? {}).map((a) => ({
+  if (report.error) {
+    throw new Error(
+      `pnpm audit failed: ${report.error.message ?? JSON.stringify(report.error)}`,
+    );
+  }
+  if (!report.advisories || typeof report.advisories !== 'object') {
+    throw new Error(
+      'pnpm audit output has no "advisories" object (did the format change?); not treating it as clean.',
+    );
+  }
+  const advisories = Object.values(report.advisories).map((a) => ({
     id: a.github_advisory_id ?? String(a.id),
     severity: a.severity,
     module: a.module_name,
     title: a.title,
     paths: (a.findings ?? []).flatMap((f) => f.paths ?? []),
   }));
+  // The summary must agree with the list: counts but no advisories means the
+  // advisory format changed under us.
+  const counts = report.metadata?.vulnerabilities ?? {};
+  const counted = GATING.reduce((sum, level) => sum + (counts[level] ?? 0), 0);
+  const listed = advisories.filter((a) => GATING.includes(a.severity)).length;
+  if (counted > 0 && listed === 0) {
+    throw new Error(
+      `pnpm audit counts ${counted} high/critical vulnerabilities but lists none; not treating it as clean.`,
+    );
+  }
+  return advisories;
 }
 
 export function gatingAdvisories(advisories, excepted = new Set()) {

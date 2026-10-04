@@ -54,6 +54,12 @@
       "Bash(pnpm nx sync)",
       "Bash(pnpm nx sync:check)",
       "Bash(pnpm nx format:write:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(**/*.pem)",
+      "Read(**/*.key)"
     ]
   }
 }
