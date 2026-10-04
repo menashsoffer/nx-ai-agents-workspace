@@ -24527,7 +24527,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tools/workspace-plugin/src/generators/component/component.spec.ts",
-      "source_location": "L3",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -27939,7 +27939,7 @@
       "confidence_score": 1.0,
       "context": "import",
       "source_file": "tools/workspace-plugin/src/generators/component/component.spec.ts",
-      "source_location": "L3",
+      "source_location": "L8",
       "weight": 1.0
     },
     {
@@ -40003,5 +40003,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "456b84a1f8c729f8bafcac57553ff9cb4ae8b7cb"
+  "built_at_commit": "7e9ce33dca0e330370661405367117b002bf3533"
 }
