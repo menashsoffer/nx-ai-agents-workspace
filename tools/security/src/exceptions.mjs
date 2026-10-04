@@ -32,6 +32,9 @@ export const CONTROLS = [
 ];
 export const MAX_EXCEPTION_DAYS = 90;
 const OWNER = /^@[A-Za-z0-9-]+(\/[A-Za-z0-9-]+)?$/;
+// Placeholder owners (docs/security.md uses @your-github-user) look valid.
+const PLACEHOLDER_OWNER =
+  /^@(your-.*|owner|user|username|team|todo|tbd|example)$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DAY = 86_400_000;
 
@@ -55,7 +58,9 @@ export function validateExceptions(exceptions, today = new Date()) {
     if (typeof entry?.reason !== 'string' || entry.reason.trim().length < 20) {
       problems.push(`${at}: reason must be at least 20 characters.`);
     }
-    if (!OWNER.test(entry?.owner ?? '')) {
+    if (PLACEHOLDER_OWNER.test(entry?.owner ?? '')) {
+      problems.push(`${at}: owner "${entry.owner}" is a placeholder.`);
+    } else if (!OWNER.test(entry?.owner ?? '')) {
       problems.push(
         `${at}: owner must be a GitHub @user or @org/team, got "${entry?.owner ?? ''}".`,
       );

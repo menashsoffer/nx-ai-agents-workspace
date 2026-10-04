@@ -22,6 +22,15 @@ describe('tools.json', () => {
     expect(validateManifest(manifest, later).join('\n')).toMatch(/limit 120/);
   });
 
+  it('rejects a review date in the future', () => {
+    const before = new Date(
+      Date.parse(`${manifest.reviewed}T00:00:00Z`) - 3 * 86_400_000,
+    );
+    expect(validateManifest(manifest, before).join('\n')).toMatch(
+      /in the future/,
+    );
+  });
+
   it('reports a missing platform build', () => {
     const broken = structuredClone(manifest);
     delete broken.tools.zizmor.platforms['linux-arm64'];

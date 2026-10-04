@@ -12,6 +12,10 @@ const allowlist = {
       options: { command: 'node tools/pages/src/assemble.mjs' },
     },
   },
+  gitHooks: {
+    'package.json#simple-git-hooks': { 'pre-commit': 'pnpm exec lint-staged' },
+    'package.json#lint-staged': { '*': 'prettier --write' },
+  },
   executors: ['@nx/js:tsc'],
   nxPlugins: ['@nx/vite/plugin'],
 };
@@ -37,6 +41,41 @@ describe('A7: task definitions', () => {
         { plugins: [{ plugin: '@nx/vite/plugin', options: {} }] },
       ),
     ).toEqual([]);
+  });
+
+  it('pins git-hook commands (`git commit` runs them)', () => {
+    const hooks = {
+      'simple-git-hooks': { 'pre-commit': 'pnpm exec lint-staged' },
+      'lint-staged': { '*': 'prettier --write' },
+    };
+    expect(checkTasks(allowlist, [pkg('package.json', hooks)], {})).toEqual([]);
+    expect(
+      checkTasks(
+        allowlist,
+        [
+          pkg('package.json', {
+            ...hooks,
+            'lint-staged': { '*': 'sh evil.sh' },
+          }),
+        ],
+        {},
+      ),
+    ).toEqual([
+      'A7: package.json#lint-staged differs from the reviewed entry in tools/security/tasks.json.',
+    ]);
+    expect(
+      checkTasks(
+        allowlist,
+        [
+          pkg('libs/x/package.json', {
+            'simple-git-hooks': { 'pre-push': 'x' },
+          }),
+        ],
+        {},
+      ),
+    ).toEqual([
+      'A7: libs/x/package.json#simple-git-hooks is not in tools/security/tasks.json.',
+    ]);
   });
 
   it('rejects a changed root script (pre-approved `pnpm verify` runs it)', () => {
@@ -141,6 +180,51 @@ describe('A7: task definitions', () => {
       'b/dist/package.json',
       'package.json',
     ]);
+  });
+});
+
+describe('A7: git-hook config outside package.json', () => {
+  const repo = (files) => {
+    const root = mkdtempSync(join(tmpdir(), 'a7-hooks-'));
+    writeFileSync(join(root, 'package.json'), '{}');
+    for (const [name, content] of Object.entries(files)) {
+      if (content === null) mkdirSync(join(root, name));
+      else writeFileSync(join(root, name), content);
+    }
+    const allowlist = join(root, 'tasks.json');
+    writeFileSync(
+      allowlist,
+      JSON.stringify({
+        scripts: {},
+        targets: {},
+        executors: [],
+        nxPlugins: [],
+      }),
+    );
+    return { root, allowlist };
+  };
+
+  it.each([
+    '.lintstagedrc.json',
+    'lint-staged.config.mjs',
+    '.simple-git-hooks.json',
+  ])('flags %s', (name) => {
+    const { root, allowlist } = repo({ [name]: '{}' });
+    expect(checkRepoTasks(root, allowlist)).toEqual([
+      expect.stringContaining(`A7: ${name} defines git hooks`),
+    ]);
+  });
+
+  it('flags a .husky directory', () => {
+    const { root, allowlist } = repo({ '.husky': null });
+    expect(checkRepoTasks(root, allowlist)).toEqual([
+      expect.stringContaining('A7: .husky defines git hooks'),
+    ]);
+  });
+
+  it('is quiet without hook files', () => {
+    const { root, allowlist } = repo({});
+    expect(checkRepoTasks(root, allowlist)).toEqual([]);
   });
 });
 
