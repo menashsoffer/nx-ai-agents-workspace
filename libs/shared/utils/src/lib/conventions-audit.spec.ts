@@ -1,6 +1,8 @@
 import { globSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { PHYSICAL_CSS_CASES } from './physical-css.cases.js';
+import { findPhysicalCssProperties } from './physical-css.scanner.js';
 
 const workspaceRoot = resolve(import.meta.dirname, '../../../../..');
 
@@ -38,20 +40,14 @@ function readWorkspaceFile(relativePath: string): string {
 // AGENTS.md "RTL and Hebrew": physical CSS properties break RTL layouts, so
 // a logical property (margin-inline-start/end, inset-inline-start/end, ...)
 // must be used instead.
-const PHYSICAL_CSS_PATTERNS: { name: string; pattern: RegExp }[] = [
-  { name: 'margin-left', pattern: /(^|[;{\s])margin-left\s*:/im },
-  { name: 'margin-right', pattern: /(^|[;{\s])margin-right\s*:/im },
-  { name: 'padding-left', pattern: /(^|[;{\s])padding-left\s*:/im },
-  { name: 'padding-right', pattern: /(^|[;{\s])padding-right\s*:/im },
-  { name: 'border-left', pattern: /(^|[;{\s])border-left\s*:/im },
-  { name: 'border-right', pattern: /(^|[;{\s])border-right\s*:/im },
-  { name: 'left', pattern: /(^|[;{\s])left\s*:/im },
-  { name: 'right', pattern: /(^|[;{\s])right\s*:/im },
-  { name: 'text-align: left', pattern: /text-align\s*:\s*left\b/im },
-  { name: 'text-align: right', pattern: /text-align\s*:\s*right\b/im },
-  { name: 'float: left', pattern: /float\s*:\s*left\b/im },
-  { name: 'float: right', pattern: /float\s*:\s*right\b/im },
-];
+describe('findPhysicalCssProperties', () => {
+  it.each(PHYSICAL_CSS_CASES)(
+    '$category: $cssText',
+    ({ cssText, expectedFindings }) => {
+      expect(findPhysicalCssProperties(cssText)).toEqual(expectedFindings);
+    },
+  );
+});
 
 describe('CSS logical properties', () => {
   const cssFilePaths = globSync(['libs/**/*.css', 'apps/**/*.css'], {
@@ -65,12 +61,9 @@ describe('CSS logical properties', () => {
   it.each(cssFilePaths)(
     '%s uses no physical-direction property',
     (relativePath) => {
-      const cssText = readWorkspaceFile(relativePath);
-      const matchedProperties = PHYSICAL_CSS_PATTERNS.filter(({ pattern }) =>
-        pattern.test(cssText),
-      ).map(({ name }) => name);
-
-      expect(matchedProperties).toEqual([]);
+      expect(
+        findPhysicalCssProperties(readWorkspaceFile(relativePath)),
+      ).toEqual([]);
     },
   );
 });
