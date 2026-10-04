@@ -13,3 +13,11 @@ export default defineConfig(defineAppConfig(import.meta.dirname, { port: 4200 })
 It wires React, Tailwind v4, Vitest (jsdom), the GitHub Pages base path
 (`BASE_PATH` env var, default `/`) and a `404.html` SPA fallback for deep links.
 Change behaviour for all apps here; don't fork it per app.
+
+## Options
+
+| Option       | Default      | Notes                                         |
+| ------------ | ------------ | --------------------------------------------- |
+| `port`       | —            | Dev server port.                              |
+| preview port | `port + 100` | Derived from `port`, not a separate option.   |
+| `cacheDir`   | per project  | Derived: `node_modules/.vite/<project-path>`. |
