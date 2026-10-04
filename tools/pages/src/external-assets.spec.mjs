@@ -214,21 +214,184 @@ describe('findExternalAssets', () => {
 
     it('extends the same allow/block rule to @import, style url() and srcset', () => {
       expect(
-        flagged(
+        findFlaggedAssets(
           '<style>@import "https://user.github.io/a.css"; body{background:url(//user.github.io/b.png)}</style>',
         ),
       ).toEqual([]);
       expect(
-        flagged('<style>@import "https://other.github.io/a.css";</style>'),
+        findFlaggedAssets(
+          '<style>@import "https://other.github.io/a.css";</style>',
+        ),
       ).toEqual(['https://other.github.io/a.css']);
       expect(
-        flagged('<div style="background:url(https://other.test/a.png)"></div>'),
+        findFlaggedAssets(
+          '<div style="background:url(https://other.test/a.png)"></div>',
+        ),
       ).toEqual(['https://other.test/a.png']);
       expect(
-        flagged(
+        findFlaggedAssets(
           '<img srcset="https://user.github.io/a.png 1x, https://other.test/b.png 2x">',
         ),
       ).toEqual(['https://other.test/b.png']);
+    });
+  });
+
+  describe('CSS read as a browser reads it', () => {
+    const findStyleAssets = (css) =>
+      findExternalAssets(createHtmlPage(`<style>${css}</style>`));
+
+    it.each([
+      [
+        'a ")" and "(" inside a double-quoted url()',
+        'a{background:url("https://evil.test/a(b).png")}',
+        ['https://evil.test/a(b).png'],
+      ],
+      [
+        'a quote and parentheses inside a single-quoted url()',
+        `a{background:url('https://evil.test/a"b(c).png')}`,
+        ['https://evil.test/a"b(c).png'],
+      ],
+      [
+        'an apostrophe inside a double-quoted url()',
+        `a{background:url("https://evil.test/it's.png")}`,
+        ["https://evil.test/it's.png"],
+      ],
+      [
+        'an escaped quote inside a url() string',
+        String.raw`a{background:url('https://evil.test/it\'s.png')}`,
+        ["https://evil.test/it's.png"],
+      ],
+      [
+        'an unquoted url() with "(" (a bad url: ignored by browsers, still flagged)',
+        'a{background:url(https://evil.test/a(b).png)}',
+        ['https://evil.test/a(b'],
+      ],
+      [
+        'a CSS escape in an @import string',
+        String.raw`@import "\68 ttps://evil.test/a.css";`,
+        ['https://evil.test/a.css'],
+      ],
+      [
+        'a comment between @import and its string',
+        '@import/**/"https://evil.test/a.css";',
+        ['https://evil.test/a.css'],
+      ],
+      [
+        'comments and whitespace between @import and url()',
+        '@import /* x */ url(https://evil.test/a.css);',
+        ['https://evil.test/a.css'],
+      ],
+      [
+        'an escaped @import keyword',
+        String.raw`@\69mport "https://evil.test/b.css";`,
+        ['https://evil.test/b.css'],
+      ],
+      [
+        'an escaped url function name',
+        String.raw`a{background:\75rl(https://evil.test/c.png)}`,
+        ['https://evil.test/c.png'],
+      ],
+      [
+        'escapes inside an unquoted url()',
+        String.raw`a{background:url(https:\2f\2f evil.test/d.png)}`,
+        ['https://evil.test/d.png'],
+      ],
+      [
+        'a string that holds a comment opener before the url()',
+        'a::before{content:"/*"} b{background:url(https://evil.test/e.png)}',
+        ['https://evil.test/e.png'],
+      ],
+    ])('flags %s', (_name, css, expected) => {
+      expect(findStyleAssets(css)).toEqual(expected);
+      // The same CSS in a style attribute (quotes swapped where needed).
+      if (!css.includes('{')) return;
+      const body = css.slice(css.indexOf('{') + 1, css.lastIndexOf('}'));
+      if (!css.startsWith('a')) return;
+      const html = `<div style="${body.replace(/"/g, '&quot;')}"></div>`;
+      expect(findExternalAssets(createHtmlPage(html))).toEqual(expected);
+    });
+
+    it('does not flag a url() or @import inside a CSS comment', () => {
+      expect(
+        findStyleAssets(
+          '/* url(https://evil.test/a.png) */ @import "./ok.css"; /* @import "https://evil.test/b.css"; */ a{color:red}',
+        ),
+      ).toEqual([]);
+      expect(
+        findExternalAssets(
+          createHtmlPage(
+            '<div style="color:red /* url(https://evil.test/a.png) */"></div>',
+          ),
+        ),
+      ).toEqual([]);
+    });
+
+    it('still flags a url() written after a comment', () => {
+      expect(
+        findStyleAssets(
+          '/* ok */ a{background:url(https://evil.test/a.png)} /* end */',
+        ),
+      ).toEqual(['https://evil.test/a.png']);
+    });
+
+    it('does not flag a quoted url that only looks external', () => {
+      expect(
+        findStyleAssets('a{content:"url(https://evil.test/x.png)"}'),
+      ).toEqual([]);
+      expect(findStyleAssets('a{background:url("./a(b).png")}')).toEqual([]);
+    });
+  });
+
+  describe('srcset read as the HTML spec reads it', () => {
+    const findSrcsetAssets = (value) =>
+      findExternalAssets(createHtmlPage(`<img srcset="${value}">`));
+
+    it('does not flag a comma that is part of a same-origin URL', () => {
+      expect(findSrcsetAssets('/images/a,https://evil.test/b.png 1x')).toEqual(
+        [],
+      );
+      expect(findSrcsetAssets('a.png,https://evil.test/b.png')).toEqual([]);
+    });
+
+    it('does not flag a data: URL that contains a comma', () => {
+      expect(
+        findSrcsetAssets('data:image/png;base64,iVBORw0KGgo= 1x, /b.png 2x'),
+      ).toEqual([]);
+      expect(
+        findSrcsetAssets('/b.png 1x, data:image/svg+xml,%3Csvg%2F%3E 2x'),
+      ).toEqual([]);
+    });
+
+    it('still flags every external candidate', () => {
+      expect(findSrcsetAssets('a.png 1x,https://evil.test/b.png 2x')).toEqual([
+        'https://evil.test/b.png',
+      ]);
+      expect(
+        findSrcsetAssets(
+          'https://evil.test/a.png 1x, https://evil.test/b.png 2x',
+        ),
+      ).toEqual(['https://evil.test/a.png', 'https://evil.test/b.png']);
+      expect(findSrcsetAssets('a.png,  https://evil.test/b.png,')).toEqual([
+        'https://evil.test/b.png',
+      ]);
+    });
+
+    it('treats trailing commas as the end of a candidate', () => {
+      expect(
+        findSrcsetAssets('a.png, https://evil.test/b.png,, c.png 2x'),
+      ).toEqual(['https://evil.test/b.png']);
+    });
+
+    it('ignores a comma inside a descriptor parenthesis', () => {
+      expect(
+        findSrcsetAssets('a.png 2x(1,2), https://evil.test/c.png 1x'),
+      ).toEqual(['https://evil.test/c.png']);
+    });
+
+    it('splits on tabs and newlines too', () => {
+      expect(
+        findSrcsetAssets('a.png\t1x,\nhttps://evil.test/d.png\n2x'),
+      ).toEqual(['https://evil.test/d.png']);
     });
   });
 
