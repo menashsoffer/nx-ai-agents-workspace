@@ -79,6 +79,7 @@ Project names are short: `site`, `site-e2e`, `pages-e2e`, `docs`, `sandbox`, `ui
 1. `pnpm verify` passes (sync, format check, dead-code and dependency check
    (knip), lint, typecheck, test, build on all projects).
 2. New behavior has a test next to the code (`*.spec.ts(x)`); UI components also have a story.
+   New and changed identifiers and files follow "Naming" in `docs/conventions.md`.
 3. If you changed routes or user-visible flows in `site`, `pnpm e2e` passes; if
    you changed routing, assets, the base path or Storybook, `pnpm e2e:pages` too.
 4. If you changed dependencies, workflows, or anything in `.claude/`,
@@ -135,6 +136,26 @@ Module boundaries are enforced by ESLint via tags in `package.json`:
 - Wrap LTR fragments (code, URLs, English product names) in `dir="ltr"` or
   `<bdi>` when they sit inside Hebrew sentences.
 - Check new `ui` components in Storybook with the Direction toolbar set to both RTL and LTR.
+
+### Naming
+
+Binding for all code you write or change. The full rules, with examples, are
+in [`docs/conventions.md`](docs/conventions.md) under "Naming"; read that
+section before adding identifiers or files. In short:
+
+- Full, clear names; no hidden abbreviations (`configuration`, not `cfg`; no
+  single-letter variables). The only allowed short forms are the closed list
+  in `docs/conventions.md`.
+- Name the intent, not the implementation. No `data`, `info`, `temp`,
+  `helper`, `utils` as names.
+- One convention per kind: camelCase variables and functions (verb first),
+  PascalCase types, interfaces and React components, UPPER_SNAKE_CASE
+  module-level constants, kebab-case files and folders. The one exception:
+  React component files are PascalCase (`Button.tsx`).
+- Booleans start with `is`/`has`/`can`/`should` and are positive (`isEnabled`,
+  never `isNotDisabled`). Callback props are `on<Event>`; the functions that
+  answer them are `handle<Subject><Event>`.
+- Apply this to new and changed code; do not rename unrelated existing code.
 
 ### Styling
 
