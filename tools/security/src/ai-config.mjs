@@ -1,6 +1,7 @@
-// A1-A3, A6 (docs/security.md): AI-assistant configuration shipped with the
+// A1-A3, A6, A8 (docs/security.md): AI-assistant configuration shipped with the
 // repo must not grant arbitrary execution, trust unpinned plugins, run MCP
-// servers from outside the lockfile, or switch off permission checks or hooks.
+// servers from outside the lockfile, switch off permission checks or hooks, or
+// point a hook at code outside the protected `.claude/hooks/`.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -199,6 +200,43 @@ export function checkClaudeSafetySwitches(settings) {
   return problems;
 }
 
+// A8: hooks run with the session's environment (SessionStart hooks mint a
+// GitHub App token from the private key), so the code behind a hook command
+// must live where an agent patch cannot change it: `.claude/hooks/` is a
+// protected path. The command must be exactly one script directly in that
+// folder, spelled from `$CLAUDE_PROJECT_DIR`, with no arguments and no shell
+// syntax, so it cannot be redirected with `..`, `;`, `&&` or a variable.
+// Only `command` handlers execute local code; other handler types are not
+// covered here.
+const HOOK_COMMAND =
+  /^(?:"\$CLAUDE_PROJECT_DIR"|"\$\{CLAUDE_PROJECT_DIR\}"|\$CLAUDE_PROJECT_DIR|\$\{CLAUDE_PROJECT_DIR\})\/\.claude\/hooks\/\w[\w.-]*$/;
+
+export function checkClaudeHookCommands(settings) {
+  const problems = [];
+  for (const [event, groups] of Object.entries(settings?.hooks ?? {})) {
+    for (const group of Array.isArray(groups) ? groups : [groups]) {
+      const handlers = Array.isArray(group?.hooks) ? group.hooks : [];
+      for (const handler of handlers) {
+        const runsCommand =
+          handler?.type === 'command' ||
+          (typeof handler === 'object' &&
+            handler !== null &&
+            'command' in handler);
+        if (!runsCommand) continue;
+        if (
+          typeof handler.command !== 'string' ||
+          !HOOK_COMMAND.test(handler.command)
+        ) {
+          problems.push(
+            `A8: hooks.${event} command ${JSON.stringify(handler.command)} must be one script directly in .claude/hooks/, written "$CLAUDE_PROJECT_DIR"/.claude/hooks/<name> with no arguments or shell syntax.`,
+          );
+        }
+      }
+    }
+  }
+  return problems;
+}
+
 // Codex has no published config reference reachable from here; the values are
 // the serde names in openai/codex codex-rs/protocol (`AskForApproval`:
 // untrusted | on-request | on-failure | never | granular; `SandboxMode`:
@@ -309,7 +347,7 @@ function isCommitted(root, path) {
   return result.status !== 1;
 }
 
-/** Runs A1-A3 and A6 against the repo's real config files. */
+/** Runs A1-A3, A6 and A8 against the repo's real config files. */
 export function checkRepoAiConfig(root) {
   const readJson = (path) =>
     existsSync(join(root, path))
@@ -321,6 +359,7 @@ export function checkRepoAiConfig(root) {
     ...checkClaudePermissions(settings),
     ...checkClaudePlugins(settings),
     ...checkClaudeSafetySwitches(settings),
+    ...checkClaudeHookCommands(settings),
   ];
   const claude = readJson('.claude/settings.json') ?? {};
   // settings.local.json is personal and gitignored; a committed one is shared

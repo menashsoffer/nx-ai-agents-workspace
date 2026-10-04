@@ -48,7 +48,7 @@ check(
   manifestProblems,
 );
 
-check('AI-assistant config (A1-A3, A6)', checkRepoAiConfig(workspaceRoot));
+check('AI-assistant config (A1-A3, A6, A8)', checkRepoAiConfig(workspaceRoot));
 check(
   'A7: scripts, run-commands targets and Nx plugins match tasks.json',
   checkRepoTasks(workspaceRoot, join(securityDir, 'tasks.json')),
