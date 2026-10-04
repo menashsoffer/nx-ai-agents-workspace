@@ -17,16 +17,17 @@ const workspaceRoot = resolve(import.meta.dirname, '../../../..');
  * a copy of index.html as 404.html lets React Router handle deep links.
  */
 export function spaFallback(): Plugin {
-  let outDir = '';
+  let outputDirectory = '';
   return {
     name: 'spa-fallback-404',
     apply: 'build',
     configResolved(config) {
-      outDir = resolve(config.root, config.build.outDir);
+      outputDirectory = resolve(config.root, config.build.outDir);
     },
     closeBundle() {
-      const index = join(outDir, 'index.html');
-      if (existsSync(index)) copyFileSync(index, join(outDir, '404.html'));
+      const indexHtmlPath = join(outputDirectory, 'index.html');
+      if (existsSync(indexHtmlPath))
+        copyFileSync(indexHtmlPath, join(outputDirectory, '404.html'));
     },
   };
 }

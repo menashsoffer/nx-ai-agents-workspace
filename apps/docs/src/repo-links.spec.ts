@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { repoLinks, repoUrlFrom } from './repo-links.ts';
-import { testRenderer } from './test-renderer.ts';
+import { applyRepoLinks, resolveRepoUrl } from './repo-links.ts';
+import { createTestRenderer } from './test-renderer.ts';
 
-describe('repoUrlFrom', () => {
+describe('resolveRepoUrl', () => {
   it('prefers GITHUB_REPOSITORY', () => {
-    expect(repoUrlFrom('me/repo', 'git@github.com:other/x.git')).toBe(
+    expect(resolveRepoUrl('me/repo', 'git@github.com:other/x.git')).toBe(
       'https://github.com/me/repo',
     );
   });
@@ -14,48 +14,54 @@ describe('repoUrlFrom', () => {
     'https://github.com/me/repo',
     'git@github.com:me/repo.git\n',
   ])('reads the GitHub remote %s', (remote) => {
-    expect(repoUrlFrom(undefined, remote)).toBe('https://github.com/me/repo');
+    expect(resolveRepoUrl(undefined, remote)).toBe(
+      'https://github.com/me/repo',
+    );
   });
 
   it('knows nothing about other hosts or garbage', () => {
-    expect(repoUrlFrom(undefined, 'http://127.0.0.1:1234/git/me/repo')).toBe(
+    expect(resolveRepoUrl(undefined, 'http://127.0.0.1:1234/git/me/repo')).toBe(
       undefined,
     );
-    expect(repoUrlFrom('not a repo', undefined)).toBe(undefined);
+    expect(resolveRepoUrl('not a repo', undefined)).toBe(undefined);
   });
 });
 
-const docsDir = '/work/docs';
-const file = '/work/docs/security.md';
+const docsDirectory = '/work/docs';
+const sourceFilePath = '/work/docs/security.md';
 
 async function render(markdown: string, repoUrl: string | undefined) {
-  const md = await testRenderer(
-    (md) => repoLinks(md, { docsDir, repoRoot: '/work', repoUrl }),
-    docsDir,
+  const markdownRenderer = await createTestRenderer(
+    (renderer) =>
+      applyRepoLinks(renderer, { docsDirectory, repoRoot: '/work', repoUrl }),
+    docsDirectory,
   );
-  return md.render(markdown, { path: file, relativePath: 'security.md' });
+  return markdownRenderer.render(markdown, {
+    path: sourceFilePath,
+    relativePath: 'security.md',
+  });
 }
 
-describe('repoLinks', () => {
-  const text =
+describe('applyRepoLinks', () => {
+  const markdownText =
     '[the list](../tools/security/exceptions.json#top) and [guide](pipeline.md) and [web](https://example.com) and [here](#x)';
 
   it('points links that leave docs/ at the file on GitHub', async () => {
-    const html = await render(text, 'https://github.com/me/repo');
+    const html = await render(markdownText, 'https://github.com/me/repo');
     expect(html).toContain(
       'href="https://github.com/me/repo/blob/HEAD/tools/security/exceptions.json#top"',
     );
   });
 
   it('leaves links inside docs/, external links and anchors alone', async () => {
-    const html = await render(text, 'https://github.com/me/repo');
+    const html = await render(markdownText, 'https://github.com/me/repo');
     expect(html).toContain('href="./pipeline.html"');
     expect(html).toContain('href="https://example.com"');
     expect(html).toContain('href="#x"');
   });
 
   it('turns them into plain text when the repository is unknown', async () => {
-    const html = await render(text, undefined);
+    const html = await render(markdownText, undefined);
     expect(html).toContain('<span class="repo-file">the list</span>');
     expect(html).not.toContain('exceptions.json');
     expect(html).toContain('href="./pipeline.html"');

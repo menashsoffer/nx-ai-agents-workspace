@@ -38,7 +38,7 @@ describe('Sandbox App', () => {
   it('lists spikes newest first, falling back to the folder name', () => {
     renderAt('/');
     const links = screen.getAllByRole('link').slice(1); // skip the nav link
-    expect(links.map((a) => a.textContent)).toEqual([
+    expect(links.map((link) => link.textContent)).toEqual([
       '2026-03-no-meta',
       'Newer spike',
       'Older spike',

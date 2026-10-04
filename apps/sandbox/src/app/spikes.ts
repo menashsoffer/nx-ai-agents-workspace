@@ -9,29 +9,31 @@ export interface Spike {
   Component: LazyExoticComponent<ComponentType>;
 }
 
-type Loader = () => Promise<{ default: ComponentType }>;
+type SpikeLoader = () => Promise<{ default: ComponentType }>;
 
-const slugOf = (path: string) => path.split('/').at(-2) ?? path;
+const getSpikeSlug = (path: string) => path.split('/').at(-2) ?? path;
 
 /**
  * Pairs each spike folder's metadata with its lazily loaded component.
  * Newest first: folder names start with yyyy-mm.
  */
 export function collectSpikes(
-  metas: Record<string, SpikeMeta>,
-  loaders: Record<string, Loader>,
+  spikeMetasByPath: Record<string, SpikeMeta>,
+  spikeLoadersByPath: Record<string, SpikeLoader>,
 ): Spike[] {
-  return Object.entries(loaders)
-    .map(([path, load]) => {
-      const slug = slugOf(path);
-      const metaPath = Object.keys(metas).find((p) => slugOf(p) === slug);
+  return Object.entries(spikeLoadersByPath)
+    .map(([path, loadSpike]) => {
+      const slug = getSpikeSlug(path);
+      const metaPath = Object.keys(spikeMetasByPath).find(
+        (candidatePath) => getSpikeSlug(candidatePath) === slug,
+      );
       return {
         slug,
-        meta: (metaPath && metas[metaPath]) || { title: slug },
-        Component: lazy(load),
+        meta: (metaPath && spikeMetasByPath[metaPath]) || { title: slug },
+        Component: lazy(loadSpike),
       };
     })
-    .sort((a, b) => b.slug.localeCompare(a.slug));
+    .sort((first, second) => second.slug.localeCompare(first.slug));
 }
 
 // Every src/spikes/<folder>/ becomes a route: /<folder>.

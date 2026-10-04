@@ -2,13 +2,13 @@ import { execFileSync } from 'node:child_process';
 import { dirname, relative, resolve } from 'node:path';
 import type { MarkdownRenderer } from 'vitepress';
 
-const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
 
 /**
  * `https://github.com/<owner>/<repo>` from `GITHUB_REPOSITORY` (set in CI) or
  * from a GitHub `origin` remote. Anything else: undefined.
  */
-export function repoUrlFrom(
+export function resolveRepoUrl(
   githubRepository: string | undefined,
   remote: string | undefined,
 ): string | undefined {
@@ -32,11 +32,11 @@ export function detectRepoUrl(): string | undefined {
   } catch {
     // Not a git checkout, or no origin: only GITHUB_REPOSITORY can help.
   }
-  return repoUrlFrom(process.env['GITHUB_REPOSITORY'], remote);
+  return resolveRepoUrl(process.env['GITHUB_REPOSITORY'], remote);
 }
 
 export interface RepoLinkOptions {
-  docsDir: string;
+  docsDirectory: string;
   repoRoot: string;
   repoUrl: string | undefined;
 }
@@ -46,27 +46,28 @@ export interface RepoLinkOptions {
  * docs site. They point at the file on GitHub, or become plain text when the
  * repository URL is unknown, so the build never ships a dead link.
  */
-export function repoLinks(
-  md: MarkdownRenderer,
-  { docsDir, repoRoot, repoUrl }: RepoLinkOptions,
+export function applyRepoLinks(
+  markdownRenderer: MarkdownRenderer,
+  { docsDirectory, repoRoot, repoUrl }: RepoLinkOptions,
 ): void {
-  md.core.ruler.push('repo-links', (state) => {
+  markdownRenderer.core.ruler.push('repo-links', (state) => {
     const file = String(state.env.path);
 
     /** The repo-relative path of a link leaving `docs/`, else undefined. */
-    const outsidePath = (href: string | null) => {
-      if (!href || SCHEME.test(href) || /^[#/]/.test(href)) return undefined;
+    const findPathOutsideDocs = (href: string | null) => {
+      if (!href || URL_SCHEME_PATTERN.test(href) || /^[#/]/.test(href))
+        return undefined;
       const target = resolve(dirname(file), href.split(/[?#]/)[0]);
-      if (!relative(docsDir, target).startsWith('..')) return undefined;
+      if (!relative(docsDirectory, target).startsWith('..')) return undefined;
       return relative(repoRoot, target).replaceAll('\\', '/');
     };
 
     for (const block of state.tokens) {
       // Whether each open link was turned into a <span>, to match its close.
-      const toSpan: boolean[] = [];
+      const convertedToSpanStack: boolean[] = [];
       for (const token of block.children ?? []) {
         if (token.type === 'link_open') {
-          const path = outsidePath(token.attrGet('href'));
+          const path = findPathOutsideDocs(token.attrGet('href'));
           if (path && repoUrl) {
             const hash = /#.*$/.exec(token.attrGet('href') ?? '')?.[0] ?? '';
             token.attrSet('href', `${repoUrl}/blob/HEAD/${path}${hash}`);
@@ -75,8 +76,8 @@ export function repoLinks(
             token.tag = 'span';
             token.attrs = [['class', 'repo-file']];
           }
-          toSpan.push(!!path && !repoUrl);
-        } else if (token.type === 'link_close' && toSpan.pop()) {
+          convertedToSpanStack.push(!!path && !repoUrl);
+        } else if (token.type === 'link_close' && convertedToSpanStack.pop()) {
           token.type = 'repo_ref_close';
           token.tag = 'span';
         }

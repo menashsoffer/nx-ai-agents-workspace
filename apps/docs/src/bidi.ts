@@ -1,7 +1,7 @@
 import type { MarkdownRenderer } from 'vitepress';
 
 /** Block elements whose direction follows their own text. */
-const BLOCKS = [
+const BLOCK_TOKEN_TYPES = [
   'paragraph_open',
   'heading_open',
   'list_item_open',
@@ -17,10 +17,10 @@ const BLOCKS = [
  * aligns left-to-right while a Hebrew one reads right-to-left, and trailing
  * punctuation lands on the correct side in both.
  */
-export function bidiBlocks(md: MarkdownRenderer): void {
-  md.core.ruler.push('bidi-blocks', (state) => {
+export function applyBidiBlocks(markdownRenderer: MarkdownRenderer): void {
+  markdownRenderer.core.ruler.push('bidi-blocks', (state) => {
     for (const token of state.tokens) {
-      if (BLOCKS.includes(token.type)) token.attrSet('dir', 'auto');
+      if (BLOCK_TOKEN_TYPES.includes(token.type)) token.attrSet('dir', 'auto');
     }
   });
 }
