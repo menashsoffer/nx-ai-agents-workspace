@@ -66,6 +66,83 @@ function findRootAbsoluteCssUrls(cssText: string): string[] {
 
 const withoutWhitespace = (text: string) => text.replace(/\s+/g, '');
 
+function findFirstNode<TNode extends ts.Node>(
+  root: ts.Node,
+  isMatch: (node: ts.Node) => node is TNode,
+): TNode | undefined {
+  if (isMatch(root)) return root;
+  return ts.forEachChild(root, (child) => findFirstNode(child, isMatch));
+}
+
+/**
+ * The value of a quoted JSX attribute (`"..."` or `'...'`, quotes included)
+ * after the JSX transform: numeric character references (`&#47;`, `&#x2f;`) and
+ * the named ones the transform knows (`&amp;`, `&nbsp;`) are decoded, the rest
+ * (`&sol;`, `&unknown;`) stay as written. TypeScript itself decides, by
+ * compiling a one-attribute element and reading the string it emits, so the
+ * scanner agrees with the compiled code. Only JSX attribute strings are
+ * decoded; a JS string in braces (`href={"&#47;x"}`) is not.
+ */
+function decodeJsxAttributeText(quotedAttributeValue: string): string {
+  const rawText = quotedAttributeValue.slice(1, -1);
+  if (!rawText.includes('&')) return rawText;
+  const emittedCode = ts.transpileModule(`<a a=${quotedAttributeValue} />;`, {
+    fileName: 'attribute.tsx',
+    compilerOptions: { jsx: ts.JsxEmit.React },
+  }).outputText;
+  const emittedProperty = findFirstNode(
+    ts.createSourceFile(
+      'emitted.js',
+      emittedCode,
+      ts.ScriptTarget.Latest,
+      true,
+    ),
+    (node): node is ts.PropertyAssignment =>
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'a',
+  );
+  return emittedProperty && ts.isStringLiteral(emittedProperty.initializer)
+    ? emittedProperty.initializer.text
+    : rawText;
+}
+
+/**
+ * The text an expression starts with, as far as the source fixes it, and
+ * whether that is all of it. `"" + "/x"` is "/x" in full; `"" + slug` is "" and
+ * incomplete (unknown after that); `import.meta.env.BASE_URL + "/x"` starts
+ * with something unknown, so nothing about its start is known.
+ */
+function readStaticPrefix(expression: ts.Expression): {
+  text: string;
+  isComplete: boolean;
+} {
+  if (
+    ts.isParenthesizedExpression(expression) ||
+    ts.isAsExpression(expression) ||
+    ts.isSatisfiesExpression(expression) ||
+    ts.isNonNullExpression(expression)
+  ) {
+    return readStaticPrefix(expression.expression);
+  }
+  if (
+    ts.isStringLiteral(expression) ||
+    ts.isNoSubstitutionTemplateLiteral(expression)
+  ) {
+    return { text: expression.text, isComplete: true };
+  }
+  if (
+    ts.isBinaryExpression(expression) &&
+    expression.operatorToken.kind === ts.SyntaxKind.PlusToken
+  ) {
+    const left = readStaticPrefix(expression.left);
+    if (!left.isComplete) return left;
+    const right = readStaticPrefix(expression.right);
+    return { text: left.text + right.text, isComplete: right.isComplete };
+  }
+  return { text: '', isComplete: false };
+}
+
 /**
  * Why an attribute expression breaks the base path, or undefined if it does
  * not. Only the parts that can be read from the source count: a string that
@@ -107,7 +184,10 @@ function describeUrlViolation(
   if (ts.isBinaryExpression(expression)) {
     const operator = expression.operatorToken.kind;
     if (operator === ts.SyntaxKind.PlusToken) {
-      return describeUrlViolation(expression.left, sourceFile);
+      // A prefix the source fixes decides first: `"" + "/x"` is "/x".
+      return readStaticPrefix(expression).text.startsWith('/')
+        ? 'must not hard-code a root-absolute path'
+        : describeUrlViolation(expression.left, sourceFile);
     }
     if (
       operator === ts.SyntaxKind.BarBarToken ||
@@ -175,11 +255,17 @@ function findRoutingPathViolations(
           attributeName === 'src' ||
           (attributeName === 'href' && HREF_ELEMENT_NAMES.has(elementName));
         if (!isChecked || !attribute.initializer) continue;
-        const expression = ts.isJsxExpression(attribute.initializer)
-          ? attribute.initializer.expression
-          : attribute.initializer;
-        const message =
-          expression && describeUrlViolation(expression, sourceFile);
+        const { initializer } = attribute;
+        const expression = ts.isJsxExpression(initializer)
+          ? initializer.expression
+          : initializer;
+        const message = ts.isStringLiteral(initializer)
+          ? decodeJsxAttributeText(initializer.getText(sourceFile)).startsWith(
+              '/',
+            )
+            ? 'must not hard-code a root-absolute path'
+            : undefined
+          : expression && describeUrlViolation(expression, sourceFile);
         if (message) {
           report(attribute, `<${elementName}> ${attributeName} ${message}`);
         }
@@ -362,6 +448,117 @@ const SYNTAX_CASES: Array<[string, string, number]> = [
     0,
   ],
   [
+    'flags a decimal character reference for "/" in a JSX attribute',
+    '<a href="&#47;x">x</a>',
+    1,
+  ],
+  [
+    'flags a hexadecimal character reference for "/"',
+    '<a href="&#x2f;x">x</a>',
+    1,
+  ],
+  [
+    'flags a hexadecimal reference with capital digits',
+    '<a href="&#x2F;x">x</a>',
+    1,
+  ],
+  [
+    'flags a character reference with leading zeros',
+    '<a href="&#00047;x">x</a>',
+    1,
+  ],
+  [
+    'flags two character references for "//"',
+    '<script src="&#x2F;&#47;cdn.test/a.js"></script>',
+    1,
+  ],
+  [
+    'flags a character reference in a single-quoted attribute',
+    '<img src=\'&#47;logo.svg\' alt="" />',
+    1,
+  ],
+  [
+    'passes a named reference the JSX transform decodes to another character',
+    '<a href="&amp;x">x</a><a href="&nbsp;/x">x</a>',
+    0,
+  ],
+  [
+    'passes a named reference the JSX transform leaves as written',
+    '<a href="&sol;x">x</a>',
+    0,
+  ],
+  [
+    'passes an unterminated or unknown reference',
+    '<a href="&#47x">x</a><a href="&unknown;/x">x</a>',
+    0,
+  ],
+  [
+    'passes an uppercase hexadecimal marker, which the transform does not decode',
+    '<a href="&#X2F;x">x</a>',
+    0,
+  ],
+  [
+    'does not decode references in a JS string inside braces',
+    '<a href={"&#47;x"}>x</a>',
+    0,
+  ],
+  [
+    'does not decode references in an ordinary string',
+    "const text = '&#47;x'; const style = 'url(&#47;bg.png)';",
+    0,
+  ],
+  [
+    'flags an empty-string prefix on a root-absolute string',
+    '<a href={"" + "/x"}>x</a>',
+    1,
+  ],
+  ['flags several empty-string prefixes', '<a href={"" + "" + "/x"}>x</a>', 1],
+  [
+    'flags a root-absolute string built from two literals',
+    '<a href={"/" + "x"}>x</a>',
+    1,
+  ],
+  [
+    'flags a parenthesised literal concatenation',
+    '<a href={("" + "/x")}>x</a>',
+    1,
+  ],
+  [
+    'flags a literal prefix followed by an unknown value',
+    '<a href={"" + "/" + slug}>x</a>',
+    1,
+  ],
+  [
+    'flags a literal concatenation in an img src',
+    '<img src={"" + "/logo.svg"} alt="" />',
+    1,
+  ],
+  [
+    'passes a BASE_URL prefix before a root-absolute string',
+    '<a href={import.meta.env.BASE_URL + "/x"}>x</a>',
+    0,
+  ],
+  [
+    'passes an empty prefix before BASE_URL',
+    '<a href={"" + import.meta.env.BASE_URL + "/x"}>x</a>',
+    0,
+  ],
+  [
+    'passes an unknown value before a root-absolute string',
+    '<a href={slug + "/x"}>x</a>',
+    0,
+  ],
+  [
+    'passes an empty prefix before an unknown value',
+    '<a href={"" + slug}>x</a>',
+    0,
+  ],
+  [
+    'passes a relative literal concatenation',
+    '<a href={"api" + "/x"}>x</a>',
+    0,
+  ],
+  [
     'passes a string that merely contains the word url',
     "const text = 'see the url (/docs)';",
     0,
@@ -494,6 +691,42 @@ const PLANTED_CASES: Array<[string, string, string, number]> = [
     2,
   ],
   ['a real .css file with @import', 'planted.css', '@import "/other.css";', 1],
+  [
+    'a .tsx with a character reference for "/"',
+    'Planted.tsx',
+    'export const Planted = () => <a href="&#47;x">x</a>;',
+    1,
+  ],
+  [
+    'a .tsx with a hexadecimal character reference for "//"',
+    'Planted.tsx',
+    'export const Planted = () => <script src="&#x2F;&#x2f;cdn.test/a.js"></script>;',
+    1,
+  ],
+  [
+    'a .tsx with an empty-string prefix on a root-absolute string',
+    'Planted.tsx',
+    'export const Planted = () => <a href={"" + "/x"}>x</a>;',
+    1,
+  ],
+  [
+    'a .tsx with a literal prefix followed by an unknown value',
+    'Planted.tsx',
+    'export const Planted = ({ slug }: { slug: string }) => <a href={"" + "/" + slug}>x</a>;',
+    1,
+  ],
+  [
+    'a .tsx whose "&#47;" is inside a JS string, not a JSX attribute',
+    'Planted.tsx',
+    'export const Planted = () => <a href={"&#47;x"}>x</a>;',
+    0,
+  ],
+  [
+    'a .tsx that puts BASE_URL before a root-absolute string',
+    'Planted.tsx',
+    'export const Planted = () => <a href={import.meta.env.BASE_URL + "/x"}>x</a>;',
+    0,
+  ],
   [
     'a .tsx whose only path is in a JSX comment',
     'Planted.tsx',
