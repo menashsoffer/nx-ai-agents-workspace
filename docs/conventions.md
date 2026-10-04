@@ -35,7 +35,7 @@ comments are English; only user-facing UI text is Hebrew.
 | ---------------------------------------------------- | ------------------------------------------- | ------------------------------- |
 | Variables, parameters, object properties             | camelCase                                   | `selectedRoute`, `docEntries`   |
 | Functions and methods                                | camelCase, verb first                       | `buildSidebar`, `parseRoute`    |
-| Module-level constants                               | UPPER_SNAKE_CASE                            | `FIRST_PORT`, `DECISIONS_DIR`   |
+| Module-level constants                               | UPPER_SNAKE_CASE                            | `FIRST_PORT`, `GUIDE_ORDER`     |
 | Types, interfaces, enums, classes                    | PascalCase                                  | `SpikeMeta`, `ButtonProps`      |
 | React components (the function)                      | PascalCase                                  | `DatePicker`                    |
 | Type parameters                                      | `T`, or `T` + PascalCase                    | `T`, `TItem`, `TKey`            |
@@ -202,11 +202,14 @@ Adding a short form means adding it to this list in the same change.
 
 ### Existing code and divergences
 
-These rules apply to **new and changed** code. Do not rename existing
-identifiers or files in an unrelated change (`e`, `cfg`, `opts`, `pageTitle`,
-`variantClasses` and `.test.mjs` / `.spec.mjs` mixes exist today); when you
-touch a line or a file for another reason, bring that line into line with
-this section. A dedicated rename is its own small, behavior-neutral commit.
+These rules apply to **new and changed** code. `apps/`, `libs/` and the
+unprotected `tools/` were brought into line in one behavior-neutral rename.
+Protected and pipeline code (`.github/`, `tools/security/`,
+`tools/workspace-plugin/`, `tools/pipeline-map/`) was not touched and still
+contains old names (`cfg`, `opts`, `dir`, `e`, and `.test.mjs` /
+`.spec.mjs` mixes); do not rename them in an unrelated change. When you touch
+a line or a file for another reason, bring that line into line with this
+section. A dedicated rename is its own small, behavior-neutral commit.
 
 Where this section differs from what was already documented:
 
