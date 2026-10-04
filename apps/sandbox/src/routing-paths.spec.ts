@@ -66,6 +66,17 @@ function findRootAbsoluteCssUrls(cssText: string): string[] {
 
 const withoutWhitespace = (text: string) => text.replace(/\s+/g, '');
 
+/**
+ * True if a URL's text is a root-absolute path. A URL parser drops leading C0
+ * control characters and spaces (U+0000 to U+0020) first, so " /x", "\t/x" and
+ * "\n/x" are "/x". Trailing characters are not touched.
+ */
+function isRootAbsolutePath(urlText: string): boolean {
+  let start = 0;
+  while (start < urlText.length && urlText.charCodeAt(start) <= 0x20) start++;
+  return urlText.startsWith('/', start);
+}
+
 function findFirstNode<TNode extends ts.Node>(
   root: ts.Node,
   isMatch: (node: ts.Node) => node is TNode,
@@ -161,7 +172,7 @@ function describeUrlViolation(
     return describeUrlViolation(expression.expression, sourceFile);
   }
   if (ts.isStringLiteral(expression)) {
-    return expression.text.startsWith('/')
+    return isRootAbsolutePath(expression.text)
       ? 'must not hard-code a root-absolute path'
       : undefined;
   }
@@ -185,7 +196,7 @@ function describeUrlViolation(
     const operator = expression.operatorToken.kind;
     if (operator === ts.SyntaxKind.PlusToken) {
       // A prefix the source fixes decides first: `"" + "/x"` is "/x".
-      return readStaticPrefix(expression).text.startsWith('/')
+      return isRootAbsolutePath(readStaticPrefix(expression).text)
         ? 'must not hard-code a root-absolute path'
         : describeUrlViolation(expression.left, sourceFile);
     }
@@ -260,8 +271,8 @@ function findRoutingPathViolations(
           ? initializer.expression
           : initializer;
         const message = ts.isStringLiteral(initializer)
-          ? decodeJsxAttributeText(initializer.getText(sourceFile)).startsWith(
-              '/',
+          ? isRootAbsolutePath(
+              decodeJsxAttributeText(initializer.getText(sourceFile)),
             )
             ? 'must not hard-code a root-absolute path'
             : undefined
@@ -559,6 +570,71 @@ const SYNTAX_CASES: Array<[string, string, number]> = [
     0,
   ],
   [
+    'flags a leading space before "/" in a JSX attribute',
+    '<a href=" /x">x</a>',
+    1,
+  ],
+  ['flags several leading spaces', '<a href="    /x">x</a>', 1],
+  ['flags a literal leading tab', '<a href="\t/x">x</a>', 1],
+  ['flags a literal leading newline', '<a href="\n/x">x</a>', 1],
+  ['flags a leading C0 control character', '<a href="\u0001/x">x</a>', 1],
+  [
+    'flags a leading space written as a character reference',
+    '<a href="&#32;/x">x</a>',
+    1,
+  ],
+  [
+    'flags a leading tab written as a character reference',
+    '<a href="&#9;/x">x</a>',
+    1,
+  ],
+  ['flags a leading space in a src', '<img src=" /logo.svg" alt="" />', 1],
+  [
+    'flags a leading space in a JS string inside braces',
+    '<a href={" /x"}>x</a>',
+    1,
+  ],
+  [
+    'flags a leading tab in a JS string inside braces',
+    '<a href={"\t/x"}>x</a>',
+    1,
+  ],
+  [
+    'flags a leading space in a literal concatenation',
+    '<a href={" " + "/x"}>x</a>',
+    1,
+  ],
+  [
+    'flags leading whitespace before an empty-string prefix',
+    '<a href={" " + "" + "/x"}>x</a>',
+    1,
+  ],
+  [
+    'passes whitespace that is not leading',
+    '<a href="x /y">x</a><a href="x/ ">x</a><a href=" x">x</a>',
+    0,
+  ],
+  [
+    'passes trailing whitespace after a relative path',
+    '<a href={"about "}>x</a>',
+    0,
+  ],
+  [
+    'passes a leading space before an unknown value',
+    '<a href={" " + slug}>x</a>',
+    0,
+  ],
+  [
+    'passes a leading space before BASE_URL',
+    '<a href={" " + import.meta.env.BASE_URL + "/x"}>x</a>',
+    0,
+  ],
+  [
+    'passes a space after the BASE_URL prefix',
+    '<a href={import.meta.env.BASE_URL + " /x"}>x</a>',
+    0,
+  ],
+  [
     'passes a string that merely contains the word url',
     "const text = 'see the url (/docs)';",
     0,
@@ -725,6 +801,48 @@ const PLANTED_CASES: Array<[string, string, string, number]> = [
     'a .tsx that puts BASE_URL before a root-absolute string',
     'Planted.tsx',
     'export const Planted = () => <a href={import.meta.env.BASE_URL + "/x"}>x</a>;',
+    0,
+  ],
+  [
+    'a .tsx with a leading space',
+    'Planted.tsx',
+    'export const Planted = () => <a href=" /x">x</a>;',
+    1,
+  ],
+  [
+    'a .tsx with a leading tab and newline',
+    'Planted.tsx',
+    'export const Planted = () => <a href="\t\n/x">x</a>;',
+    1,
+  ],
+  [
+    'a .tsx with a leading space as a character reference',
+    'Planted.tsx',
+    'export const Planted = () => <a href="&#32;/x">x</a>;',
+    1,
+  ],
+  [
+    'a .tsx with a leading tab as a character reference',
+    'Planted.tsx',
+    'export const Planted = () => <a href="&#9;/x">x</a>;',
+    1,
+  ],
+  [
+    'a .tsx with a leading space in a JS string inside braces',
+    'Planted.tsx',
+    'export const Planted = () => <a href={" /x"}>x</a>;',
+    1,
+  ],
+  [
+    'a .tsx with a leading space in a literal concatenation',
+    'Planted.tsx',
+    'export const Planted = () => <a href={" " + "/x"}>x</a>;',
+    1,
+  ],
+  [
+    'a .tsx with a space after the BASE_URL prefix',
+    'Planted.tsx',
+    'export const Planted = () => <a href={import.meta.env.BASE_URL + " /x"}>x</a>;',
     0,
   ],
   [
