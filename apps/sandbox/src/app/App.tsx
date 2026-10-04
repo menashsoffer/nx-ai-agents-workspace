@@ -37,7 +37,10 @@ export function App({ spikes = allSpikes }: { spikes?: Spike[] }) {
     <div className="mx-auto max-w-5xl px-4 py-6">
       <nav className="mb-6">
         <Link to="/" className="text-sm text-brand-600">
-          ← כל הניסויים
+          <span aria-hidden className="inline-block rtl:rotate-180">
+            ←
+          </span>{' '}
+          כל הניסויים
         </Link>
       </nav>
       <Suspense fallback={<p>טוען…</p>}>
