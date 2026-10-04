@@ -1,4 +1,4 @@
-import{n as e}from"./iframe-Dy039Pht.js";import{i as t,r as n}from"./react-CfDVPgnt.js";import{a as r,o as i}from"./blocks-CvZRMum6.js";import{n as a}from"./rolldown-runtime-DkW27tQK.js";function o(e){let n={code:`code`,h1:`h1`,h2:`h2`,li:`li`,p:`p`,pre:`pre`,strong:`strong`,ul:`ul`,...t(),...e.components};return(0,c.jsxs)(c.Fragment,{children:[(0,c.jsx)(r,{title:`Docs/Introduction`}),`
+import{n as e}from"./iframe-Bqe0SSJO.js";import{i as t,r as n}from"./react-BlBFKqvL.js";import{a as r,o as i}from"./blocks-B-VWffhc.js";import{n as a}from"./rolldown-runtime-DkW27tQK.js";function o(e){let n={code:`code`,h1:`h1`,h2:`h2`,li:`li`,p:`p`,pre:`pre`,strong:`strong`,ul:`ul`,...t(),...e.components};return(0,c.jsxs)(c.Fragment,{children:[(0,c.jsx)(r,{title:`Docs/Introduction`}),`
 `,(0,c.jsx)(n.h1,{id:`design-system`,children:`Design system`}),`
 `,(0,c.jsxs)(n.p,{children:[(0,c.jsx)(n.code,{children:`@starter/ui`}),` holds the shared React components and design tokens for every app
 in this workspace. Stories default to `,(0,c.jsx)(n.strong,{children:`RTL / Hebrew`}),`; use the `,(0,c.jsx)(n.strong,{children:`Direction`}),`
