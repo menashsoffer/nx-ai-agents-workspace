@@ -290,9 +290,12 @@ export function findRoutingPathViolations(
 }
 
 const SCANNED_FILE = /\.(tsx?|css)$/;
-// Test files, and the two modules that hold the scanner and its cases for them
-// (the cases hold root-absolute paths on purpose), are not application source.
-const TEST_FILE = /\.(spec|test)\.tsx?$|^routing-paths\.(scanner|cases)\.ts$/;
+// Test files, and the modules that hold the scanner and its cases for them
+// (routing-paths.scanner.ts, routing-paths.cases.ts and per-topic
+// routing-paths.<topic>.cases.ts; the cases hold root-absolute paths on
+// purpose), are not application source.
+const TEST_FILE =
+  /\.(spec|test)\.tsx?$|^routing-paths\.([a-z]+\.)?(scanner|cases)\.ts$/;
 
 function collectSourceFiles(directoryPath: string): string[] {
   const files: string[] = [];
