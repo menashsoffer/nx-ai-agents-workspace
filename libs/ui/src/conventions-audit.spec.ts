@@ -1,20 +1,48 @@
 import { existsSync, globSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
+import { COLOUR_CASES } from './colour-audit.cases.js';
+import { EXPORT_CASES } from './export-audit.cases.js';
+import {
+  hasHardCodedColour,
+  parseExportStatements,
+} from './conventions-audit.scanner.js';
 
 const uiSourceDirectory = import.meta.dirname;
 const indexFilePath = resolve(uiSourceDirectory, 'index.ts');
 
-function parseExportedComponentPaths(): string[] {
-  const indexText = readFileSync(indexFilePath, 'utf8');
-  return [...indexText.matchAll(/export \* from '(\.\/[^']+)';/g)].map(
-    ([, specifier]) => specifier.replace(/^\.\//, ''),
+function parseExportedComponentPaths() {
+  const { modules, unrecognisedStatements } = parseExportStatements(
+    readFileSync(indexFilePath, 'utf8'),
   );
+  return {
+    unrecognisedStatements,
+    componentPaths: modules
+      .filter(({ isTypeOnly }) => !isTypeOnly)
+      .map(({ specifier }) => specifier.replace(/^\.\//, '')),
+  };
 }
+
+describe('parseExportStatements', () => {
+  it.each(EXPORT_CASES)(
+    '$category: $indexText',
+    ({ indexText, modules, unrecognisedStatements }) => {
+      expect(parseExportStatements(indexText)).toEqual({
+        modules,
+        unrecognisedStatements,
+      });
+    },
+  );
+});
 
 // AGENTS.md "Definition of done": every libs/ui export needs a spec and a
 // story next to it, so a future export that skips either fails this test.
 describe('component export coverage', () => {
-  const exportedComponentPaths = parseExportedComponentPaths();
+  const { componentPaths: exportedComponentPaths, unrecognisedStatements } =
+    parseExportedComponentPaths();
+
+  it('understands every export statement in index.ts', () => {
+    expect(unrecognisedStatements).toEqual([]);
+  });
 
   it('finds components exported from index.ts', () => {
     expect(exportedComponentPaths.length).toBeGreaterThan(0);
@@ -41,11 +69,17 @@ describe('component export coverage', () => {
   );
 });
 
-const HEX_COLOR_PATTERN = /#[0-9a-fA-F]{3,8}\b/;
-const RGB_COLOR_PATTERN = /\brgba?\(/i;
+describe('hasHardCodedColour', () => {
+  it.each(COLOUR_CASES)(
+    '$category: $sourceText',
+    ({ sourceText, isReported }) => {
+      expect(hasHardCodedColour(sourceText)).toBe(isReported);
+    },
+  );
+});
 
 // AGENTS.md "Styling": colours come from the @theme tokens in styles.css,
-// never a hard-coded hex or rgb()/rgba() literal in a component.
+// never a hard-coded colour literal in a component.
 describe('no hard-coded colours', () => {
   const tsxFilePaths = globSync('**/*.tsx', { cwd: uiSourceDirectory });
 
@@ -61,8 +95,7 @@ describe('no hard-coded colours', () => {
         'utf8',
       );
 
-      expect(HEX_COLOR_PATTERN.test(sourceText)).toBe(false);
-      expect(RGB_COLOR_PATTERN.test(sourceText)).toBe(false);
+      expect(hasHardCodedColour(sourceText)).toBe(false);
     },
   );
 });

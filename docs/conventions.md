@@ -266,29 +266,52 @@ clear "No sandbox app" message.
 - `dir`/`lang` are set per app in `index.html`. Libraries never assume a direction.
 - Logical utilities only. ESLint (`no-restricted-syntax` in the root config)
   rejects physical ones: `ml/mr/pl/pr/left/right-*`, `text-left/right`,
-  `rounded-l/r`, `border-l/r`, `float-left/right`.
+  `rounded-l/r`, `border-l/r`, `float-left/right`. For CSS: "RTL audit".
 - Storybook defaults to RTL; flip the **Direction** toolbar to check LTR.
-- Two tests guard these rules where ESLint alone does not reach:
-  `libs/shared/utils/src/lib/conventions-audit.spec.ts` fails if a `.css` file
-  under `libs/` or `apps/` uses a physical property (plain CSS isn't linted),
-  and exercises the ESLint physical-class regex itself against every family
-  named in its comment, with and without a variant prefix and `-` negation.
 - Direction-bearing icons (arrows, chevrons) need `rtl:rotate-180`.
 
 ## Styling
 
 - Tailwind v4 utilities only; design tokens live in `libs/ui/src/styles.css`
-  under `@theme`. No hard-coded hex or `rgb()`/`rgba()` colour literal in a
-  `libs/ui` component — `libs/ui/src/conventions-audit.spec.ts` scans every
-  `.tsx` under `libs/ui/src` and fails on one.
-- Every component exported from `libs/ui/src/index.ts` needs a sibling
-  `*.spec.tsx` and `*.stories.tsx`; the same spec file's "component export
-  coverage" block fails on a missing one.
+  under `@theme`; no hard-coded colour in `libs/ui` ("Colour audit").
 - Join conditional classes with `cn()` from `@starter/shared-utils`. `cn()`
   also accepts a (possibly nested) array or a `{ className: condition }`
   object, clsx-style, but it does not merge or dedupe conflicting Tailwind
   utility classes (`cn('p-2', 'p-4')` keeps both, in call order) — see
   `libs/shared/utils/src/lib/cn.spec.ts`.
+
+## Convention audits
+
+Fixture categories are in `code`; `conventions-docs.spec.ts` fails if missing.
+
+### RTL audit
+
+`libs/shared/utils/src/lib/conventions-audit.spec.ts` scans every `.css` file
+under `libs/` and `apps/`, after blanking comments and strings. It reports a
+`physical longhand` (`margin`, `padding`, `scroll-margin`, `scroll-padding`,
+`border` `-left`/`-right` forms; the four corner `border-*-radius`; `left`;
+`right`), a `physical keyword` (`text-align`, `float`, `clear` set to
+`left`/`right`), and a `four-value shorthand` (`margin`, `padding`,
+`scroll-margin`, `scroll-padding`, `inset`; second and fourth values differ).
+Not reported: a `logical equivalent` (`border-inline-start-color`), a
+`symmetric shorthand` (`margin: 1px 2px 3px 2px`), a `css comment` and a
+`css string`.
+
+### Colour audit
+
+`libs/ui/src/conventions-audit.spec.ts` scans `libs/ui/src/**/*.tsx` for a
+`colour function` (`rgb(`, `hsl(`, `hwb(`, `lab(`, `lch(`, `oklab(`, `oklch(`,
+`color(`, `color-mix(`), a `hex colour` of 3, 4, 6 or 8 digits, and a
+`named colour` in a `style` colour property or an arbitrary value (`bg-[red]`). Not reported: an `anchor and id` (`href="#add"`), a
+`hex length` of 5 or 7 digits, a `colour word in text`, a `token class`.
+
+### Export coverage audit
+
+The same spec requires a sibling `*.spec.tsx` and `*.stories.tsx` for each
+module of `libs/ui/src/index.ts`. It parses a `star export`, a `named export`,
+an `inline type specifier`, a `default alias` and a `multi-line export`; a
+`type-only export` needs neither file. A statement starting with `export` in
+an `unknown form` fails the audit, named.
 
 ## Dependencies
 
