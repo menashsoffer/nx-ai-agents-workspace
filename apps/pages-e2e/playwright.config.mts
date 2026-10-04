@@ -6,7 +6,7 @@ import { defineConfig, devices } from '@playwright/test';
 // Kept free of @nx/* imports (they crash Nx's native loader under ESM).
 const workspaceRoot = resolve(import.meta.dirname, '../..');
 const isCI = !!process.env['CI'];
-export const BASE = '/tmpl-smoke/';
+export const PAGES_BASE_PATH = '/tmpl-smoke/';
 const port = 4400;
 
 export default defineConfig({
@@ -28,8 +28,8 @@ export default defineConfig({
   },
   webServer: {
     command: `pnpm pages:build && pnpm pages:serve --port ${port}`,
-    url: `http://localhost:${port}${BASE}`,
-    env: { BASE_PATH: BASE },
+    url: `http://localhost:${port}${PAGES_BASE_PATH}`,
+    env: { BASE_PATH: PAGES_BASE_PATH },
     reuseExistingServer: false,
     timeout: 300_000,
     cwd: workspaceRoot,
