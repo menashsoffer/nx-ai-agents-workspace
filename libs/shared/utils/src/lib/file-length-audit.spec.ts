@@ -43,7 +43,7 @@ describe('findFileLengthProblems', () => {
   it.each(PROBLEM_CASES)(
     '%s',
     (_description, files, registry, expectedProblems) => {
-      const problems = findFileLengthProblems(files, registry);
+      const problems = findFileLengthProblems(files, registry, TODAY);
       expect(problems).toHaveLength(expectedProblems.length);
       expectedProblems.forEach((expected, index) => {
         expect(problems[index]).toContain(expected);
@@ -54,7 +54,7 @@ describe('findFileLengthProblems', () => {
 
 // The real check: every committed source, test, docs and workflow file is at
 // most the hard cap long, unless the owner listed it (and the list is valid and
-// has no entry that is no longer needed).
+// the entry has not expired).
 describe('the repository', () => {
   it('has a valid exception registry', () => {
     expect(validateRegistry(readRegistry(workspaceRoot), new Date())).toEqual(
@@ -69,6 +69,6 @@ describe('the repository', () => {
     const files = measureCommittedFiles(workspaceRoot);
 
     expect(files.length).toBeGreaterThan(0);
-    expect(findFileLengthProblems(files, registry)).toEqual([]);
+    expect(findFileLengthProblems(files, registry, new Date())).toEqual([]);
   });
 });

@@ -78,7 +78,7 @@ const parseDay = (day: unknown): number =>
     ? Date.parse(`${day}T00:00:00Z`)
     : Number.NaN;
 
-/** Problems with the registry's content; empty when it is valid. */
+/** Problems with the registry's content (not its expiry, see findFileLengthProblems); empty when it is valid. */
 export function validateRegistry(entries: unknown, today: Date): string[] {
   if (!Array.isArray(entries)) {
     return [`${FILE_LENGTH_REGISTRY_PATH} must be a JSON array.`];
@@ -130,11 +130,6 @@ export function validateRegistry(entries: unknown, today: Date): string[] {
             `${label}: expires more than ${MAX_EXCEPTION_DAYS} days after created.`,
           );
         }
-        if (expires < todayMilliseconds) {
-          problems.push(
-            `${label}: expired on ${String(entry?.expires)}; split the file.`,
-          );
-        }
       }
     },
   );
@@ -142,37 +137,32 @@ export function validateRegistry(entries: unknown, today: Date): string[] {
 }
 
 /**
- * Files over the cap with no registry entry, and registry entries that no
- * longer point at a file over the cap (they must be removed, so the list only
- * shrinks). `files` are the measured files in scope; call validateRegistry first.
+ * Files over the cap that have no registry entry, or whose entry has expired.
+ * An entry for a file that is within the cap (or is not a checked file) no
+ * longer counts and is ignored, so splitting a file never needs a registry
+ * edit; the owner removes dead entries when convenient. `files` are the
+ * measured files in scope; call validateRegistry first.
  */
 export function findFileLengthProblems(
   files: MeasuredFile[],
   registry: FileLengthException[],
+  today: Date,
 ): string[] {
-  const registeredPaths = new Set(registry.map((entry) => entry.path));
-  const problems = files
-    .filter(
-      (file) =>
-        file.lineCount > HARD_CAP_LINES && !registeredPaths.has(file.path),
-    )
-    .map(
-      (file) =>
-        `${file.path}: ${file.lineCount} lines, over the ${HARD_CAP_LINES}-line cap. Split it (docs/conventions.md, "File length"); an exception is an entry in ${FILE_LENGTH_REGISTRY_PATH}.`,
-    );
-
-  const lineCountByPath = new Map(
-    files.map((file) => [file.path, file.lineCount]),
+  const todayMilliseconds = Date.parse(
+    `${today.toISOString().slice(0, 10)}T00:00:00Z`,
   );
-  for (const { path } of registry) {
-    const lineCount = lineCountByPath.get(path);
-    if (lineCount === undefined) {
+  const entryByPath = new Map(registry.map((entry) => [entry.path, entry]));
+  const problems: string[] = [];
+  for (const { path, lineCount } of files) {
+    if (lineCount <= HARD_CAP_LINES) continue;
+    const entry = entryByPath.get(path);
+    if (!entry) {
       problems.push(
-        `${path}: listed in the registry but not a checked file; remove the entry.`,
+        `${path}: ${lineCount} lines, over the ${HARD_CAP_LINES}-line cap. Split it (docs/conventions.md, "File length"); an exception is an entry in ${FILE_LENGTH_REGISTRY_PATH}.`,
       );
-    } else if (lineCount <= HARD_CAP_LINES) {
+    } else if (parseDay(entry.expires) < todayMilliseconds) {
       problems.push(
-        `${path}: listed in the registry but now ${lineCount} lines, within the cap; remove the entry.`,
+        `${path}: ${lineCount} lines; its exception expired on ${entry.expires}. Split it.`,
       );
     }
   }

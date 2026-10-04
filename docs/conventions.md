@@ -356,8 +356,10 @@ and vendored third-party text (`.agents/skills/`, `.github/skills/`).
 - The registry is a protected path. Agents never add entries; the repository
   owner does, in a local session.
 - A file that is already over the cap enters the registry with a split-by
-  date, so the policy does not block unrelated PRs. An entry whose file is
-  back within the cap, or gone, must be removed: the list only shrinks.
+  date, so the policy does not block unrelated PRs. An expired entry for a file
+  that is still over the cap fails. An entry whose file is back within the cap,
+  or gone, stops counting, so a split never needs a registry edit (an agent
+  cannot make one); the owner removes dead entries when convenient.
 - If the required split touches a protected path (for example `.github/`), the
   agent stops and reports it to the owner. It does not split, and it does not
   ask mid-task.
@@ -366,8 +368,8 @@ and vendored third-party text (`.agents/skills/`, `.github/skills/`).
 
 `libs/shared/utils/src/lib/file-length-audit.spec.ts` counts the physical lines
 of every committed file in scope and fails on any file over the hard cap that
-is not in the registry, on an invalid registry, and on a stale entry. It runs
-with `pnpm verify` and in CI.
+is not in the registry or whose entry has expired, and on an invalid registry.
+It runs with `pnpm verify` and in CI.
 
 ## Git
 

@@ -67,22 +67,34 @@ export const PROBLEM_CASES: Array<
     ['a.ts: 401 lines, over the 400-line cap'],
   ],
   [
-    'a file over the cap with an entry passes',
+    'a file over the cap with a current entry passes',
     [file('docs/big.md', 761)],
     [exception({})],
     [],
   ],
   [
-    'an entry for a file that is now within the cap must be removed',
-    [file('docs/big.md', 380)],
-    [exception({})],
-    ['docs/big.md: listed in the registry but now 380 lines'],
+    'an entry that expires today still counts',
+    [file('docs/big.md', 761)],
+    [exception({ created: '2026-09-20', expires: '2026-10-04' })],
+    [],
   ],
   [
-    'an entry for a file that is not checked must be removed',
+    'a file over the cap whose entry has expired fails',
+    [file('docs/big.md', 761)],
+    [exception({ created: '2026-07-01', expires: '2026-09-01' })],
+    ['docs/big.md: 761 lines; its exception expired on 2026-09-01'],
+  ],
+  [
+    'an entry for a file now within the cap is ignored, even if it expired',
+    [file('docs/big.md', 380)],
+    [exception({ created: '2026-07-01', expires: '2026-09-01' })],
+    [],
+  ],
+  [
+    'an entry for a file that is not checked is ignored',
     [file('a.ts', 10)],
     [exception({})],
-    ['docs/big.md: listed in the registry but not a checked file'],
+    [],
   ],
   [
     'each oversized file is reported once, in order',
@@ -142,15 +154,5 @@ export const REGISTRY_CASES: Array<[string, unknown, string[]]> = [
     'an expiry more than 90 days after creation',
     entryOf(exception({ created: '2026-09-01', expires: '2026-12-31' })),
     ['expires more than 90 days after created'],
-  ],
-  [
-    'an expiry that has passed',
-    entryOf(exception({ created: '2026-07-01', expires: '2026-09-01' })),
-    ['expired on 2026-09-01; split the file'],
-  ],
-  [
-    'an expiry today is still valid',
-    entryOf(exception({ created: '2026-09-20', expires: '2026-10-04' })),
-    [],
   ],
 ];
