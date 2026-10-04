@@ -1,5 +1,10 @@
 import { createTestWorkspace } from '../../utils/testing';
-import { addProjectConfiguration, type Tree } from '@nx/devkit';
+import {
+  addProjectConfiguration,
+  readJson,
+  writeJson,
+  type Tree,
+} from '@nx/devkit';
 import { componentGenerator } from './component';
 
 describe('component generator', () => {
@@ -47,5 +52,45 @@ describe('component generator', () => {
     expect(tree.read('libs/booking/src/index.ts', 'utf-8')).not.toContain(
       'export {}',
     );
+  });
+
+  it('adds the shared-utils workspace dependency when the target lacks it', async () => {
+    addProjectConfiguration(tree, 'booking', { root: 'libs/booking' });
+    tree.write('libs/booking/src/index.ts', 'export {};\n');
+    writeJson(tree, 'libs/booking/package.json', {
+      name: '@acme/booking',
+      dependencies: {},
+    });
+
+    const result = await componentGenerator(tree, {
+      name: 'slot-list',
+      project: 'booking',
+    });
+
+    expect(
+      readJson(tree, 'libs/booking/package.json').dependencies[
+        '@acme/shared-utils'
+      ],
+    ).toBe('workspace:*');
+    expect(result).toBeTypeOf('function');
+  });
+
+  it('leaves the dependency list unchanged when shared-utils is already present', async () => {
+    addProjectConfiguration(tree, 'booking', { root: 'libs/booking' });
+    tree.write('libs/booking/src/index.ts', 'export {};\n');
+    writeJson(tree, 'libs/booking/package.json', {
+      name: '@acme/booking',
+      dependencies: { '@acme/shared-utils': 'workspace:*' },
+    });
+
+    const result = await componentGenerator(tree, {
+      name: 'slot-list',
+      project: 'booking',
+    });
+
+    expect(readJson(tree, 'libs/booking/package.json').dependencies).toEqual({
+      '@acme/shared-utils': 'workspace:*',
+    });
+    expect(result).toBeUndefined();
   });
 });
