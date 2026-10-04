@@ -142,6 +142,31 @@ describe('findExternalAssets', () => {
       '<script src="javascript:alert(1)"></script>',
       'javascript:alert(1)',
     ],
+    [
+      '@import url() in <style>',
+      '<style>@import url("https://x.test/a.css");</style>',
+      'https://x.test/a.css',
+    ],
+    [
+      'bare @import in <style>',
+      '<style>@import "https://x.test/b.css";</style>',
+      'https://x.test/b.css',
+    ],
+    [
+      'url() in a <style> element',
+      '<style>body { background: url(https://x.test/c.png); }</style>',
+      'https://x.test/c.png',
+    ],
+    [
+      'url() in a style attribute',
+      '<div style="background: url(https://x.test/d.png)"></div>',
+      'https://x.test/d.png',
+    ],
+    [
+      'a srcset candidate',
+      '<img srcset="https://x.test/e.png 2x">',
+      'https://x.test/e.png',
+    ],
   ])('flags %s', (_name, head, url) => {
     expect(findExternalAssets(createHtmlPage(head))).toEqual([url]);
   });
@@ -186,6 +211,25 @@ describe('findExternalAssets', () => {
         ),
       ).toEqual([]);
     });
+
+    it('extends the same allow/block rule to @import, style url() and srcset', () => {
+      expect(
+        flagged(
+          '<style>@import "https://user.github.io/a.css"; body{background:url(//user.github.io/b.png)}</style>',
+        ),
+      ).toEqual([]);
+      expect(
+        flagged('<style>@import "https://other.github.io/a.css";</style>'),
+      ).toEqual(['https://other.github.io/a.css']);
+      expect(
+        flagged('<div style="background:url(https://other.test/a.png)"></div>'),
+      ).toEqual(['https://other.test/a.png']);
+      expect(
+        flagged(
+          '<img srcset="https://user.github.io/a.png 1x, https://other.test/b.png 2x">',
+        ),
+      ).toEqual(['https://other.test/b.png']);
+    });
   });
 
   it('flags every asset, not just the first', () => {
@@ -214,7 +258,10 @@ describe('findExternalAssets', () => {
           <script type="module" src=assets/c.js></script>
           <script src="../d.js"></script>
           <script>const url = 'https://x.test/inline-string-is-not-an-asset';</script>
-          <base href="/repo/">`) +
+          <base href="/repo/">
+          <style>@import "./c.css"; body { background: url(./d.png); }</style>
+          <div style="background: url(../e.png)"></div>
+          <img srcset="f.png 1x, ./g.png 2x">`) +
           '<a href="https://x.test/">navigation, not an asset</a>',
       ),
     ).toEqual([]);

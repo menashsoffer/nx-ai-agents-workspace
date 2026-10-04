@@ -9,7 +9,7 @@
 // exactly what is deployed. Guards (docs/security.md, docs/architecture.md):
 //   - the site must not already contain a reserved top-level path (storybook/,
 //     docs/) or a PR preview path (pr-<n>/, which the deploy keeps and owns)
-//   - P1: index.html files load no third-party scripts or styles
+//   - P1: no HTML file in the artifact loads a third-party script or style
 //   - P2: no source maps in the artifact
 import {
   cpSync,

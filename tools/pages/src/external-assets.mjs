@@ -6,7 +6,9 @@
 // as a browser would read it. A regex over the source misses legal HTML: spaces
 // around `=`, unquoted values, entities (`&#x2F;&#x2F;host`), `\\host`, tabs
 // inside the URL, and `<template>` content. The check is fail-closed: any
-// absolute URL, or one with an authority, is third-party.
+// absolute URL, or one with an authority, is third-party. Detected: `<script
+// src>`, `<link href>`, `<base href>`, a `<style>` element's `@import` and
+// `url(...)`, a `style=""` attribute's `url(...)`, and `srcset` candidates.
 import { JSDOM } from 'jsdom';
 
 /** [element, attribute] pairs where the browser fetches (or re-bases) a URL. */
@@ -15,6 +17,24 @@ const URL_LOADING_ELEMENT_ATTRIBUTES = [
   ['link', 'href'],
   ['base', 'href'],
 ];
+
+/** Every `url(...)` and bare `@import "..."` reference in a CSS text. */
+function extractCssUrls(text) {
+  const urls = [];
+  const urlPattern = /url\(\s*(['"]?)([^'")]*)\1\s*\)/gi;
+  for (const match of text.matchAll(urlPattern)) urls.push(match[2]);
+  const importPattern = /@import\s+(['"])([^'"]*)\1/gi;
+  for (const match of text.matchAll(importPattern)) urls.push(match[2]);
+  return urls;
+}
+
+/** The URL of each comma-separated `srcset` candidate, descriptor stripped. */
+function extractSrcsetUrls(value) {
+  return value
+    .split(',')
+    .map((candidate) => candidate.trim().split(/\s+/)[0])
+    .filter(Boolean);
+}
 
 /**
  * What a browser does before it looks at the URL: trims control characters and
@@ -49,9 +69,10 @@ function isThirdParty(value, siteOrigin) {
 }
 
 /**
- * The raw attribute values of every third-party script, stylesheet/link and
- * <base>. `siteOrigin` (e.g. `https://user.github.io`) is the one origin an
- * absolute URL may have; without it every absolute URL is third-party.
+ * The raw URL of every third-party script, stylesheet/link, <base>, <style>
+ * `@import`/`url()`, `style=""` `url()` and `srcset` candidate. `siteOrigin`
+ * (e.g. `https://user.github.io`) is the one origin an absolute URL may have;
+ * without it every absolute URL is third-party.
  */
 export function findExternalAssets(html, { siteOrigin } = {}) {
   const { window } = new JSDOM(html);
@@ -61,6 +82,21 @@ export function findExternalAssets(html, { siteOrigin } = {}) {
       for (const element of root.querySelectorAll(`${tag}[${attribute}]`)) {
         const value = element.getAttribute(attribute);
         if (isThirdParty(value, siteOrigin)) externalAssetUrls.push(value);
+      }
+    }
+    for (const style of root.querySelectorAll('style')) {
+      for (const url of extractCssUrls(style.textContent ?? '')) {
+        if (isThirdParty(url, siteOrigin)) found.push(url);
+      }
+    }
+    for (const element of root.querySelectorAll('[style]')) {
+      for (const url of extractCssUrls(element.getAttribute('style'))) {
+        if (isThirdParty(url, siteOrigin)) found.push(url);
+      }
+    }
+    for (const element of root.querySelectorAll('[srcset]')) {
+      for (const url of extractSrcsetUrls(element.getAttribute('srcset'))) {
+        if (isThirdParty(url, siteOrigin)) found.push(url);
       }
     }
     // querySelectorAll does not look inside <template> content.
