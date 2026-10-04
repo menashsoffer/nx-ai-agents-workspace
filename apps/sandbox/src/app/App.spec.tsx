@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { BrowserRouter, MemoryRouter } from 'react-router';
 import { App } from './App';
-import { collectSpikes } from './spikes';
+import { collectSpikes, spikes as realSpikes } from './spikes';
 
 // Tests use their own spike data so deleting or adding real spikes in
 // src/spikes/ never breaks them.
@@ -34,6 +34,15 @@ function renderAt(path: string, spikes = fixtureSpikes) {
   );
 }
 
+function renderUnderPagesBasePath(path: string, spikes = fixtureSpikes) {
+  window.history.pushState({}, '', `/repo/${path}`.replace(/\/+/g, '/'));
+  return render(
+    <BrowserRouter basename="/repo/">
+      <App spikes={spikes} />
+    </BrowserRouter>,
+  );
+}
+
 describe('Sandbox App', () => {
   it('lists spikes newest first, falling back to the folder name', () => {
     renderAt('/');
@@ -56,5 +65,42 @@ describe('Sandbox App', () => {
     expect(
       await screen.findByRole('heading', { name: 'Newer content' }),
     ).toBeTruthy();
+  });
+});
+
+// sandbox is never deployed to Pages (docs/architecture.md), but it shares
+// the deployment's reserved top-level paths (/storybook/, /docs/, /pr-<n>/)
+// for consistency: a spike folder named like one would be confusing even
+// though sandbox routes are never actually served there.
+const RESERVED_TOP_LEVEL_PATHS = ['storybook', 'docs'];
+const RESERVED_PR_PREVIEW_PATTERN = /^pr-\d+$/;
+
+describe('routes', () => {
+  it('never claims a path reserved by the Pages deployment', () => {
+    for (const { slug } of [...fixtureSpikes, ...realSpikes]) {
+      expect(RESERVED_TOP_LEVEL_PATHS).not.toContain(slug);
+      expect(slug).not.toMatch(RESERVED_PR_PREVIEW_PATTERN);
+    }
+  });
+});
+
+describe('App under the Pages base path', () => {
+  it('keeps every link under the base path at /', () => {
+    renderUnderPagesBasePath('/');
+    const links = screen.getAllByRole('link');
+    expect(links.length).toBeGreaterThan(0);
+    for (const link of links) {
+      expect(link.getAttribute('href')).toMatch(/^\/repo\//);
+    }
+  });
+
+  it('keeps every link under the base path on a spike route', async () => {
+    renderUnderPagesBasePath('/2026-02-newer');
+    expect(
+      await screen.findByRole('heading', { name: 'Newer content' }),
+    ).toBeTruthy();
+    for (const link of screen.getAllByRole('link')) {
+      expect(link.getAttribute('href')).toMatch(/^\/repo\//);
+    }
   });
 });
