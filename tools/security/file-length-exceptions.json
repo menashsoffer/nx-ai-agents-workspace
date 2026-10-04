@@ -1,0 +1,42 @@
+[
+  {
+    "path": ".github/scripts/pipeline-lib.mjs",
+    "issue": 99,
+    "reason": "Pipeline library in a protected path; the owner splits it in a local session.",
+    "owner": "@menashsoffer",
+    "created": "2026-10-04",
+    "expires": "2026-12-31"
+  },
+  {
+    "path": ".github/scripts/pipeline-lib.test.mjs",
+    "issue": 99,
+    "reason": "Tests of the pipeline library, split together with it in a local session.",
+    "owner": "@menashsoffer",
+    "created": "2026-10-04",
+    "expires": "2026-12-31"
+  },
+  {
+    "path": ".github/scripts/pipeline.mjs",
+    "issue": 99,
+    "reason": "Pipeline CLI in a protected path; the owner splits it in a local session.",
+    "owner": "@menashsoffer",
+    "created": "2026-10-04",
+    "expires": "2026-12-31"
+  },
+  {
+    "path": "docs/pipeline.md",
+    "issue": 98,
+    "reason": "Pipeline guide that predates the policy; split into pages by topic.",
+    "owner": "@menashsoffer",
+    "created": "2026-10-04",
+    "expires": "2026-12-31"
+  },
+  {
+    "path": "tools/pages/src/external-assets.spec.mjs",
+    "issue": 98,
+    "reason": "Spec grew past the cap; the case tables move to sibling cases modules.",
+    "owner": "@menashsoffer",
+    "created": "2026-10-04",
+    "expires": "2026-12-31"
+  }
+]
