@@ -1,12 +1,10 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  CSS_CASES,
-  FIXTURE_CASES,
-  PLANTED_CASES,
-  SYNTAX_CASES,
-} from './routing-paths.cases';
+import { CSS_CASES } from './routing-paths.css.cases';
+import { FIXTURE_CASES } from './routing-paths.fixture.cases';
+import { PLANTED_CASES } from './routing-paths.planted.cases';
+import { SYNTAX_CASES } from './routing-paths.syntax.cases';
 import {
   findRoutingPathViolations,
   findTreeViolations,
