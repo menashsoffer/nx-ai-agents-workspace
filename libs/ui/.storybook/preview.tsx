@@ -5,10 +5,10 @@ type Direction = 'rtl' | 'ltr';
 
 /** Mirrors the per-app `<html dir lang>` so every story is checked both ways. */
 const withDirection: Decorator = (Story, context) => {
-  const dir = (context.globals['dir'] as Direction) ?? 'rtl';
+  const direction = (context.globals['dir'] as Direction) ?? 'rtl';
 
-  document.documentElement.dir = dir;
-  document.documentElement.lang = dir === 'rtl' ? 'he' : 'en';
+  document.documentElement.dir = direction;
+  document.documentElement.lang = direction === 'rtl' ? 'he' : 'en';
 
   return <Story />;
 };
