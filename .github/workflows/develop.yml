@@ -206,7 +206,14 @@ jobs:
           git switch -c "$BRANCH"
           git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
           # issue-<n>-* branches belong to the pipeline; no open PR uses this one (checked above).
-          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
+          # The token goes in an environment-supplied header, not the URL, so it
+          # is not in the command line (`ps`) or the remote config.
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          echo "::add-mask::$auth"
+          GIT_CONFIG_COUNT=1 \
+            GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+            GIT_CONFIG_VALUE_0="Authorization: basic $auth" \
+            git push --force "https://github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
 
           if [[ "$PROTECTED" == "approvable" ]]; then
             printf '%s' "$RESULT" > result.json
