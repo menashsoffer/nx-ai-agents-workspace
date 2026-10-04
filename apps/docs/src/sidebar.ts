@@ -16,19 +16,19 @@ const GUIDE_LABELS: Record<string, string> = {
 };
 const GUIDE_ORDER = Object.keys(GUIDE_LABELS);
 
-const DECISIONS_DIR = 'decisions/';
-const DECISIONS_INDEX = `${DECISIONS_DIR}README.md`;
+const DECISIONS_DIRECTORY = 'decisions/';
+const DECISIONS_INDEX = `${DECISIONS_DIRECTORY}README.md`;
 
 /** The first `# Heading` of a Markdown file, or the fallback. */
-export function pageTitle(markdown: string, fallback: string): string {
+export function extractPageTitle(markdown: string, fallback: string): string {
   return /^# +(.+?) *$/m.exec(markdown)?.[1] ?? fallback;
 }
 
-const slug = (path: string) => path.replace(/\.md$/, '');
-const link = (path: string) => `/${slug(path)}`;
+const toSlug = (path: string) => path.replace(/\.md$/, '');
+const toLink = (path: string) => `/${toSlug(path)}`;
 
-function guideRank(path: string): number {
-  const rank = GUIDE_ORDER.indexOf(slug(path));
+function getGuideRank(path: string): number {
+  const rank = GUIDE_ORDER.indexOf(toSlug(path));
   return rank === -1 ? GUIDE_ORDER.length : rank;
 }
 
@@ -38,27 +38,34 @@ function guideRank(path: string): number {
  */
 export function buildSidebar(entries: DocEntry[]): DefaultTheme.SidebarItem[] {
   const guides = entries
-    .filter((e) => !e.path.includes('/') && e.path !== 'index.md')
+    .filter((entry) => !entry.path.includes('/') && entry.path !== 'index.md')
     .sort(
-      (a, b) =>
-        guideRank(a.path) - guideRank(b.path) || (a.path < b.path ? -1 : 1),
+      (first, second) =>
+        getGuideRank(first.path) - getGuideRank(second.path) ||
+        (first.path < second.path ? -1 : 1),
     )
-    .map((e) => ({
-      text: GUIDE_LABELS[slug(e.path)] ?? pageTitle(e.content, slug(e.path)),
-      link: link(e.path),
+    .map((entry) => ({
+      text:
+        GUIDE_LABELS[toSlug(entry.path)] ??
+        extractPageTitle(entry.content, toSlug(entry.path)),
+      link: toLink(entry.path),
     }));
 
   const decisions = entries
-    .filter((e) => e.path.startsWith(DECISIONS_DIR))
-    .sort((a, b) => (a.path < b.path ? -1 : 1))
-    .map((e) =>
-      e.path === DECISIONS_INDEX
-        ? { text: 'סקירה', link: `/${DECISIONS_DIR}` }
-        : { text: pageTitle(e.content, slug(e.path)), link: link(e.path) },
+    .filter((entry) => entry.path.startsWith(DECISIONS_DIRECTORY))
+    .sort((first, second) => (first.path < second.path ? -1 : 1))
+    .map((entry) =>
+      entry.path === DECISIONS_INDEX
+        ? { text: 'סקירה', link: `/${DECISIONS_DIRECTORY}` }
+        : {
+            text: extractPageTitle(entry.content, toSlug(entry.path)),
+            link: toLink(entry.path),
+          },
     );
   // The overview first, then the records.
   decisions.sort(
-    (a, b) => Number(b.text === 'סקירה') - Number(a.text === 'סקירה'),
+    (first, second) =>
+      Number(second.text === 'סקירה') - Number(first.text === 'סקירה'),
   );
 
   return [

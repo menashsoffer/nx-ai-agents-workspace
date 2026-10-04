@@ -1,20 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { buildSidebar, pageTitle } from './sidebar.ts';
+import { buildSidebar, extractPageTitle } from './sidebar.ts';
 
 const doc = (path: string, title = path) => ({
   path,
   content: `# ${title}\n\ntext\n`,
 });
 
-describe('pageTitle', () => {
+describe('extractPageTitle', () => {
   it('takes the first H1', () => {
-    expect(pageTitle('intro\n\n# The title \n\n## Not this', 'x')).toBe(
+    expect(extractPageTitle('intro\n\n# The title \n\n## Not this', 'x')).toBe(
       'The title',
     );
   });
 
   it('ignores `#` inside lower-level headings and falls back', () => {
-    expect(pageTitle('## Only h2\n', 'fallback')).toBe('fallback');
+    expect(extractPageTitle('## Only h2\n', 'fallback')).toBe('fallback');
   });
 });
 

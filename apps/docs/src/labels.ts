@@ -1,7 +1,7 @@
 import type { DefaultTheme } from 'vitepress';
 
 /** Hebrew text for the default theme's built-in UI. */
-export const themeLabels: DefaultTheme.Config = {
+export const THEME_LABELS: DefaultTheme.Config = {
   outline: { label: 'בעמוד הזה', level: [2, 3] },
   docFooter: { prev: 'הקודם', next: 'הבא' },
   darkModeSwitchLabel: 'מראה',
@@ -22,7 +22,7 @@ export const themeLabels: DefaultTheme.Config = {
   },
 };
 
-export const searchTranslations: NonNullable<
+export const SEARCH_TRANSLATIONS: NonNullable<
   Extract<DefaultTheme.Config['search'], { provider: 'local' }>['options']
 >['translations'] = {
   button: { buttonText: 'חיפוש', buttonAriaLabel: 'חיפוש בתיעוד' },

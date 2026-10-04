@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { bidiBlocks } from './bidi.ts';
-import { testRenderer } from './test-renderer.ts';
+import { applyBidiBlocks } from './bidi.ts';
+import { createTestRenderer } from './test-renderer.ts';
 
 async function render(markdown: string) {
-  return (await testRenderer(bidiBlocks)).render(markdown);
+  return (await createTestRenderer(applyBidiBlocks)).render(markdown);
 }
 
-describe('bidiBlocks', () => {
+describe('applyBidiBlocks', () => {
   it('lets headings, paragraphs, list items and quotes pick their own direction', async () => {
     const html = await render(
       '# Title\n\nHello.\n\n- item\n\n> quote\n\n| a |\n| - |\n| b |\n',

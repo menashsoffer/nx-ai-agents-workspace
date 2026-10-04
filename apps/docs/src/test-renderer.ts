@@ -8,10 +8,15 @@ import {
  * A fresh VitePress markdown renderer. VitePress keeps one renderer per
  * process, so each call disposes the previous one before applying `setup`.
  */
-export async function testRenderer(
+export async function createTestRenderer(
   setup?: (md: MarkdownRenderer) => void,
-  srcDir = '/docs',
+  sourceDirectory = '/docs',
 ): Promise<MarkdownRenderer> {
   disposeMdItInstance();
-  return createMarkdownRenderer(srcDir, { config: setup }, '/docs/', undefined);
+  return createMarkdownRenderer(
+    sourceDirectory,
+    { config: setup },
+    '/docs/',
+    undefined,
+  );
 }

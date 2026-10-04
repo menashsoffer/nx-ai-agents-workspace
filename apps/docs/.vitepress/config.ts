@@ -1,14 +1,14 @@
 import { join, resolve } from 'node:path';
 import rtlcss from 'postcss-rtlcss';
 import { defineConfig } from 'vitepress';
-import { bidiBlocks } from '../src/bidi.ts';
+import { applyBidiBlocks } from '../src/bidi.ts';
 import { readDocEntries } from '../src/docs-source.ts';
-import { detectRepoUrl, repoLinks } from '../src/repo-links.ts';
+import { detectRepoUrl, applyRepoLinks } from '../src/repo-links.ts';
 import { buildSidebar } from '../src/sidebar.ts';
-import { searchTranslations, themeLabels } from '../src/labels.ts';
+import { SEARCH_TRANSLATIONS, THEME_LABELS } from '../src/labels.ts';
 
 const workspaceRoot = resolve(import.meta.dirname, '../../..');
-const docsDir = join(workspaceRoot, 'docs');
+const docsDirectory = join(workspaceRoot, 'docs');
 // The site owns `/`, Storybook `/storybook/`; the docs live at `/docs/` under
 // the same base path (tools/pages/src/assemble.mjs).
 const base = `${(process.env['BASE_PATH'] ?? '/').replace(/\/?$/, '/')}docs/`;
@@ -40,21 +40,25 @@ export default defineConfig({
     ],
   ],
   markdown: {
-    config: (md) => {
-      bidiBlocks(md);
-      repoLinks(md, { docsDir, repoRoot: workspaceRoot, repoUrl });
+    config: (markdownRenderer) => {
+      applyBidiBlocks(markdownRenderer);
+      applyRepoLinks(markdownRenderer, {
+        docsDirectory,
+        repoRoot: workspaceRoot,
+        repoUrl,
+      });
     },
   },
   themeConfig: {
-    ...themeLabels,
+    ...THEME_LABELS,
     nav: [
       { text: 'האתר', link: '/../', target: '_self' },
       { text: 'Storybook', link: '/../storybook/', target: '_self' },
     ],
-    sidebar: buildSidebar(readDocEntries(docsDir)),
+    sidebar: buildSidebar(readDocEntries(docsDirectory)),
     search: {
       provider: 'local',
-      options: { translations: searchTranslations },
+      options: { translations: SEARCH_TRANSLATIONS },
     },
   },
   vite: {
