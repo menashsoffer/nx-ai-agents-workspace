@@ -11,8 +11,16 @@
 set -euo pipefail
 mode=$1
 : "${GH_TOKEN:?}" "${GITHUB_REPOSITORY:?}"
-url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+url="https://github.com/${GITHUB_REPOSITORY}.git"
+# The token travels in an environment-supplied http.extraheader, so it is in
+# neither a command line (visible in `ps`), the remote URL nor .git/config.
+auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+echo "::add-mask::$auth"
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+export GIT_CONFIG_VALUE_0="Authorization: basic $auth"
 work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
 
 if git ls-remote --exit-code --heads "$url" gh-pages >/dev/null 2>&1; then
   git clone --quiet --depth 1 --branch gh-pages "$url" "$work"

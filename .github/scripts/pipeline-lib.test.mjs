@@ -11,6 +11,7 @@ import {
   PLAN_MAX_FILES,
   PLAN_MAX_LINES,
   applyLabels,
+  parseFlags,
   COMMAND_EFFECTS,
   STAGE_STATUS,
   HARD_GATES,
@@ -4560,4 +4561,29 @@ test("evaluateApproval hands over once per head, whatever the PR's draft state",
       .action,
     'human-approval',
   );
+});
+
+test('parseFlags: `--key value` and `--key=value` are the same flag', () => {
+  assert.deepEqual(parseFlags(['12', '--add', 'a', '--remove=b']), {
+    _: ['12'],
+    add: 'a',
+    remove: 'b',
+  });
+});
+
+test('parseFlags: repeated flags collect, values keep their own "="', () => {
+  const f = parseFlags([
+    '--context',
+    'k=v',
+    '--context=issue=7',
+    '--context',
+    'x=',
+  ]);
+  assert.deepEqual(f.context, ['k=v', 'issue=7', 'x=']);
+});
+
+test('parseFlags: `--key=value` does not swallow the next argument', () => {
+  const f = parseFlags(['--branch=pipeline/1', '55']);
+  assert.equal(f.branch, 'pipeline/1');
+  assert.deepEqual(f._, ['55']);
 });
