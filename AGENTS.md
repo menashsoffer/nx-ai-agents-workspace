@@ -254,6 +254,11 @@ agents even inside an approvable file. See `docs/pipeline.md`,
   Playwright's version, set `PLAYWRIGHT_CHROMIUM_PATH` to the Chromium binary.
 - Nx caches builds. `BASE_PATH` is part of the cache key, so don't pass the
   base path any other way.
+- The Nx MCP server (`pnpm exec nx mcp`) is configured for Codex in
+  `.codex/config.toml`. Claude Code only gets it through the Nx plugin, which
+  `.claude/settings.json` lists but does not enable (`docs/security.md`, A2).
+  Where you don't have it, use `pnpm nx` commands; the "Nx MCP server" lines in
+  the Nx section below apply only to assistants that have it.
 
 ## Nx
 

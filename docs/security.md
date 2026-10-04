@@ -157,6 +157,19 @@ its marketplace (`nrwl/nx-ai-agents-config`) can't be pinned to a commit. To
 use it in a project, enable it in `.claude/settings.local.json` (personal, not
 committed), or pin the marketplace to a full commit SHA once Claude Code
 accepts one for marketplace sources.
+Without the plugin, Claude Code has no Nx MCP server in this repo; Codex has it
+from `.codex/config.toml` (A3: lockfile-pinned `pnpm exec nx mcp`). `AGENTS.md`
+says so, so no assistant is told it has a server it doesn't.
+
+**Claude Code sandbox.** `.claude/settings.json` has a `sandbox` block (read,
+write and unix-socket allowances for Nx's own directories, `/tmp/.nx` and
+`~/.nx`) and no `enabled` key, so the sandbox is off and the block does nothing.
+That is intentional: the repo does not rely on the Claude Code sandbox (its
+protection is A1-A8 and the protected paths above), and turning it on for
+everyone would change how every contributor's session runs. A contributor who
+enables it for themselves (`/sandbox`) already has the allowances Nx needs. If
+the sandbox is ever enabled for the repo, add `"enabled": true` and change this
+paragraph with it.
 
 ## 5. Shipped site
 
