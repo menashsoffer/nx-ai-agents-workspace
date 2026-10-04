@@ -167,6 +167,12 @@ describe('assemble', () => {
     expect(() =>
       assemble({
         ...createBuildDirectories(),
+        storybookDir: createFixtureDirectory({}),
+      }),
+    ).toThrow(/Storybook build not found/);
+    expect(() =>
+      assemble({
+        ...createBuildDirectories(),
         docsDir: createFixtureDirectory({}),
       }),
     ).toThrow(/docs build not found/);
