@@ -310,6 +310,67 @@ something imports it. If code is used without an import knip can follow (a
 workflow script, a hook, a generator loaded by Nx), teach knip in `knip.ts`
 with an `entry` and a one-line reason. Don't ignore a whole folder.
 
+## File length
+
+Every source file must stay readable in one sitting. An agent that creates or
+grows a file past the limits splits it, without pausing to ask.
+
+**Scope:** all committed source code, test code, docs (`*.md`) and workflow
+YAML. Exempt: generated files (lockfiles, build output, `docs/pipeline-map.md`)
+and vendored third-party text (`.agents/skills/`, `.github/skills/`).
+
+### Limits
+
+- Target: 300 lines per file. Hard cap: 400.
+- Physical lines, comments and blanks included.
+- This caps the length of a **file**. The pipeline's separate cap of 400
+  _changed_ lines per PR (`PLAN_MAX_LINES`) is a different rule with a
+  different purpose; the two numbers are unrelated.
+
+### When a file crosses the target
+
+- Split by responsibility: one concern per module, a thin entry point that
+  imports and wires. Prefer two to four small files to one large one.
+- A pure move changes no logic, names or expectations. When a split forces a
+  small logic change (a guard that must skip the new module, a `knip` export
+  rule), make it in a **separate commit** and document it in the PR.
+- Export only what consumers use; `knip` fails an unused export.
+
+### Test files
+
+- The spec file stays thin: imports, `describe`s and `it.each` blocks.
+- Case tables live in a sibling `*.cases.ts`. A table that itself crosses the
+  target gets its own file per topic (`name.<topic>.cases.ts`).
+- Helpers under test live in `*.scanner.ts` or a dedicated module, exporting
+  only what is used.
+- The fixed suffixes `*.cases.ts` and `*.scanner.ts` are test support: keep
+  them out of an app's production `tsconfig` scope and out of any scan of
+  production code.
+
+### Exceptions
+
+- An exception is an entry in a registry file in the repository
+  (`tools/security/file-length-exceptions.json`): path, issue number, reason,
+  owner, created and expiry (at most 90 days after creation). CI reads it. An
+  issue mention or a note in the PR description is **not** an exception.
+- The registry is a protected path. Agents never add entries; the repository
+  owner does, in a local session.
+- A file that is already over the cap enters the registry with a split-by
+  date, so the policy does not block unrelated PRs. An expired entry for a file
+  that is still over the cap fails. An entry whose file is back within the cap,
+  or gone, stops counting, so a split never needs a registry edit (an agent
+  cannot make one); the owner removes dead entries when convenient.
+- If the required split touches a protected path (for example `.github/`), the
+  agent stops and reports it to the owner. It does not split, and it does not
+  ask mid-task.
+
+### Enforcement
+
+`libs/shared/utils/src/lib/file-length-audit.spec.ts` counts the physical lines
+of every committed file in scope and fails on any file over the hard cap that
+is not in the registry or whose entry has expired, and on an invalid registry.
+It runs with `pnpm verify` and in CI.
+
 ## Git
 
 - Small commits with an imperative subject line in English ("Add booking form").

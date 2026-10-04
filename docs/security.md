@@ -194,6 +194,10 @@ A failing gate may be waived only by an entry in
 
 Nothing may be disabled, skipped or loosened inline without an entry here.
 
+File length exceptions (`docs/conventions.md`, "File length") are a separate owner-only
+registry, `tools/security/file-length-exceptions.json`; `exceptions.json` stays
+empty in the template.
+
 ## 7. Pinned security tools
 
 `pnpm security` downloads actionlint, gitleaks and zizmor from
