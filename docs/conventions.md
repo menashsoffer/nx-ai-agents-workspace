@@ -282,36 +282,36 @@ clear "No sandbox app" message.
 
 ## Convention audits
 
-Fixture categories are in `code`; `conventions-docs.spec.ts` fails if missing.
+Fixture categories are in `code`; `conventions-docs.spec.ts` checks them.
 
 ### RTL audit
 
-`libs/shared/utils/src/lib/conventions-audit.spec.ts` scans every `.css` file
-under `libs/` and `apps/`, after blanking comments and strings. It reports a
+`libs/shared/utils/src/lib/conventions-audit.spec.ts` scans `.css` files in
+`libs/` and `apps/` as a browser tokenizes them. It reports a
 `physical longhand` (`margin`, `padding`, `scroll-margin`, `scroll-padding`,
-`border` `-left`/`-right` forms; the four corner `border-*-radius`; `left`;
-`right`), a `physical keyword` (`text-align`, `float`, `clear` set to
-`left`/`right`), and a `four-value shorthand` (`margin`, `padding`,
-`scroll-margin`, `scroll-padding`, `inset`; second and fourth values differ).
-Not reported: a `logical equivalent` (`border-inline-start-color`), a
-`symmetric shorthand` (`margin: 1px 2px 3px 2px`), a `css comment` and a
-`css string`.
+`border` `-left`/`-right`; the four corner `border-*-radius`; `left`; `right`),
+a `physical keyword` (`text-align`, `float`, `clear` set to `left`/`right`), and
+a `four-value shorthand` (`margin`, `padding`, `scroll-margin`,
+`scroll-padding`, `inset`; second and fourth values differ), also when a
+`css escape` spells them. Not reported: a `logical equivalent`, a
+`symmetric shorthand`, a `css comment`, a `css string`, a `/*` in a `css url`.
 
 ### Colour audit
 
-`libs/ui/src/conventions-audit.spec.ts` scans `libs/ui/src/**/*.tsx` for a
-`colour function` (`rgb(`, `hsl(`, `hwb(`, `lab(`, `lch(`, `oklab(`, `oklch(`,
-`color(`, `color-mix(`), a `hex colour` of 3, 4, 6 or 8 digits, and a
-`named colour` in a `style` colour property or an arbitrary value (`bg-[red]`). Not reported: an `anchor and id` (`href="#add"`), a
-`hex length` of 5 or 7 digits, a `colour word in text`, a `token class`.
+`libs/ui/src/conventions-audit.spec.ts` reads the literals of every `.tsx`
+there. It reports a `colour function` (`rgb(`, `hsl(`, `hwb(`, `lab(`, `lch(`,
+`oklab(`, `oklch(`, `color(`, `color-mix(`), a `hex colour` of 3, 4, 6 or 8
+digits, and a `named colour` in a `style` colour property or an arbitrary value.
+Not reported: an `anchor and id`, a `jsx comment`, a `js comment`, `jsx text`,
+a `hex length` of 5 or 7 digits, a `colour word in text`, a `token class`.
 
 ### Export coverage audit
 
 The same spec requires a sibling `*.spec.tsx` and `*.stories.tsx` for each
-module of `libs/ui/src/index.ts`. It parses a `star export`, a `named export`,
-an `inline type specifier`, a `default alias` and a `multi-line export`; a
-`type-only export` needs neither file. A statement starting with `export` in
-an `unknown form` fails the audit, named.
+module of `libs/ui/src/index.ts`. It classifies every top-level `export`
+(`indented export`, `semicolonless export`): `star export`, `named export`,
+`inline type specifier`, `default alias`, `multi-line export`. A
+`type-only export` needs neither file; an `unknown form` fails, named.
 
 ## Dependencies
 

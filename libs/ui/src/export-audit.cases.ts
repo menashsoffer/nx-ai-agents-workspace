@@ -61,4 +61,23 @@ export const EXPORT_CASES: ExportCase[] = [
     modules: [],
     unrecognisedStatements: ['export const A = 1;', "export { B } from 'pkg';"],
   },
+
+  {
+    category: 'indented export',
+    indexText: "export * from './lib/a/A';\n  export const X = 1;",
+    modules: [value()],
+    unrecognisedStatements: ['export const X = 1;'],
+  },
+  {
+    category: 'semicolonless export',
+    indexText: "export * from './lib/a/A'\nexport * from './lib/b/B'",
+    modules: [value(), value('./lib/b/B')],
+    unrecognisedStatements: [],
+  },
+  {
+    category: 'semicolonless export',
+    indexText: "export { A } from './lib/a/A'\n  export default A",
+    modules: [value()],
+    unrecognisedStatements: ['export default A'],
+  },
 ];

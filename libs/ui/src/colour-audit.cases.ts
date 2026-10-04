@@ -79,4 +79,30 @@ export const COLOUR_CASES: ColourCase[] = [
     sourceText: '<i className="bg-brand-600" />',
     isReported: false,
   },
+
+  {
+    category: 'hex colour',
+    sourceText: "const a = '#ff00aa';",
+    isReported: true,
+  },
+  {
+    category: 'jsx comment',
+    sourceText: "<a href={/* x */ '#add'} />",
+    isReported: false,
+  },
+  {
+    category: 'js comment',
+    sourceText: "// const old = '#fade';\nconst a = 1;",
+    isReported: false,
+  },
+  {
+    category: 'js comment',
+    sourceText: '/* rgb(0 0 0) */ const a = 1;',
+    isReported: false,
+  },
+  {
+    category: 'jsx text',
+    sourceText: '<p>hsl( and #fade are prose</p>',
+    isReported: false,
+  },
 ];

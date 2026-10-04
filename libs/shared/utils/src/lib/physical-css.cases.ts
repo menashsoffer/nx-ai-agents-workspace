@@ -55,4 +55,40 @@ export const PHYSICAL_CSS_CASES: PhysicalCssCase[] = [
     cssText: 'a::after { content: "margin-left: x"; quotes: \'left: 1\' }',
     expectedFindings: [],
   },
+
+  ...[
+    'a{background:url(/img/*);margin-left:4px}',
+    String.raw`a{background:URL(/img/\20/*);margin-left:4px}`,
+    String.raw`a{background:\75rl(/img/\9/*);margin-left:4px}`,
+    '@IMPORT/**/url(/img/*);a{margin-left:4px}',
+    'a{background:url(a(b);margin-left:4px}',
+    'a{content:"/*";margin-left:4px}',
+  ].map((cssText): PhysicalCssCase => ({
+    category: 'css url',
+    cssText,
+    expectedFindings: ['margin-left'],
+  })),
+  {
+    category: 'css escape',
+    cssText: String.raw`a{m\61rgin-left:4px}`,
+    expectedFindings: ['margin-left'],
+  },
+  {
+    category: 'css escape',
+    cssText: String.raw`a{clear:l\65 ft}`,
+    expectedFindings: ['clear: left'],
+  },
+  {
+    category: 'css escape',
+    cssText: String.raw`a{margin\3b left:1px}`,
+    expectedFindings: [],
+  },
+  {
+    category: 'four-value shorthand',
+    cssText: 'a{scroll-margin:0 0 0 4px;scroll-padding:0 0 0 4px}',
+    expectedFindings: [
+      'scroll-margin: four values',
+      'scroll-padding: four values',
+    ],
+  },
 ];
