@@ -23,7 +23,7 @@ const config: KnipConfig = {
         // pipeline-lib.mjs, github.mjs and router-external.mjs would go unchecked.
         '.github/scripts/*.test.mjs',
         // Called from `.claude/hooks/*.sh`, which knip does not read.
-        'scripts/*.mjs',
+        '.claude/hooks/*.mjs',
         // One-off repo scripts (`pnpm template:init`).
         'tools/scripts/*.mjs',
       ],
