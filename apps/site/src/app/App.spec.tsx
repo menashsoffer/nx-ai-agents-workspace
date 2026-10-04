@@ -31,7 +31,7 @@ describe('App', () => {
 
   it('links every nav route', () => {
     renderAt('/');
-    for (const route of routes.filter((r) => r.navLabel)) {
+    for (const route of routes.filter((route) => route.navLabel)) {
       expect(screen.getByRole('link', { name: route.navLabel })).toBeTruthy();
     }
   });

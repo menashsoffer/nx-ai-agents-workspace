@@ -3,7 +3,7 @@ import { cn } from '@starter/shared-utils';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { routes } from './routes';
 
-const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+const getNavLinkClassName = ({ isActive }: { isActive: boolean }) =>
   cn(
     'rounded-md px-3 py-1.5 hover:bg-brand-50',
     isActive && 'bg-brand-100 font-semibold',
@@ -30,7 +30,7 @@ export function App() {
                 key={route.path}
                 to={`/${route.path}`}
                 end
-                className={navLinkClass}
+                className={getNavLinkClassName}
               >
                 {route.navLabel}
               </NavLink>

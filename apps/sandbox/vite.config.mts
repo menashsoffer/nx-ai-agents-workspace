@@ -15,10 +15,12 @@ function spikesMustBeLazy(): Plugin {
     generateBundle(_options, bundle) {
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== 'chunk' || !chunk.isEntry) continue;
-        const eager = chunk.moduleIds.filter((id) => SPIKE_ENTRY.test(id));
-        if (eager.length) {
+        const eagerSpikeModuleIds = chunk.moduleIds.filter((id) =>
+          SPIKE_ENTRY.test(id),
+        );
+        if (eagerSpikeModuleIds.length) {
           this.error(
-            `Spike components must be lazy-loaded, but these ended up in the entry chunk:\n  ${eager.join('\n  ')}\nOnly import a spike's meta.ts eagerly.`,
+            `Spike components must be lazy-loaded, but these ended up in the entry chunk:\n  ${eagerSpikeModuleIds.join('\n  ')}\nOnly import a spike's meta.ts eagerly.`,
           );
         }
       }
