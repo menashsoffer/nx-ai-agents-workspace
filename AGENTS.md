@@ -157,6 +157,24 @@ section before adding identifiers or files. In short:
   answer them are `handle<Subject><Event>`.
 - Apply this to new and changed code; do not rename unrelated existing code.
 
+### File length
+
+Binding for every file you create or grow; the full policy is in
+[`docs/conventions.md`](docs/conventions.md) under "File length".
+
+- Target 300 lines per file, hard cap 400 (physical lines, comments and blanks
+  included). Scope: code, tests, docs (`*.md`) and workflow YAML; generated and
+  vendored files are exempt.
+- Past the target, split by responsibility without asking: a thin entry point
+  plus small modules. A pure move changes nothing else; a logic change that a
+  split forces goes in its own commit and is documented in the PR.
+- Test files follow the same limits: a thin `*.spec.ts`, case tables in
+  `*.cases.ts` (one file per topic when a table is long), helpers in
+  `*.scanner.ts` or a dedicated module. Export only what is used.
+- An exception is a registry entry in `tools/security/file-length-exceptions.json`
+  (owner-only, protected). Never add one on your own. If a split would touch a
+  protected path, stop and report it; do not split and do not ask mid-task.
+
 ### Styling
 
 - Tailwind v4 only; no CSS-in-JS and no other CSS frameworks.
