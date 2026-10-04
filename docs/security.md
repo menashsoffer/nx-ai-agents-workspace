@@ -140,6 +140,17 @@ Every project inherits these files, so they are held to a higher bar.
 | A6  | No switch turns permission checks or hooks off: Claude `permissions.defaultMode` other than default/ask/plan/acceptEdits/dontAsk, `disableAllHooks`, `skipDangerousModePermissionPrompt` (also in a committed `settings.local.json`); Codex `approval_policy = "never"`/granular, `sandbox_mode = "danger-full-access"`                                                                                                                                                    | `pnpm security` | Gate   |
 | A7  | Every task a pre-approved command can run is reviewed: all `package.json` scripts, `nx:run-commands`/`nx:run-script` targets (or targets with an unlisted executor, incl. `nx.json` `targetDefaults`) Nx plugins and the git-hook commands (`simple-git-hooks`, `lint-staged`) match `tools/security/tasks.json` exactly; hook config in other files fails                                                                                                                 | `pnpm security` | Gate   |
 
+**Local sessions as the pipeline bot.** If `.env.local` (gitignored, S3) holds
+`APP_ID` and `PEM_PATH`, the SessionStart hook `.claude/hooks/mint-app-identity.sh`
+mints a one-hour GitHub App installation token and gives it to the session as
+`GH_TOKEN` and a git `http.extraheader`, so nothing is written to `.git/config`.
+The token is limited to this repository (the `origin` remote, or `REPO=owner/name`
+in `.env.local`). The script that reads the private key, `.claude/hooks/mint-app-token.mjs`,
+lives under the protected `.claude/hooks/` so an agent patch cannot change code
+that runs with the key. `.claude/settings.json` denies reading `.env`,
+`.env.local`, `*.pem` and `*.key`. When the token expires, `/clear`, `/resume`
+or a compaction runs the hook again; the script cannot be re-run from a Bash command.
+
 The Nx Claude plugin (`nx@nx-claude-plugins`) is listed but **not enabled**:
 its marketplace (`nrwl/nx-ai-agents-config`) can't be pinned to a commit. To
 use it in a project, enable it in `.claude/settings.local.json` (personal, not
