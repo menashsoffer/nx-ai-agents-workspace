@@ -98,13 +98,49 @@ describe('category extraction', () => {
       '/audit/example.cases.ts': `const make = (name) => ({ category: "helper", name });
         export const CASES = [make('a'), { category: 'plain' }];`,
     });
-    expect(collectConsumedCategories(specPath, 'audit', read)).toEqual([
+    expect(collectConsumedCategories(specPath, 'audit', read).sort()).toEqual([
       'helper',
       'plain',
     ]);
     expect(collectSpecCategories(specPath, read)).toEqual(
       expect.arrayContaining(['elsewhere', 'helper', 'plain']),
     );
+  });
+
+  it('reads a category key however it is written', () => {
+    const read = readFrom({
+      [specPath]: `describe('audit', () => {
+        it.each([{ category: 'known' }, { 'category': 'single' }, { "category": "double" }, { ['category']: 'computed' }, { [\`category\`]: 'template' }])('x', () => {});
+      });`,
+    });
+    const expected = ['known', 'single', 'double', 'computed', 'template'];
+    expect(collectConsumedCategories(specPath, 'audit', read)).toEqual(
+      expected,
+    );
+    expect(collectSpecCategories(specPath, read)).toEqual(expected);
+  });
+
+  it('reads only the table an audit uses from a file that exports several', () => {
+    const read = readFrom({
+      [specPath]: `import { CASES_A as TABLE, CASES_B } from './example.cases.js';
+        describe('a', () => { it.each(TABLE)('x', () => {}); });
+        describe('b', () => { it.each(CASES_B)('y', () => {}); });`,
+      '/audit/example.cases.ts': `const make = (name) => ({ category: 'helper-a', name });
+        const unused = () => ({ category: 'unused helper' });
+        export const CASES_A = [make('a'), { category: 'only-a' }];
+        export const CASES_B = [{ category: 'only-b' }];`,
+    });
+    expect(collectConsumedCategories(specPath, 'a', read).sort()).toEqual([
+      'helper-a',
+      'only-a',
+    ]);
+    expect(collectConsumedCategories(specPath, 'b', read)).toEqual(['only-b']);
+    expect(collectSpecCategories(specPath, read).sort()).toEqual([
+      'helper-a',
+      'only-a',
+      'only-b',
+      'unused helper',
+    ]);
   });
 
   it('names a category that is not a literal, and a missing table', () => {

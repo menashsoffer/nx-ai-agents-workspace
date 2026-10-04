@@ -13,11 +13,25 @@ const readFromDisk: SourceReader = (path) => readFileSync(path, 'utf8');
 const parse = (path: string, read: SourceReader) =>
   ts.createSourceFile(path, read(path), ts.ScriptTarget.Latest, true);
 
+/** The static name of a property key, however it is written; undefined if not static. */
+function getPropertyName(name: ts.PropertyName): string | undefined {
+  if (ts.isComputedPropertyName(name)) {
+    return ts.isStringLiteralLike(name.expression)
+      ? name.expression.text
+      : undefined;
+  }
+  return ts.isIdentifier(name) ||
+    ts.isStringLiteralLike(name) ||
+    ts.isNumericLiteral(name)
+    ? name.text
+    : undefined;
+}
+
 /** Every `category` value under `node`; one that is not a literal is named as such. */
 function collectCategories(node: ts.Node): string[] {
   const isCategory =
     (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node)) &&
-    node.name.getText() === 'category';
+    getPropertyName(node.name) === 'category';
   const own = isCategory
     ? [
         ts.isPropertyAssignment(node) &&
@@ -34,28 +48,105 @@ function collectCategories(node: ts.Node): string[] {
   return [...own, ...inner];
 }
 
-function findImportedPath(
-  sourceFile: ts.SourceFile,
+/** The identifiers under `node` that refer to something (not property keys or members). */
+function collectReferences(node: ts.Node): string[] {
+  const isKey =
+    ts.isIdentifier(node) &&
+    ((ts.isPropertyAssignment(node.parent) && node.parent.name === node) ||
+      (ts.isPropertyAccessExpression(node.parent) &&
+        node.parent.name === node));
+  const own = ts.isIdentifier(node) && !isKey ? [node.text] : [];
+  const inner: string[] = [];
+  ts.forEachChild(
+    node,
+    (child) => void inner.push(...collectReferences(child)),
+  );
+  return [...own, ...inner];
+}
+
+/** The top-level variable or function a file declares under `name`. */
+function findDeclaration(
+  file: ts.SourceFile,
   name: string,
-): string | undefined {
-  for (const statement of sourceFile.statements) {
-    const bindings =
-      ts.isImportDeclaration(statement) &&
-      statement.importClause?.namedBindings;
-    if (
-      bindings &&
-      ts.isNamedImports(bindings) &&
-      ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier.text.startsWith('./') &&
-      bindings.elements.some((element) => element.name.text === name)
-    ) {
-      return resolve(
-        dirname(sourceFile.fileName),
-        statement.moduleSpecifier.text.replace(/\.js$/, '.ts'),
+): ts.Node | undefined {
+  for (const statement of file.statements) {
+    if (ts.isFunctionDeclaration(statement) && statement.name?.text === name) {
+      return statement;
+    }
+    if (ts.isVariableStatement(statement)) {
+      const declaration = statement.declarationList.declarations.find(
+        (candidate) => candidate.name.getText() === name,
       );
+      if (declaration) return declaration;
     }
   }
   return undefined;
+}
+
+/** Where a relative named import of `localName` comes from, and what it is called there. */
+function findImport(
+  file: ts.SourceFile,
+  localName: string,
+): { path: string; exportedName: string } | undefined {
+  for (const statement of file.statements) {
+    const bindings =
+      ts.isImportDeclaration(statement) &&
+      statement.importClause?.namedBindings;
+    const element =
+      bindings && ts.isNamedImports(bindings)
+        ? bindings.elements.find(
+            (candidate) => candidate.name.text === localName,
+          )
+        : undefined;
+    if (
+      element &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      statement.moduleSpecifier.text.startsWith('./')
+    ) {
+      return {
+        path: resolve(
+          dirname(file.fileName),
+          statement.moduleSpecifier.text.replace(/\.js$/, '.ts'),
+        ),
+        exportedName: (element.propertyName ?? element.name).text,
+      };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The categories of one symbol: its own declaration, plus whatever that
+ * declaration refers to (a helper in the same file, or an import). Nothing
+ * else in the file counts.
+ */
+function collectSymbolCategories(
+  file: ts.SourceFile,
+  name: string,
+  read: SourceReader,
+  visited: Set<string>,
+): string[] {
+  const key = `${file.fileName}#${name}`;
+  if (visited.has(key)) return [];
+  visited.add(key);
+  const declaration = findDeclaration(file, name);
+  if (declaration) {
+    return [
+      ...collectCategories(declaration),
+      ...collectReferences(declaration).flatMap((reference) =>
+        collectSymbolCategories(file, reference, read, visited),
+      ),
+    ];
+  }
+  const imported = findImport(file, name);
+  return imported
+    ? collectSymbolCategories(
+        parse(imported.path, read),
+        imported.exportedName,
+        read,
+        visited,
+      )
+    : [];
 }
 
 /** The categories of one table: written in place, declared in the spec, or imported. */
@@ -64,24 +155,13 @@ function collectTableCategories(
   specFile: ts.SourceFile,
   read: SourceReader,
 ): string[] {
-  const categories = collectCategories(table);
-  const visit = (node: ts.Node): void => {
-    if (ts.isIdentifier(node)) {
-      const importedPath = findImportedPath(specFile, node.text);
-      const declaration = specFile.statements
-        .filter(ts.isVariableStatement)
-        .flatMap((statement) => [...statement.declarationList.declarations])
-        .find(({ name }) => name.getText() === node.text);
-      if (importedPath) {
-        categories.push(...collectCategories(parse(importedPath, read)));
-      } else if (declaration?.initializer) {
-        categories.push(...collectCategories(declaration.initializer));
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(table);
-  return categories;
+  const visited = new Set<string>();
+  return [
+    ...collectCategories(table),
+    ...collectReferences(table).flatMap((reference) =>
+      collectSymbolCategories(specFile, reference, read, visited),
+    ),
+  ];
 }
 
 /** The categories of every `it.each` table inside `describe(describeTitle, ...)`. */
