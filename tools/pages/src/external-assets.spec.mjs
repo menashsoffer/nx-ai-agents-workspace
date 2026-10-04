@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { findExternalAssets } from './external-assets.mjs';
 
-const page = (head) => `<!doctype html><html><head>${head}</head></html>`;
+const createHtmlPage = (head) =>
+  `<!doctype html><html><head>${head}</head></html>`;
 
 describe('findExternalAssets', () => {
   it.each([
@@ -142,30 +143,33 @@ describe('findExternalAssets', () => {
       'javascript:alert(1)',
     ],
   ])('flags %s', (_name, head, url) => {
-    expect(findExternalAssets(page(head))).toEqual([url]);
+    expect(findExternalAssets(createHtmlPage(head))).toEqual([url]);
   });
 
   describe('with a known site origin', () => {
     const siteOrigin = 'https://user.github.io';
-    const flagged = (head) => findExternalAssets(page(head), { siteOrigin });
+    const findFlaggedAssets = (head) =>
+      findExternalAssets(createHtmlPage(head), { siteOrigin });
 
     it('allows that origin and nothing else', () => {
       expect(
-        flagged(
+        findFlaggedAssets(
           '<script src="https://user.github.io/repo/a.js"></script><script src="//user.github.io/b.js"></script>',
         ),
       ).toEqual([]);
       expect(
-        flagged('<script src="https://other.github.io/a.js"></script>'),
+        findFlaggedAssets(
+          '<script src="https://other.github.io/a.js"></script>',
+        ),
       ).toEqual(['https://other.github.io/a.js']);
-      expect(flagged('<script src="//other.test/a.js"></script>')).toEqual([
-        '//other.test/a.js',
-      ]);
+      expect(
+        findFlaggedAssets('<script src="//other.test/a.js"></script>'),
+      ).toEqual(['//other.test/a.js']);
     });
 
     it('blocks the same host over another scheme and look-alike hosts', () => {
       expect(
-        flagged(
+        findFlaggedAssets(
           '<script src="http://user.github.io/a.js"></script><script src="http:evil.test/a.js"></script><script src="https://user.github.io.evil.test/a.js"></script>',
         ),
       ).toEqual([
@@ -177,7 +181,9 @@ describe('findExternalAssets', () => {
 
     it('still allows data: and relative URLs', () => {
       expect(
-        flagged('<link rel="icon" href="data:,"><script src="a.js"></script>'),
+        findFlaggedAssets(
+          '<link rel="icon" href="data:,"><script src="a.js"></script>',
+        ),
       ).toEqual([]);
     });
   });
@@ -185,7 +191,7 @@ describe('findExternalAssets', () => {
   it('flags every asset, not just the first', () => {
     expect(
       findExternalAssets(
-        page(
+        createHtmlPage(
           '<script src=//a.test/1.js></script><link href = "http://b.test/2.css">',
         ),
       ),
@@ -193,15 +199,15 @@ describe('findExternalAssets', () => {
   });
 
   it('flags a URL the parser cannot read (fail-closed)', () => {
-    expect(findExternalAssets(page('<script src="http://"></script>'))).toEqual(
-      ['http://'],
-    );
+    expect(
+      findExternalAssets(createHtmlPage('<script src="http://"></script>')),
+    ).toEqual(['http://']);
   });
 
   it('passes a page with no external assets', () => {
     expect(
       findExternalAssets(
-        page(`<meta charset="utf-8"><title>x</title>
+        createHtmlPage(`<meta charset="utf-8"><title>x</title>
           <link rel="icon" href="data:,">
           <link rel="stylesheet" href="/assets/a.css">
           <link rel="stylesheet" href = "./b.css">

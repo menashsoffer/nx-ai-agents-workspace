@@ -28,14 +28,14 @@ import { findExternalAssets } from './external-assets.mjs';
 export const RESERVED_PATHS = { storybook: 'Storybook', docs: 'the docs app' };
 
 /** PR previews (preview.yml) live here; a deploy must never write into them. */
-const PREVIEW_PATH = /^pr-\d+$/;
+const PREVIEW_PATH_PATTERN = /^pr-\d+$/;
 
 const workspaceRoot = resolve(fileURLToPath(import.meta.url), '../../../..');
 
-function* walk(dir) {
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) yield* walk(path);
+function* walkFiles(directory) {
+  for (const entry of readdirSync(directory)) {
+    const path = join(directory, entry);
+    if (statSync(path).isDirectory()) yield* walkFiles(path);
     else yield path;
   }
 }
@@ -46,13 +46,15 @@ export function assemble({
   docsDir = join(workspaceRoot, 'apps/docs/dist'),
   outDir = join(workspaceRoot, 'dist/pages'),
 } = {}) {
-  for (const [label, dir] of [
+  for (const [label, buildDirectory] of [
     ['site build', siteDir],
     ['Storybook build', storybookDir],
     ['docs build', docsDir],
   ]) {
-    if (!existsSync(join(dir, 'index.html'))) {
-      throw new Error(`${label} not found at ${dir}. Build it first.`);
+    if (!existsSync(join(buildDirectory, 'index.html'))) {
+      throw new Error(
+        `${label} not found at ${buildDirectory}. Build it first.`,
+      );
     }
   }
   for (const [reserved, owner] of Object.entries(RESERVED_PATHS)) {
@@ -62,10 +64,12 @@ export function assemble({
       );
     }
   }
-  const preview = readdirSync(siteDir).find((name) => PREVIEW_PATH.test(name));
-  if (preview) {
+  const previewName = readdirSync(siteDir).find((name) =>
+    PREVIEW_PATH_PATTERN.test(name),
+  );
+  if (previewName) {
     throw new Error(
-      `The site build contains "${preview}/", which the Pages deployment keeps for PR previews. Rename it in apps/site.`,
+      `The site build contains "${previewName}/", which the Pages deployment keeps for PR previews. Rename it in apps/site.`,
     );
   }
 
@@ -76,13 +80,13 @@ export function assemble({
   writeFileSync(join(outDir, '.nojekyll'), '');
 
   const problems = [];
-  for (const file of walk(outDir)) {
-    const rel = relative(outDir, file);
+  for (const file of walkFiles(outDir)) {
+    const relativePath = relative(outDir, file);
     if (file.endsWith('.map'))
-      problems.push(`P2: source map in artifact: ${rel}`);
+      problems.push(`P2: source map in artifact: ${relativePath}`);
     if (file.endsWith('.html')) {
       for (const url of findExternalAssets(readFileSync(file, 'utf8'))) {
-        problems.push(`P1: third-party asset in ${rel}: ${url}`);
+        problems.push(`P1: third-party asset in ${relativePath}: ${url}`);
       }
     }
   }
@@ -96,8 +100,10 @@ export function assemble({
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
-    const out = assemble();
-    console.log(`Pages artifact assembled in ${relative(process.cwd(), out)}`);
+    const outputDirectory = assemble();
+    console.log(
+      `Pages artifact assembled in ${relative(process.cwd(), outputDirectory)}`,
+    );
   } catch (error) {
     console.error(error.message);
     process.exit(1);

@@ -12,7 +12,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-const TYPES = {
+const CONTENT_TYPES_BY_EXTENSION = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
   '.mjs': 'text/javascript',
@@ -27,33 +27,36 @@ const TYPES = {
 
 export function createPagesServer({ root, base = '/' }) {
   const prefix = base.endsWith('/') ? base : `${base}/`;
-  const rootDir = resolve(root);
+  const rootDirectory = resolve(root);
 
-  const send = (res, status, file) => {
-    res.writeHead(status, {
-      'content-type': TYPES[extname(file)] ?? 'application/octet-stream',
+  const sendFile = (response, status, file) => {
+    response.writeHead(status, {
+      'content-type':
+        CONTENT_TYPES_BY_EXTENSION[extname(file)] ?? 'application/octet-stream',
     });
-    createReadStream(file).pipe(res);
+    createReadStream(file).pipe(response);
   };
 
-  return createServer((req, res) => {
+  return createServer((request, response) => {
     const pathname = decodeURIComponent(
-      new URL(req.url ?? '/', 'http://x').pathname,
+      new URL(request.url ?? '/', 'http://x').pathname,
     );
     if (!pathname.startsWith(prefix) && pathname !== prefix.slice(0, -1)) {
-      res.writeHead(404, { 'content-type': 'text/plain' }).end('Not Found');
+      response
+        .writeHead(404, { 'content-type': 'text/plain' })
+        .end('Not Found');
       return;
     }
     const relativePath = normalize(pathname.slice(prefix.length - 1));
-    let file = join(rootDir, relativePath);
-    if (!file.startsWith(rootDir)) {
-      res.writeHead(400).end();
+    let file = join(rootDirectory, relativePath);
+    if (!file.startsWith(rootDirectory)) {
+      response.writeHead(400).end();
       return;
     }
     if (existsSync(file) && statSync(file).isDirectory())
       file = join(file, 'index.html');
-    if (existsSync(file)) return send(res, 200, file);
-    send(res, 404, join(rootDir, '404.html'));
+    if (existsSync(file)) return sendFile(response, 200, file);
+    sendFile(response, 404, join(rootDirectory, '404.html'));
   });
 }
 

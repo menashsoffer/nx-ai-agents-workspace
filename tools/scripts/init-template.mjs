@@ -31,22 +31,25 @@ const { values } = parseArgs({
   },
 });
 
-const usage = `Usage: pnpm template:init --scope <npm-scope> --what "<one line>" [--url <pages-url>]`;
+const USAGE = `Usage: pnpm template:init --scope <npm-scope> --what "<one line>" [--url <pages-url>]`;
 if (values.help) {
-  console.log(usage);
+  console.log(USAGE);
   process.exit(0);
 }
 
 const fail = (message) => {
-  console.error(`${message}\n${usage}`);
+  console.error(`${message}\n${USAGE}`);
   process.exit(1);
 };
 
 async function ask(question) {
   if (!process.stdin.isTTY) return undefined;
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = (await rl.question(question)).trim();
-  rl.close();
+  const readlineInterface = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  const answer = (await readlineInterface.question(question)).trim();
+  readlineInterface.close();
   return answer || undefined;
 }
 
@@ -71,8 +74,9 @@ if (!/^[a-z0-9][a-z0-9._-]*$/.test(scope)) {
   );
 }
 
-const what = values.what ?? (await ask('What is this project (one line)? '));
-if (!what) fail('Missing --what.');
+const projectDescription =
+  values.what ?? (await ask('What is this project (one line)? '));
+if (!projectDescription) fail('Missing --what.');
 
 let url = values.url;
 if (!url) {
@@ -89,46 +93,48 @@ if (!url)
     'Could not derive the GitHub Pages URL from `git remote get-url origin`; pass --url.',
   );
 
-const run = (cmd) => execSync(cmd, { stdio: 'inherit' });
+const runCommand = (command) => execSync(command, { stdio: 'inherit' });
 
 // 1. Rename the npm scope in every tracked text file.
-const files = execSync('git ls-files -z', { encoding: 'utf8' })
+const trackedFiles = execSync('git ls-files -z', { encoding: 'utf8' })
   .split('\0')
   .filter(Boolean);
-let changed = 0;
-for (const file of files) {
+let changedFileCount = 0;
+for (const file of trackedFiles) {
   if (!existsSync(file)) continue;
   const content = readFileSync(file, 'utf8');
   if (content.includes('\0')) continue; // binary
-  const next = content.replaceAll(`@${OLD_SCOPE}/`, `@${scope}/`);
-  if (next !== content) {
-    writeFileSync(file, next);
-    changed++;
+  const updatedContent = content.replaceAll(`@${OLD_SCOPE}/`, `@${scope}/`);
+  if (updatedContent !== content) {
+    writeFileSync(file, updatedContent);
+    changedFileCount++;
   }
 }
-console.log(`Renamed @${OLD_SCOPE}/ -> @${scope}/ in ${changed} files.`);
+console.log(
+  `Renamed @${OLD_SCOPE}/ -> @${scope}/ in ${changedFileCount} files.`,
+);
 
 // 2. Fill in the project identity in AGENTS.md.
-const agents = readFileSync('AGENTS.md', 'utf8')
-  .replace('- **What:** _TODO_', `- **What:** ${what}`)
+const agentsGuide = readFileSync('AGENTS.md', 'utf8')
+  .replace('- **What:** _TODO_', `- **What:** ${projectDescription}`)
   .replace(
     '- **Live:** _TODO_',
     `- **Live:** ${url} (Storybook: ${url}storybook/)`,
   );
-writeFileSync('AGENTS.md', agents);
+writeFileSync('AGENTS.md', agentsGuide);
 
 // 3. Remove template-only files and scripts.
-const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
-for (const name of TEMPLATE_ONLY_SCRIPTS) delete pkg.scripts[name];
-writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
+for (const name of TEMPLATE_ONLY_SCRIPTS) delete packageJson.scripts[name];
+writeFileSync('package.json', JSON.stringify(packageJson, null, 2) + '\n');
 for (const file of TEMPLATE_ONLY_FILES) rmSync(file, { force: true });
 
 // 4. Reinstall and normalize.
-run('pnpm install');
-run('pnpm nx reset');
-run('pnpm nx sync');
-run('pnpm pipeline:map'); // template-smoke.yml is gone from the map
-run('pnpm nx format:write --all'); // renamed scope changes Markdown table widths
+runCommand('pnpm install');
+runCommand('pnpm nx reset');
+runCommand('pnpm nx sync');
+runCommand('pnpm pipeline:map'); // template-smoke.yml is gone from the map
+runCommand('pnpm nx format:write --all'); // renamed scope changes Markdown table widths
 
 console.log(`
 Done. Next steps (see README "Start a new project"):

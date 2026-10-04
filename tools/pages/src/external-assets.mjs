@@ -10,7 +10,7 @@
 import { JSDOM } from 'jsdom';
 
 /** [element, attribute] pairs where the browser fetches (or re-bases) a URL. */
-const LOADERS = [
+const URL_LOADING_ELEMENT_ATTRIBUTES = [
   ['script', 'src'],
   ['link', 'href'],
   ['base', 'href'],
@@ -20,7 +20,7 @@ const LOADERS = [
  * What a browser does before it looks at the URL: trims control characters and
  * spaces, drops tabs and newlines anywhere, and reads `\\` as `/`.
  */
-function normalize(value) {
+function normalizeUrl(value) {
   let start = 0;
   let end = value.length;
   while (start < end && value.charCodeAt(start) <= 0x20) start++;
@@ -36,7 +36,7 @@ function normalize(value) {
 // against a made-up base is unsafe: `http:x.test/a.js` is a relative path under
 // an http base, and a made-up host can be named by the URL itself.
 function isThirdParty(value, siteOrigin) {
-  const url = normalize(value);
+  const url = normalizeUrl(value);
   if (/^data:/i.test(url)) return false; // no host to contact
   const absolute = /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('//');
   if (!absolute) return false;
@@ -55,12 +55,12 @@ function isThirdParty(value, siteOrigin) {
  */
 export function findExternalAssets(html, { siteOrigin } = {}) {
   const { window } = new JSDOM(html);
-  const found = [];
+  const externalAssetUrls = [];
   const scan = (root) => {
-    for (const [tag, attribute] of LOADERS) {
+    for (const [tag, attribute] of URL_LOADING_ELEMENT_ATTRIBUTES) {
       for (const element of root.querySelectorAll(`${tag}[${attribute}]`)) {
         const value = element.getAttribute(attribute);
-        if (isThirdParty(value, siteOrigin)) found.push(value);
+        if (isThirdParty(value, siteOrigin)) externalAssetUrls.push(value);
       }
     }
     // querySelectorAll does not look inside <template> content.
@@ -70,5 +70,5 @@ export function findExternalAssets(html, { siteOrigin } = {}) {
   };
   scan(window.document);
   window.close();
-  return found;
+  return externalAssetUrls;
 }
