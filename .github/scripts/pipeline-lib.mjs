@@ -273,6 +273,29 @@ export function renderPrompt({
   ].join('\n\n');
 }
 
+/**
+ * Parses CLI arguments: `--key value` and `--key=value` are the same flag, a
+ * repeated flag collects its values in an array, and everything else lands
+ * in `_`. (`--key=value` used to become a flag literally named `key=value`
+ * that swallowed the next argument.)
+ */
+export function parseFlags(args) {
+  const out = { _: [] };
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (!a.startsWith('--')) {
+      out._.push(a);
+      continue;
+    }
+    const eq = a.indexOf('=');
+    const key = eq === -1 ? a.slice(2) : a.slice(2, eq);
+    const val = eq === -1 ? args[++i] : a.slice(eq + 1);
+    if (out[key] === undefined) out[key] = val;
+    else out[key] = [].concat(out[key], val);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- patches
 
 const C_ESCAPES = {

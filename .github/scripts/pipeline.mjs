@@ -55,6 +55,7 @@ import {
   renderProtectedApprovedNote,
   renderProtectedRequest,
   renderRestartHint,
+  parseFlags,
   renderPrompt,
   renderSpecComment,
   renderState,
@@ -83,21 +84,6 @@ import {
 
 const [, , command, ...argv] = process.argv;
 
-function flags(args) {
-  const out = { _: [] };
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i];
-    if (!a.startsWith('--')) {
-      out._.push(a);
-      continue;
-    }
-    const key = a.slice(2);
-    const val = args[++i];
-    if (out[key] === undefined) out[key] = val;
-    else out[key] = [].concat(out[key], val);
-  }
-  return out;
-}
 const many = (v) => (v === undefined ? [] : [].concat(v));
 const num = (v) => {
   const n = Number(v);
@@ -260,7 +246,7 @@ const classifiers = {
 
 const commands = {
   'render-prompt'(args) {
-    const f = flags(args);
+    const f = parseFlags(args);
     const promptText = readFileSync(f.prompt, 'utf8');
     const context = Object.fromEntries(
       many(f.context).map((kv) => [
@@ -287,7 +273,7 @@ const commands = {
   },
 
   'edit-labels'(args) {
-    const f = flags(args);
+    const f = parseFlags(args);
     editLabels(num(f._[0]), { add: many(f.add), remove: many(f.remove) });
   },
 
@@ -298,7 +284,7 @@ const commands = {
 
   // Builds a stage's outcome JSON (not posted) from job results and output.
   classify([stage, ...rest]) {
-    const f = flags(rest);
+    const f = parseFlags(rest);
     if (!classifiers[stage]) throw new Error(`No classifier for ${stage}`);
     const outcome = normalizeOutcome({
       ...classifiers[stage](f),
@@ -410,7 +396,7 @@ const commands = {
   // again what implement saw). Outputs `protected` (none | approvable |
   // forbidden) and `protected_paths`.
   'check-patch'(args) {
-    const f = flags(args);
+    const f = parseFlags(args);
     const res = classifyPatch(readFileSync(f._[0], 'utf8'));
     setOutput('protected', res.kind);
     setOutput('protected_paths', res.protected.join('\n'));
@@ -838,7 +824,7 @@ const commands = {
   // never-approvable path (or a file list that may be cut off) is deleted
   // and the step fails with `rejected=true` (the forbidden_path hard gate).
   'protected-request'(args) {
-    const f = flags(args);
+    const f = parseFlags(args);
     const n = num(f._[0]);
     const branch = f.branch;
     if (!isPipelineBranch(branch)) throw new Error('Not a pipeline branch');
@@ -1263,7 +1249,7 @@ const commands = {
   },
 
   'project-status'(args) {
-    const f = flags(args);
+    const f = parseFlags(args);
     const m = /github\.com\/(users|orgs)\/([^/]+)\/projects\/(\d+)/.exec(
       f['project-url'] ?? '',
     );

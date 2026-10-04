@@ -14,8 +14,14 @@
 #
 # The token expires after ~1 hour (GitHub API limit on installation access
 # tokens). If `git push`/`gh` start failing with 401 partway through a long
-# session, re-mint by re-running this same script:
-#   "$CLAUDE_PROJECT_DIR"/.claude/hooks/mint-app-identity.sh
+# session, get a fresh one by making Claude Code run SessionStart again:
+# /clear, /resume or a context compaction all do. Running this script by hand
+# from a Bash command does not work: $CLAUDE_ENV_FILE exists only inside
+# SessionStart, Setup, CwdChanged and FileChanged hooks
+# (https://code.claude.com/docs/en/hooks), so it would exit 2 below.
+#
+# The token script lives next to this one, in the protected .claude/hooks/,
+# because it reads the App's private key.
 set -uo pipefail
 
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 2
@@ -29,10 +35,10 @@ if [ -z "${CLAUDE_ENV_FILE:-}" ]; then
   exit 2
 fi
 
-token="$(node scripts/mint-app-token.mjs)"
+token="$(node .claude/hooks/mint-app-token.mjs)"
 status=$?
 if [ "$status" -ne 0 ] || [ -z "$token" ]; then
-  echo "mint-app-identity: failed to mint a GitHub App installation token (mint-app-token.mjs exited $status)" >&2
+  echo "mint-app-identity: failed to mint a GitHub App installation token (.claude/hooks/mint-app-token.mjs exited $status)" >&2
   exit 2
 fi
 
