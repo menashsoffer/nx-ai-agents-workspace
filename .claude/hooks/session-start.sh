@@ -9,6 +9,28 @@ fi
 
 cd "${CLAUDE_PROJECT_DIR:-.}"
 
+# Use the Node version from .nvmrc: the sandbox image ships an older one, and
+# the repo requires Node 24+. A failure here only warns; install still runs.
+required_node="$(tr -d '[:space:]' < .nvmrc)"
+if [ "$(node --version | sed 's/^v//; s/\..*//')" != "${required_node%%.*}" ] && [ -s /opt/nvm/nvm.sh ]; then
+  export NVM_DIR=/opt/nvm
+  set +eu
+  # shellcheck disable=SC1091
+  . "$NVM_DIR/nvm.sh"
+  nvm install "$required_node" >/dev/null && nvm use "$required_node" >/dev/null
+  node_status=$?
+  set -eu
+  if [ "$node_status" -eq 0 ]; then
+    node_directory="$(dirname "$(command -v node)")"
+    export PATH="$node_directory:$PATH"
+    if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+      printf 'export PATH=%q:$PATH\n' "$node_directory" >> "$CLAUDE_ENV_FILE"
+    fi
+  else
+    echo "session-start: could not switch to Node $required_node; continuing with $(node --version)" >&2
+  fi
+fi
+
 corepack enable >/dev/null 2>&1 || true
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pnpm install --frozen-lockfile
 
