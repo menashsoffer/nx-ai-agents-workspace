@@ -45,7 +45,11 @@ const HREF_ELEMENT_NAMES = new Set(['a', 'link', 'img']);
 /** Stands in for `${...}` when a template literal is read as CSS text. */
 const TEMPLATE_PLACEHOLDER = '\0';
 
-/** The URLs a CSS text references (`url()` and `@import`) that start with "/". */
+/**
+ * The URLs a CSS text references (`url()` and `@import`) that are root-absolute.
+ * The tokenizer keeps whitespace inside a quoted string, so the same leading
+ * C0 controls and spaces that a URL parser strips are ignored here too.
+ */
 function findRootAbsoluteCssUrls(cssText: string): string[] {
   const tokens = tokenizeCss(cssText);
   const urls: string[] = [];
@@ -61,7 +65,7 @@ function findRootAbsoluteCssUrls(cssText: string): string[] {
       urls.push(nextToken.value);
     }
   });
-  return urls.filter((url) => url.startsWith('/'));
+  return urls.filter(isRootAbsolutePath);
 }
 
 const withoutWhitespace = (text: string) => text.replace(/\s+/g, '');
@@ -635,6 +639,46 @@ const SYNTAX_CASES: Array<[string, string, number]> = [
     0,
   ],
   [
+    'flags a quoted CSS url() with a leading space in a string',
+    'const style = { backgroundImage: \'url(" /bg.png")\' };',
+    1,
+  ],
+  [
+    'flags a quoted CSS url() with a leading tab in a string',
+    'const style = { backgroundImage: \'url("\\t/bg.png")\' };',
+    1,
+  ],
+  [
+    'flags a quoted CSS url() with a leading space in a template literal',
+    'const style = `url(" /${name}.png")`;',
+    1,
+  ],
+  [
+    'flags a CSS escape for a tab in a string',
+    String.raw`const style = 'url("\\9 /bg.png")';`,
+    1,
+  ],
+  [
+    'flags a leading space in an @import written in a string',
+    'const css = \'@import " /x.css";\';',
+    1,
+  ],
+  [
+    'passes a quoted CSS url() with a no-break space in a string',
+    'const style = { backgroundImage: \'url("\u00A0/bg.png")\' };',
+    0,
+  ],
+  [
+    'passes a quoted CSS url() with a space before BASE_URL',
+    'const style = `url(" ${import.meta.env.BASE_URL}bg.png")`;',
+    0,
+  ],
+  [
+    'passes a quoted CSS url() with a space in a comment',
+    '// url(" /bg.png")\nconst value = 1;',
+    0,
+  ],
+  [
     'passes a string that merely contains the word url',
     "const text = 'see the url (/docs)';",
     0,
@@ -687,6 +731,93 @@ const CSS_CASES: Array<[string, string, number]> = [
     'flags every violating url()',
     '.a { background: url(/a.png), url(/b.png); }',
     2,
+  ],
+  [
+    'flags a space inside a quoted url()',
+    '.a { background: url(" /bg.png"); }',
+    1,
+  ],
+  [
+    'flags a space inside a single-quoted url()',
+    ".a { background: url(' /bg.png'); }",
+    1,
+  ],
+  [
+    'flags several spaces inside a quoted url()',
+    '.a { background: url("    /bg.png"); }',
+    1,
+  ],
+  [
+    'flags a literal tab inside a quoted url()',
+    '.a { background: url("\t/bg.png"); }',
+    1,
+  ],
+  [
+    'flags a tab and a space inside a quoted url()',
+    '.a { background: url("\t /bg.png"); }',
+    1,
+  ],
+  [
+    'flags a leading space in a quoted url( with outer spaces',
+    '.a { background: URL(  " /bg.png"  ); }',
+    1,
+  ],
+  ['flags a leading space in an @import string', '@import " /x.css";', 1],
+  ['flags a leading space in an @import url()', '@import url(" /x.css");', 1],
+  [
+    'flags a tab written as a CSS escape (\\9 )',
+    String.raw`.a { background: url("\9 /bg.png"); }`,
+    1,
+  ],
+  [
+    'flags a space written as a CSS escape (\\20 )',
+    String.raw`.a { background: url("\20 /bg.png"); }`,
+    1,
+  ],
+  [
+    'flags a newline written as a CSS escape (\\A )',
+    String.raw`.a { background: url("\A /bg.png"); }`,
+    1,
+  ],
+  [
+    'flags a control character written as a CSS escape (\\1 )',
+    String.raw`.a { background: url("\1 /bg.png"); }`,
+    1,
+  ],
+  [
+    'flags an escape before the quote content in an @import',
+    String.raw`@import "\9 /x.css";`,
+    1,
+  ],
+  [
+    'passes a no-break space before "/", which a URL parser keeps',
+    '.a { background: url("\u00A0/bg.png"); }',
+    0,
+  ],
+  [
+    'passes a no-break space written as a CSS escape (\\A0 )',
+    String.raw`.a { background: url("\A0 /bg.png"); }`,
+    0,
+  ],
+  [
+    'passes a leading space before a relative path',
+    '.a { background: url(" ./bg.png"); } .b { background: url(" bg.png"); }',
+    0,
+  ],
+  [
+    'passes a quoted url that has trailing space only',
+    '.a { background: url("bg.png "); }',
+    0,
+  ],
+  [
+    'passes a leading space in a url() inside a comment',
+    '/* url(" /bg.png") and @import " /x.css"; */ .a { color: red; }',
+    0,
+  ],
+  [
+    'passes a raw newline inside a quoted url() (a bad string that browsers ignore)',
+    '.a { background: url("\n/bg.png"); }',
+    0,
   ],
   ['passes a relative url()', '.a { background: url(./bg.png); }', 0],
   ['passes a url() through a package', '@import "@starter/ui/styles.css";', 0],
@@ -843,6 +974,54 @@ const PLANTED_CASES: Array<[string, string, string, number]> = [
     'a .tsx with a space after the BASE_URL prefix',
     'Planted.tsx',
     'export const Planted = () => <a href={import.meta.env.BASE_URL + " /x"}>x</a>;',
+    0,
+  ],
+  [
+    'a real .css file with a space inside a quoted url()',
+    'planted.css',
+    '.a { background: url(" /bg.png"); }',
+    1,
+  ],
+  [
+    'a real .css file with a tab inside a quoted url()',
+    'planted.css',
+    '.a { background: url("\t/bg.png"); }',
+    1,
+  ],
+  [
+    'a real .css file with a leading space in an @import',
+    'planted.css',
+    '@import " /x.css";',
+    1,
+  ],
+  [
+    'a real .css file with the tab as a CSS escape',
+    'planted.css',
+    String.raw`.a { background: url("\9 /bg.png"); }`,
+    1,
+  ],
+  [
+    'a .tsx with a quoted CSS url() with a leading space in a string',
+    'Planted.tsx',
+    'export const style = { backgroundImage: \'url(" /bg.png")\' };',
+    1,
+  ],
+  [
+    'a real .css file with a no-break space before "/"',
+    'planted.css',
+    '.a { background: url("\u00A0/bg.png"); }',
+    0,
+  ],
+  [
+    'a real .css file with a leading space inside a comment',
+    'planted.css',
+    '/* url(" /bg.png") */ .a { color: red; }',
+    0,
+  ],
+  [
+    'a .ts with a space before BASE_URL in a CSS string',
+    'planted.ts',
+    'export const style = `url(" ${import.meta.env.BASE_URL}bg.png")`;',
     0,
   ],
   [
