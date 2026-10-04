@@ -89,20 +89,21 @@ function findImport(
   localName: string,
 ): { path: string; exportedName: string } | undefined {
   for (const statement of file.statements) {
-    const bindings =
-      ts.isImportDeclaration(statement) &&
-      statement.importClause?.namedBindings;
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      !statement.moduleSpecifier.text.startsWith('./')
+    ) {
+      continue;
+    }
+    const bindings = statement.importClause?.namedBindings;
     const element =
       bindings && ts.isNamedImports(bindings)
         ? bindings.elements.find(
             (candidate) => candidate.name.text === localName,
           )
         : undefined;
-    if (
-      element &&
-      ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier.text.startsWith('./')
-    ) {
+    if (element) {
       return {
         path: resolve(
           dirname(file.fileName),
