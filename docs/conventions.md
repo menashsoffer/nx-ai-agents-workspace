@@ -265,6 +265,27 @@ clear "No sandbox app" message.
   rejects physical ones: `ml/mr/pl/pr/left/right-*`, `text-left/right`,
   `rounded-l/r`, `border-l/r`, `float-left/right`.
 - Storybook defaults to RTL; flip the **Direction** toolbar to check LTR.
+- Two tests guard these rules where ESLint alone does not reach:
+  `libs/shared/utils/src/lib/conventions-audit.spec.ts` fails if a `.css` file
+  under `libs/` or `apps/` uses a physical property (plain CSS isn't linted),
+  and exercises the ESLint physical-class regex itself against every family
+  named in its comment, with and without a variant prefix and `-` negation.
+- Direction-bearing icons (arrows, chevrons) need `rtl:rotate-180`.
+
+## Styling
+
+- Tailwind v4 utilities only; design tokens live in `libs/ui/src/styles.css`
+  under `@theme`. No hard-coded hex or `rgb()`/`rgba()` colour literal in a
+  `libs/ui` component — `libs/ui/src/conventions-audit.spec.ts` scans every
+  `.tsx` under `libs/ui/src` and fails on one.
+- Every component exported from `libs/ui/src/index.ts` needs a sibling
+  `*.spec.tsx` and `*.stories.tsx`; the same spec file's "component export
+  coverage" block fails on a missing one.
+- Join conditional classes with `cn()` from `@starter/shared-utils`. `cn()`
+  also accepts a (possibly nested) array or a `{ className: condition }`
+  object, clsx-style, but it does not merge or dedupe conflicting Tailwind
+  utility classes (`cn('p-2', 'p-4')` keeps both, in call order) — see
+  `libs/shared/utils/src/lib/cn.spec.ts`.
 
 ## Dependencies
 

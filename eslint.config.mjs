@@ -7,9 +7,9 @@ import nx from '@nx/eslint-plugin';
  *   border-l/r -> border-s/e, float-left/right -> float-start/end.
  * Matches with or without variants/negation (e.g. `md:-ml-2`).
  */
-const PHYSICAL_CLASS =
+export const PHYSICAL_CLASS =
   '(^|[\\s:"\'`!-])(ml|mr|pl|pr|left|right|scroll-ml|scroll-mr|scroll-pl|scroll-pr|border-l|border-r|rounded-l|rounded-r|rounded-tl|rounded-tr|rounded-bl|rounded-br)-|(^|[\\s:"\'`!])(text-left|text-right|float-left|float-right|clear-left|clear-right|border-l|border-r|rounded-l|rounded-r)($|[\\s"\'`])';
-const PHYSICAL_MESSAGE =
+export const PHYSICAL_MESSAGE =
   'Physical-direction Tailwind class breaks RTL. Use the logical one (ms/me, ps/pe, start/end, text-start/end, rounded-s/e, border-s/e).';
 
 export default [
