@@ -132,7 +132,7 @@ Planned files that are protected but **approvable** (`package.json`,
 `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tools/workspace-plugin/`,
 `tools/pipeline-map/`) pass this check. The success outcome note and the plan
 comment then say that the owner must approve them before a PR opens ([Protected-change
-approval](pipeline.md#protected-change-approval)). Any never-approvable path
+approval](pipeline-protected-changes.md#protected-change-approval)). Any never-approvable path
 (`.github/`, `CODEOWNERS`, `tools/security/`, `.claude/`, `.codex/`,
 `.pipeline/`, `.npmrc`, `.gitmodules`) is still `protected_surface`.
 

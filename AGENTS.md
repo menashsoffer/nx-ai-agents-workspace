@@ -222,7 +222,7 @@ and `FORBIDDEN_PATH_PATTERNS` in `.github/scripts/pipeline-lib.mjs`):
   else is in it.
 
 The supply-chain settings and `packageManager` above stay off limits for
-agents even inside an approvable file. See `docs/pipeline.md`,
+agents even inside an approvable file. See `docs/pipeline-protected-changes.md`,
 "Protected-change approval".
 
 ### Dependencies
