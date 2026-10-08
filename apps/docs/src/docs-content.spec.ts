@@ -40,5 +40,6 @@ describe('docs/ content', () => {
     const paths = readDocEntries(docsDirectory).map((entry) => entry.path);
     expect(paths).toContain('architecture.md');
     expect(paths).toContain('decisions/README.md');
+    expect(paths).toContain('pipeline-running.md');
   });
 });
