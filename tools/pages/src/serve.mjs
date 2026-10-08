@@ -4,11 +4,11 @@
 //   - a directory serves its index.html
 //   - any unknown path under the base returns <root>/404.html with status 404
 //
-//   node tools/pages/src/serve.mjs [--root dist/pages] [--base /repo/] [--port 4400]
+//   node tools/pages/src/serve.mjs [--root dist/pages] [--base /repo/] [--port 4400] [--host 127.0.0.1]
 // BASE_PATH is used when --base is not given.
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
@@ -37,26 +37,51 @@ export function createPagesServer({ root, base = '/' }) {
     createReadStream(file).pipe(response);
   };
 
+  const sendText = (response, status, text) => {
+    response.writeHead(status, { 'content-type': 'text/plain' }).end(text);
+  };
+
+  const isInsideRoot = (file) =>
+    file === rootDirectory || file.startsWith(rootDirectory + sep);
+
   return createServer((request, response) => {
-    const pathname = decodeURIComponent(
-      new URL(request.url ?? '/', 'http://x').pathname,
-    );
+    let pathname;
+    try {
+      pathname = decodeURIComponent(
+        new URL(request.url ?? '/', 'http://x').pathname,
+      );
+    } catch {
+      sendText(response, 400, 'Bad Request');
+      return;
+    }
     if (!pathname.startsWith(prefix) && pathname !== prefix.slice(0, -1)) {
-      response
-        .writeHead(404, { 'content-type': 'text/plain' })
-        .end('Not Found');
+      sendText(response, 404, 'Not Found');
       return;
     }
     const relativePath = normalize(pathname.slice(prefix.length - 1));
-    let file = join(rootDirectory, relativePath);
-    if (!file.startsWith(rootDirectory)) {
-      response.writeHead(400).end();
+    let file;
+    try {
+      file = join(rootDirectory, relativePath);
+      if (!isInsideRoot(file)) {
+        sendText(response, 400, 'Bad Request');
+        return;
+      }
+      if (existsSync(file) && statSync(file).isDirectory())
+        file = join(file, 'index.html');
+      if (existsSync(file)) {
+        sendFile(response, 200, file);
+        return;
+      }
+    } catch {
+      sendText(response, 400, 'Bad Request');
       return;
     }
-    if (existsSync(file) && statSync(file).isDirectory())
-      file = join(file, 'index.html');
-    if (existsSync(file)) return sendFile(response, 200, file);
-    sendFile(response, 404, join(rootDirectory, '404.html'));
+    const notFoundFile = join(rootDirectory, '404.html');
+    if (existsSync(notFoundFile)) {
+      sendFile(response, 404, notFoundFile);
+    } else {
+      sendText(response, 404, 'Not Found');
+    }
   });
 }
 
@@ -66,13 +91,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       root: { type: 'string', default: 'dist/pages' },
       base: { type: 'string', default: process.env['BASE_PATH'] ?? '/' },
       port: { type: 'string', default: '4400' },
+      host: { type: 'string' },
     },
   });
-  createPagesServer({ root: values.root, base: values.base }).listen(
-    Number(values.port),
-    () =>
-      console.log(
-        `Pages preview: http://localhost:${values.port}${values.base}`,
-      ),
-  );
+  const server = createPagesServer({ root: values.root, base: values.base });
+  const onListening = () =>
+    console.log(`Pages preview: http://localhost:${values.port}${values.base}`);
+  if (values.host) {
+    server.listen(Number(values.port), values.host, onListening);
+  } else {
+    server.listen(Number(values.port), onListening);
+  }
 }
