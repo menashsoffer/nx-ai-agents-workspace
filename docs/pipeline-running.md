@@ -152,4 +152,4 @@ earlier version, overwrites both comments and continues to `stage:planned`.
 old way.) If the item already has both a spec and a plan comment you trust,
 `stage:planned` develops from them as they are. Old
 `spec`-stage outcome notes and `respec` route notes still parse: see
-[Router](pipeline.md#router).
+[Router](pipeline-router.md#router).
