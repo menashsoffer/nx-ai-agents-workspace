@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { findExternalAssets } from './external-assets.mjs';
 import { HTML_LOADING_CASES } from './external-assets.html-loading.cases.mjs';
+import { CSS_PARSING_CASES } from './external-assets.css-parsing.cases.mjs';
 
 const createHtmlPage = (head) =>
   `<!doctype html><html><head>${head}</head></html>`;
@@ -79,68 +80,7 @@ describe('findExternalAssets', () => {
     const findStyleAssets = (css) =>
       findExternalAssets(createHtmlPage(`<style>${css}</style>`));
 
-    it.each([
-      [
-        'a ")" and "(" inside a double-quoted url()',
-        'a{background:url("https://evil.test/a(b).png")}',
-        ['https://evil.test/a(b).png'],
-      ],
-      [
-        'a quote and parentheses inside a single-quoted url()',
-        `a{background:url('https://evil.test/a"b(c).png')}`,
-        ['https://evil.test/a"b(c).png'],
-      ],
-      [
-        'an apostrophe inside a double-quoted url()',
-        `a{background:url("https://evil.test/it's.png")}`,
-        ["https://evil.test/it's.png"],
-      ],
-      [
-        'an escaped quote inside a url() string',
-        String.raw`a{background:url('https://evil.test/it\'s.png')}`,
-        ["https://evil.test/it's.png"],
-      ],
-      [
-        'an unquoted url() with "(" (a bad url: ignored by browsers, still flagged)',
-        'a{background:url(https://evil.test/a(b).png)}',
-        ['https://evil.test/a(b'],
-      ],
-      [
-        'a CSS escape in an @import string',
-        String.raw`@import "\68 ttps://evil.test/a.css";`,
-        ['https://evil.test/a.css'],
-      ],
-      [
-        'a comment between @import and its string',
-        '@import/**/"https://evil.test/a.css";',
-        ['https://evil.test/a.css'],
-      ],
-      [
-        'comments and whitespace between @import and url()',
-        '@import /* x */ url(https://evil.test/a.css);',
-        ['https://evil.test/a.css'],
-      ],
-      [
-        'an escaped @import keyword',
-        String.raw`@\69mport "https://evil.test/b.css";`,
-        ['https://evil.test/b.css'],
-      ],
-      [
-        'an escaped url function name',
-        String.raw`a{background:\75rl(https://evil.test/c.png)}`,
-        ['https://evil.test/c.png'],
-      ],
-      [
-        'escapes inside an unquoted url()',
-        String.raw`a{background:url(https:\2f\2f evil.test/d.png)}`,
-        ['https://evil.test/d.png'],
-      ],
-      [
-        'a string that holds a comment opener before the url()',
-        'a::before{content:"/*"} b{background:url(https://evil.test/e.png)}',
-        ['https://evil.test/e.png'],
-      ],
-    ])('flags %s', (_name, css, expected) => {
+    it.each(CSS_PARSING_CASES)('flags %s', (_name, css, expected) => {
       expect(findStyleAssets(css)).toEqual(expected);
       // The same CSS in a style attribute (quotes swapped where needed).
       if (!css.includes('{')) return;
