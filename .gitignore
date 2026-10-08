@@ -66,3 +66,9 @@ storybook-static
 
 # graphify code map: generated into the site's public/ by deploy.yml only
 apps/site/public/code-map
+
+# VitePress internal build output: a nameless package.json here makes Nx's
+# project-graph build throw ProjectsWithNoNameError if docs:build runs
+# concurrently with another task's graph build.
+**/.vitepress/.temp
+**/.vitepress/cache

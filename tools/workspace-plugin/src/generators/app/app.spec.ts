@@ -1,4 +1,7 @@
-import { createTestWorkspace } from '../../utils/testing';
+import {
+  createTestWorkspace,
+  runWithGraphErrorDetails,
+} from '../../utils/testing';
 import { readJson, readProjectConfiguration, type Tree } from '@nx/devkit';
 import { appGenerator } from './app';
 
@@ -14,7 +17,9 @@ describe('app generator', () => {
   });
 
   it('creates a tagged RTL app on the next free port', async () => {
-    await appGenerator(tree, { name: 'admin-panel' });
+    await runWithGraphErrorDetails(() =>
+      appGenerator(tree, { name: 'admin-panel' }),
+    );
 
     const config = readProjectConfiguration(tree, 'admin-panel');
     expect(config.root).toBe('apps/admin-panel');
@@ -46,14 +51,18 @@ describe('app generator', () => {
   });
 
   it('supports product scope', async () => {
-    await appGenerator(tree, { name: 'shop', scope: 'product' });
+    await runWithGraphErrorDetails(() =>
+      appGenerator(tree, { name: 'shop', scope: 'product' }),
+    );
     expect(readProjectConfiguration(tree, 'shop').tags).toContain(
       'scope:product',
     );
   });
 
   it('uses an explicit port instead of the next free one', async () => {
-    await appGenerator(tree, { name: 'admin-panel', port: 5000 });
+    await runWithGraphErrorDetails(() =>
+      appGenerator(tree, { name: 'admin-panel', port: 5000 }),
+    );
 
     expect(tree.read('apps/admin-panel/vite.config.mts', 'utf-8')).toContain(
       'port: 5000',
