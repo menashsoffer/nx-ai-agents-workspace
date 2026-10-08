@@ -24,7 +24,7 @@ must hold, checked in this order:
    paths needs the owner's approval of this exact head (status `success`,
    recomputed by the `approval` command, not just read back). A PR with no
    protected paths, and any PR the pipeline did not open, gets `success`
-   automatically. See [Protected-change approval](pipeline.md#protected-change-approval).
+   automatically. See [Protected-change approval](pipeline-protected-changes.md#protected-change-approval).
 
 The status is `success` when all hold, `failure` for a real blocker (CI failed,
 a required approval was refused) and `pending` otherwise,

@@ -69,7 +69,7 @@ Workflows install pnpm through corepack from the hash-pinned `packageManager`
 The pipeline can push a branch that changes an _approvable_ protected path
 (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`,
 `tools/workspace-plugin/`, `tools/pipeline-map/`) only after the repo owner
-approved the diff. How that stays safe (flow: `docs/pipeline.md`,
+approved the diff. How that stays safe (flow: `docs/pipeline-protected-changes.md`,
 "Protected-change approval"):
 
 - **Why before any PR.** That content executes with repo secrets as soon as a
