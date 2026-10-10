@@ -255,6 +255,17 @@ agents even inside an approvable file. See `docs/pipeline-protected-changes.md`,
 - Nx caches builds. `BASE_PATH` is part of the cache key, so don't pass the
   base path any other way.
 
+## Cursor Cloud specific instructions
+
+- Node 24.21.0 is installed in `/usr/local/bin`. Agent shells may resolve
+  `node` to an older binary because `/exec-daemon` is earlier on `PATH`.
+  Prefix project commands with `PATH="/usr/local/bin:$PATH"` so they use
+  pnpm 11.27.0 from corepack.
+- Boot starts the site with `pnpm dev` at http://localhost:4200. Storybook
+  is `pnpm storybook` (port 6006). Docs are `pnpm nx dev docs` (port 4210).
+- Playwright Chromium is already installed. `pnpm e2e` previews the site
+  on port 4300.
+
 ## Nx
 
 The section below is managed by Nx (`nx configure-ai-agents`). Where it
