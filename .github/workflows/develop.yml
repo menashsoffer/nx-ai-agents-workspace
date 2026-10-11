@@ -96,6 +96,14 @@ jobs:
             --disallowedTools "WebFetch,WebSearch,Bash(git push:*),Bash(gh:*),Bash(curl:*),Bash(wget:*)"
             --json-schema '{"type":"object","additionalProperties":false,"required":["status","pr_title","pr_body","blocked_reason","problem"],"properties":{"status":{"type":"string","enum":["done","blocked"]},"pr_title":{"type":"string","maxLength":100},"pr_body":{"type":"string"},"blocked_reason":{"type":"string"},"problem":{"type":"string","enum":["none","verify_failed","plan_gap","protected_surface","needs_secrets_ci_infra","agent_error"]}}}'
 
+      # Diagnosis only (issue #120): the execution file holds the whole transcript,
+      # so the script prints just an allowlisted summary of the last SDK result.
+      - name: Summarize agent failure
+        if: ${{ failure() }}
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node .github/scripts/agent-failure-summary.mjs "$EXECUTION_FILE"
+
       - name: Package commits as a patch
         env:
           BASE: ${{ steps.branch.outputs.base }}
