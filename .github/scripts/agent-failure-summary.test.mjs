@@ -48,12 +48,12 @@ test('fields outside the allowlist are never emitted', () => {
   const summary = summarizeAgentFailure(JSON.stringify(messages));
   assert.deepEqual(summary, {
     subtype: 'error_max_structured_output_retries',
+    stop_reason: 'end_turn',
+    terminal_reason: 'structured_output_retry_exhausted',
     is_error: true,
     duration_ms: 1234,
     num_turns: 7,
-    stop_reason: 'end_turn',
-    terminal_reason: 'structured_output_retry_exhausted',
-    errors: ['Failed to provide valid structured output after 5 attempts'],
+    error_count: 1,
   });
   assert.doesNotMatch(JSON.stringify(summary), new RegExp(SECRET));
 });
@@ -68,37 +68,47 @@ test('only the last result message is summarized', () => {
   assert.equal(summary.num_turns, 9);
 });
 
-test('result text is emitted only when is_error is true', () => {
-  const success = {
-    type: 'result',
-    subtype: 'success',
-    is_error: false,
-    result: SECRET,
-  };
-  assert.equal(summarizeAgentFailure([success]).result, undefined);
-  const apiError = { ...success, is_error: true, result: 'API Error: 529' };
-  assert.equal(summarizeAgentFailure([apiError]).result, 'API Error: 529');
-});
-
-test('long strings are truncated to 300 characters', () => {
-  const long = 'x'.repeat(5000);
+test('free prose in result and errors[] is never emitted', () => {
+  const prose = `customer ${SECRET} asked for a refund`;
   const summary = summarizeAgentFailure([
-    { ...errorResult, errors: [long, long], is_error: true, result: long },
+    {
+      ...errorResult,
+      is_error: true,
+      result: prose,
+      errors: [prose, { text: prose }, 42],
+    },
   ]);
-  for (const text of [summary.result, ...summary.errors]) {
-    assert.ok(text.length <= 301, `${text.length} chars`);
-    assert.ok(text.startsWith('x'.repeat(300)));
-  }
+  assert.equal(summary.result, undefined);
+  assert.equal(summary.errors, undefined);
+  assert.equal(summary.error_count, 3);
+  assert.doesNotMatch(JSON.stringify(summary), /customer|refund/);
+  assert.doesNotMatch(JSON.stringify(summary), new RegExp(SECRET));
 });
 
-test('the number of error entries is capped and non-strings are dropped', () => {
-  const errors = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
-  assert.equal(
-    summarizeAgentFailure([{ ...errorResult, errors }]).errors.length,
-    5,
-  );
-  const mixed = [{ ...errorResult, errors: ['ok', { text: SECRET }, 42] }];
-  assert.deepEqual(summarizeAgentFailure(mixed).errors, ['ok']);
+test('a registered secret never passes through the enum fields', () => {
+  const REGISTERED_SECRET = 'private_customer_identifier';
+  const summary = summarizeAgentFailure([
+    {
+      ...errorResult,
+      subtype: REGISTERED_SECRET,
+      stop_reason: REGISTERED_SECRET,
+      terminal_reason: REGISTERED_SECRET,
+      api_error_status: REGISTERED_SECRET,
+    },
+  ]);
+  assert.equal(summary.subtype, '[unrecognized]');
+  assert.equal(summary.stop_reason, '[unrecognized]');
+  assert.equal(summary.terminal_reason, '[unrecognized]');
+  assert.equal(summary.api_error_status, undefined);
+  assert.doesNotMatch(JSON.stringify(summary), new RegExp(REGISTERED_SECRET));
+});
+
+test('known enum values and status codes are kept', () => {
+  const summary = summarizeAgentFailure([
+    { ...errorResult, subtype: 'error_max_turns', api_error_status: 529 },
+  ]);
+  assert.equal(summary.subtype, 'error_max_turns');
+  assert.equal(summary.api_error_status, 529);
 });
 
 test('input with no result message does not throw', () => {
@@ -119,7 +129,13 @@ test('input with no result message does not throw', () => {
 test('the command line prints only the summary line and exits 0', () => {
   const dir = mkdtempSync(join(tmpdir(), 'agent-failure-'));
   const file = join(dir, 'claude-execution-output.json');
-  writeFileSync(file, JSON.stringify([...transcriptMessages, errorResult]));
+  writeFileSync(
+    file,
+    JSON.stringify([
+      ...transcriptMessages,
+      { ...errorResult, result: SECRET, errors: [SECRET], stop_reason: SECRET },
+    ]),
+  );
   const script = new URL('./agent-failure-summary.mjs', import.meta.url)
     .pathname;
 
@@ -134,47 +150,4 @@ test('the command line prints only the summary line and exits 0', () => {
   assert.match(missing, /no execution file was produced/);
   const unset = execFileSync('node', [script], { encoding: 'utf8' });
   assert.match(unset, /no execution file was produced/);
-});
-
-test('the sentinel secret never reaches result, errors[] or stop_reason', () => {
-  const leaking = {
-    ...errorResult,
-    is_error: true,
-    result: `API Error: bad key ${SECRET}`,
-    errors: [`token=${SECRET}`, 'plain failure'],
-    stop_reason: SECRET,
-    terminal_reason: SECRET,
-  };
-  const summary = summarizeAgentFailure([leaking], { secrets: [SECRET] });
-  assert.doesNotMatch(JSON.stringify(summary), new RegExp(SECRET));
-  assert.equal(summary.result, 'API Error: bad key [REDACTED]');
-  assert.deepEqual(summary.errors, ['token=[REDACTED]', 'plain failure']);
-  assert.equal(summary.stop_reason, '[not an identifier]');
-});
-
-test('token-shaped strings are masked even when not passed in', () => {
-  const token = `ghp_${'a1B2'.repeat(10)}`;
-  const summary = summarizeAgentFailure([
-    { ...errorResult, errors: [`push failed with ${token}`] },
-  ]);
-  assert.deepEqual(summary.errors, ['push failed with [REDACTED]']);
-});
-
-test('the command line masks secret-looking environment values', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'agent-failure-'));
-  const file = join(dir, 'claude-execution-output.json');
-  writeFileSync(
-    file,
-    JSON.stringify([
-      { ...errorResult, result: `leak ${SECRET}`, stop_reason: SECRET },
-    ]),
-  );
-  const script = new URL('./agent-failure-summary.mjs', import.meta.url)
-    .pathname;
-  const output = execFileSync('node', [script, file], {
-    encoding: 'utf8',
-    env: { ...process.env, SMOKE_API_TOKEN: SECRET },
-  });
-  assert.ok(!output.includes(SECRET));
-  assert.ok(output.includes('[REDACTED]'));
 });

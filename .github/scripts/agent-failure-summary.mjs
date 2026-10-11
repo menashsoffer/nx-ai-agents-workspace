@@ -11,69 +11,61 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-const MAX_FIELD_LENGTH = 300;
-const MAX_ERROR_COUNT = 5;
-const MIN_SECRET_LENGTH = 8;
-const REDACTED = '[REDACTED]';
+const UNRECOGNIZED = '[unrecognized]';
 
-// Copied as-is (numbers, booleans). Strings must look like an SDK identifier
-// (`end_turn`, `error_max_turns`): these fields are enums, never free text, so
-// anything else is replaced instead of copied.
-const SCALAR_FIELDS = [
-  'subtype',
+// The job log is public, so only typed metadata, known categories and status
+// codes are copied. Free prose (`result`, the text of `errors[]`) can echo
+// anything the model or an API saw, so it is never copied; `errors[]` is
+// reduced to a count.
+//
+// Enum fields are matched against these allowlists of known values. Anything
+// else (a new SDK value, or text that is not an enum at all) is replaced by a
+// generic placeholder instead of being copied.
+const ENUM_ALLOWLISTS = {
+  subtype: [
+    'success',
+    'error_during_execution',
+    'error_max_turns',
+    'error_max_budget_usd',
+    'error_max_structured_output_retries',
+  ],
+  stop_reason: [
+    'end_turn',
+    'max_tokens',
+    'stop_sequence',
+    'tool_use',
+    'pause_turn',
+    'refusal',
+  ],
+  terminal_reason: [
+    'completed',
+    'max_turns',
+    'aborted_streaming',
+    'aborted_tools',
+    'prompt_too_long',
+    'model_error',
+    'blocking_limit',
+    'structured_output_retry_exhausted',
+  ],
+};
+
+// Copied only when they are numbers or booleans (never strings).
+const TYPED_FIELDS = [
   'is_error',
   'duration_ms',
   'num_turns',
-  'stop_reason',
-  'terminal_reason',
   'api_error_status',
 ];
-const IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
-const INVALID_IDENTIFIER = '[not an identifier]';
 
-// Free text (`result`, `errors[]`) can echo whatever the model or an API saw,
-// so known token shapes are masked on top of the exact values passed in.
-const SECRET_SHAPES = [
-  /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
-  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
-  /\bsk-[A-Za-z0-9_-]{20,}/g,
-  /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/gi,
-];
-
-function redactSecrets(text, secrets) {
-  let redacted = text;
-  for (const secret of secrets)
-    redacted = redacted.replaceAll(secret, REDACTED);
-  for (const shape of SECRET_SHAPES)
-    redacted = redacted.replace(shape, REDACTED);
-  return redacted;
+function toKnownEnumValue(field, value) {
+  if (typeof value !== 'string') return undefined;
+  return ENUM_ALLOWLISTS[field].includes(value) ? value : UNRECOGNIZED;
 }
 
-function truncate(text) {
-  return text.length > MAX_FIELD_LENGTH
-    ? `${text.slice(0, MAX_FIELD_LENGTH)}…`
-    : text;
-}
-
-// Redact before truncating so a secret cut in half is not left readable.
-function toSafeText(text, secrets) {
-  return truncate(redactSecrets(text, secrets));
-}
-
-function toSafeScalar(value) {
-  if (typeof value === 'string') {
-    return IDENTIFIER_PATTERN.test(value) ? value : INVALID_IDENTIFIER;
-  }
-  if (typeof value === 'number' || typeof value === 'boolean') return value;
-  return undefined;
-}
-
-/** Values of secret-looking environment variables, for the command line. */
-function collectEnvironmentSecrets(environment) {
-  return Object.entries(environment)
-    .filter(([name]) => /TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL/i.test(name))
-    .map(([, value]) => value)
-    .filter((value) => typeof value === 'string');
+function toTypedValue(value) {
+  return typeof value === 'number' || typeof value === 'boolean'
+    ? value
+    : undefined;
 }
 
 function parseMessages(executionFileJson) {
@@ -97,38 +89,26 @@ function findLastResult(messages) {
 
 /**
  * @param {string | unknown[]} executionFileJson the execution file, raw or parsed
- * @param {{ secrets?: string[] }} [options] exact values to mask in free text
  * @returns {Record<string, unknown>} allowlisted fields of the last SDK result,
  *   or `{ note }` when there is none. Never throws.
  */
-export function summarizeAgentFailure(executionFileJson, options = {}) {
-  const secrets = (options.secrets ?? []).filter(
-    (secret) =>
-      typeof secret === 'string' && secret.length >= MIN_SECRET_LENGTH,
-  );
+export function summarizeAgentFailure(executionFileJson) {
   const lastResult = findLastResult(parseMessages(executionFileJson));
   if (!lastResult) {
     return { note: 'no SDK result message found in the execution file' };
   }
 
   const summary = {};
-  for (const field of SCALAR_FIELDS) {
-    const value = toSafeScalar(lastResult[field]);
+  for (const field of Object.keys(ENUM_ALLOWLISTS)) {
+    const value = toKnownEnumValue(field, lastResult[field]);
     if (value !== undefined) summary[field] = value;
   }
-
-  // `errors` is set on the error subtypes (error_max_structured_output_retries, ...).
-  if (Array.isArray(lastResult.errors)) {
-    summary.errors = lastResult.errors
-      .slice(0, MAX_ERROR_COUNT)
-      .filter((entry) => typeof entry === 'string')
-      .map((entry) => toSafeText(entry, secrets));
+  for (const field of TYPED_FIELDS) {
+    const value = toTypedValue(lastResult[field]);
+    if (value !== undefined) summary[field] = value;
   }
-
-  // `result` is the final assistant text on a normal success, so it is only
-  // error text (a failed API call) when is_error is true.
-  if (lastResult.is_error === true && typeof lastResult.result === 'string') {
-    summary.result = toSafeText(lastResult.result, secrets);
+  if (Array.isArray(lastResult.errors)) {
+    summary.error_count = lastResult.errors.length;
   }
 
   return summary;
@@ -152,8 +132,6 @@ if (
   const summary =
     executionFileJson === undefined
       ? { note: 'no execution file was produced' }
-      : summarizeAgentFailure(executionFileJson, {
-          secrets: collectEnvironmentSecrets(process.env),
-        });
+      : summarizeAgentFailure(executionFileJson);
   console.log(`Agent failure summary: ${JSON.stringify(summary)}`);
 }
