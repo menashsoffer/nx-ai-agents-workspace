@@ -16,6 +16,7 @@
   "exclude": [
     "out-tsc",
     "dist",
+    "src/planted-*",
     "src/**/*.spec.ts",
     "src/**/*.test.ts",
     "src/**/*.spec.tsx",
