@@ -83,15 +83,9 @@ test('result text is emitted only when is_error is true', () => {
 test('long strings are truncated to 300 characters', () => {
   const long = 'x'.repeat(5000);
   const summary = summarizeAgentFailure([
-    {
-      ...errorResult,
-      errors: [long, long],
-      stop_reason: long,
-      is_error: true,
-      result: long,
-    },
+    { ...errorResult, errors: [long, long], is_error: true, result: long },
   ]);
-  for (const text of [summary.stop_reason, summary.result, ...summary.errors]) {
+  for (const text of [summary.result, ...summary.errors]) {
     assert.ok(text.length <= 301, `${text.length} chars`);
     assert.ok(text.startsWith('x'.repeat(300)));
   }
@@ -140,4 +134,47 @@ test('the command line prints only the summary line and exits 0', () => {
   assert.match(missing, /no execution file was produced/);
   const unset = execFileSync('node', [script], { encoding: 'utf8' });
   assert.match(unset, /no execution file was produced/);
+});
+
+test('the sentinel secret never reaches result, errors[] or stop_reason', () => {
+  const leaking = {
+    ...errorResult,
+    is_error: true,
+    result: `API Error: bad key ${SECRET}`,
+    errors: [`token=${SECRET}`, 'plain failure'],
+    stop_reason: SECRET,
+    terminal_reason: SECRET,
+  };
+  const summary = summarizeAgentFailure([leaking], { secrets: [SECRET] });
+  assert.doesNotMatch(JSON.stringify(summary), new RegExp(SECRET));
+  assert.equal(summary.result, 'API Error: bad key [REDACTED]');
+  assert.deepEqual(summary.errors, ['token=[REDACTED]', 'plain failure']);
+  assert.equal(summary.stop_reason, '[not an identifier]');
+});
+
+test('token-shaped strings are masked even when not passed in', () => {
+  const token = `ghp_${'a1B2'.repeat(10)}`;
+  const summary = summarizeAgentFailure([
+    { ...errorResult, errors: [`push failed with ${token}`] },
+  ]);
+  assert.deepEqual(summary.errors, ['push failed with [REDACTED]']);
+});
+
+test('the command line masks secret-looking environment values', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-failure-'));
+  const file = join(dir, 'claude-execution-output.json');
+  writeFileSync(
+    file,
+    JSON.stringify([
+      { ...errorResult, result: `leak ${SECRET}`, stop_reason: SECRET },
+    ]),
+  );
+  const script = new URL('./agent-failure-summary.mjs', import.meta.url)
+    .pathname;
+  const output = execFileSync('node', [script, file], {
+    encoding: 'utf8',
+    env: { ...process.env, SMOKE_API_TOKEN: SECRET },
+  });
+  assert.ok(!output.includes(SECRET));
+  assert.ok(output.includes('[REDACTED]'));
 });
