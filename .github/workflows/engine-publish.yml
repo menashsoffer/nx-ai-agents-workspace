@@ -6,8 +6,9 @@ name: Pipeline engine · Publish
 # only writes are a branch push and a DRAFT pull request ("Closes #n") in
 # the target, or an outcome note. It never executes target code.
 # pin: as in engine-plan.yml. publish: re-checks the manifest (same target
-# repository and issue, same engine commit) and the patch on a fresh runner
-# BEFORE it mints the App token; only then pushes and opens the draft PR.
+# repository and issue, same engine commit) and the patch against the
+# target profile's policy on a fresh runner BEFORE it mints the App token;
+# only then pushes and opens the draft PR.
 # See docs/pipeline-engine.md.
 on:
   workflow_call:
@@ -131,15 +132,21 @@ jobs:
           ENGINE_COMMIT: ${{ needs.pin.outputs.commit }}
         run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-manifest --stage publish --engine-commit "$ENGINE_COMMIT" "$RUNNER_TEMP/in/manifest.json"
 
-      - id: guard
-        if: ${{ steps.ready.outputs.publish == 'true' }}
-        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-patch "$RUNNER_TEMP/in/changes.patch"
-
+      # The target at the manifest's base. Only its profile is read here; no
+      # target code runs in this job.
       - if: ${{ steps.ready.outputs.publish == 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.manifest.outputs.base }}
           persist-credentials: false
+
+      - id: profile
+        if: ${{ steps.ready.outputs.publish == 'true' }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" load-profile --target-dir . --out "$RUNNER_TEMP/profile.json"
+
+      - id: guard
+        if: ${{ steps.ready.outputs.publish == 'true' }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-patch --profile "$RUNNER_TEMP/profile.json" "$RUNNER_TEMP/in/changes.patch"
 
       # Scoped to the calling repository (the target) only. No `workflows`
       # permission, so it can never push a workflow change.
@@ -181,12 +188,12 @@ jobs:
             git push --force "https://github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
           title=$(jq -r '.pr_title' <<<"$RESULT")
           { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;
-            echo "<sub>Implemented by Claude with prompt develop.md@$VERSION, pipeline engine ${ENGINE_COMMIT:0:12}. Draft until the review gates pass. Only a human can approve and merge.</sub>"; } > body.md
+            echo "<sub>Implemented by Claude with prompt engine-develop.md@$VERSION, pipeline engine ${ENGINE_COMMIT:0:12}. Draft until the review gates pass. Only a human can approve and merge.</sub>"; } > body.md
           url=$(gh pr create --repo "$GITHUB_REPOSITORY" --draft --base "$DEFAULT_BRANCH" \
             --head "$BRANCH" --title "$title" --body-file body.md)
           pr=${url##*/}
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" set-stage "$pr" stage:building
-          jq -n --arg s "Draft PR #$pr opened." --arg v "develop.md@$VERSION" \
+          jq -n --arg s "Draft PR #$pr opened." --arg v "engine-develop.md@$VERSION" \
             '{stage: "develop", result: "success", summary: $s, prompt_version: $v}' > outcome.json
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" outcome.json
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" set-stage "$N" stage:building
@@ -215,5 +222,5 @@ jobs:
           printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" classify develop --job-result "$DEVELOP_RESULT" \
             --publish-result "${PUSH:-skipped}" --result "$RUNNER_TEMP/result.json" --patch-rejected "$REJECTED" \
-            --prompt-version "develop.md@${VERSION:-unknown}" --out "$RUNNER_TEMP/outcome.json"
+            --prompt-version "engine-develop.md@${VERSION:-unknown}" --out "$RUNNER_TEMP/outcome.json"
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"

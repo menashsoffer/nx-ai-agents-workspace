@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "name": "nx-ai-agents-workspace",
+  "summary": "Nx 23 monorepo with pnpm workspaces, TypeScript 6, React 19, Vite 8, React Router 8, Tailwind CSS v4, Vitest, Playwright and Storybook. Static sites only, deployed to GitHub Pages. Hebrew UI, right to left. The binding rules are in AGENTS.md.",
+  "conventions": [
+    "Read AGENTS.md, docs/architecture.md and docs/conventions.md first; they are binding.",
+    "UI text is Hebrew; code, identifiers, comments and commit messages are English.",
+    "Logical Tailwind utilities only (ms/me, ps/pe, start/end); direction-bearing icons flip in RTL.",
+    "New apps, libs, components and spikes come from the pnpm new:* generators, never stock Nx ones.",
+    "Tests sit next to the code; new ui components also get a story.",
+    "Files target 300 lines, hard cap 400."
+  ],
+  "commands": {
+    "setup": [
+      ["corepack", "enable"],
+      ["pnpm", "install", "--frozen-lockfile"]
+    ],
+    "verify": [["pnpm", "verify"]]
+  },
+  "agentCommands": [
+    ["pnpm", "verify"],
+    ["pnpm", "nx"],
+    ["pnpm", "e2e"],
+    ["pnpm", "format"],
+    ["pnpm", "new:component"],
+    ["pnpm", "new:spike"]
+  ],
+  "paths": {
+    "protected": [
+      "**/package.json",
+      "**/pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "tools/security/**",
+      "tools/workspace-plugin/**",
+      "tools/pipeline-map/**"
+    ]
+  },
+  "limits": { "maxFiles": 10, "maxLines": 400 }
+}

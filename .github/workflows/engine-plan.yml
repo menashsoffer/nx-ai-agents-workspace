@@ -9,10 +9,13 @@ name: Pipeline engine · Plan
 # comes from that context only, never from the issue's content.
 # plan: two separate checkouts. The engine (scripts, prompts) at the pinned
 # commit, moved out of the workspace; the target at its default branch, the
-# only tree the read-only agent sees. A request holding a secret-shaped value
-# never reaches the agent.
-# publish: deterministic. Checks the JSON, posts the spec and plan comments
-# and sets stage:planned, or appends a problem outcome note.
+# only tree the read-only agent sees. The target profile
+# (.github/pipeline-profile.json) is validated and given to the prompt. A
+# request holding a secret-shaped value never reaches the agent.
+# publish: deterministic. Checks the JSON against the profile's policy
+# (engine-protected paths + the profile's additions, writable paths,
+# limits), posts the spec and plan comments and sets stage:planned, or
+# appends a problem outcome note.
 # See docs/pipeline-engine.md.
 on:
   workflow_call:
@@ -102,6 +105,10 @@ jobs:
         with:
           persist-credentials: false
 
+      # The target profile from the default branch (fails when missing or invalid).
+      - id: profile
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" load-profile --target-dir . --out "$RUNNER_TEMP/pipeline/profile.json"
+
       - name: Collect issue, earlier spec/plan and comments (untrusted data)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -119,14 +126,14 @@ jobs:
           BOT: ${{ inputs.bot-login }}
           N: ${{ needs.pin.outputs.issue }}
           REPOSITORY: ${{ needs.pin.outputs.repository }}
-        working-directory: ${{ runner.temp }}/engine
         run: |
-          node .github/scripts/pipeline.mjs render-prompt \
-            --prompt .github/prompts/plan.md --output prompt \
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" render-prompt \
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/engine-plan.md" \
+            --profile "$RUNNER_TEMP/pipeline/profile.json" \
             --context "repository=$REPOSITORY" \
             --context "issue=#$N" \
             --context "pipeline bot login=$BOT" \
-            --data "issue=$RUNNER_TEMP/pipeline/issue.json"
+            --issue "$RUNNER_TEMP/pipeline/issue.json"
 
       - id: claude
         if: ${{ steps.request.outputs.is_clean == 'true' }}
@@ -153,6 +160,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Only the target's profile, from its default branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/pipeline-profile.json
+          sparse-checkout-cone-mode: false
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: menashsoffer/nx-ai-agents-workspace
@@ -160,6 +174,8 @@ jobs:
           path: .engine
           persist-credentials: false
           sparse-checkout: .github/scripts
+
+      - run: node .engine/.github/scripts/engine.mjs load-profile --target-dir . --out "$RUNNER_TEMP/profile.json"
 
       # Scoped to the calling repository (the target) only.
       - id: app
@@ -187,8 +203,9 @@ jobs:
           VERSION: ${{ needs.plan.outputs.prompt_version }}
         run: |
           printf '%s' "$RESULT" > result.json
-          node .engine/.github/scripts/pipeline.mjs classify plan --job-result "$JOB_RESULT" \
-            --result result.json --prompt-version "plan.md@${VERSION:-unknown}" --out outcome.json \
+          node .engine/.github/scripts/engine.mjs classify-plan --job-result "$JOB_RESULT" \
+            --profile "$RUNNER_TEMP/profile.json" --result result.json \
+            --prompt-version "engine-plan.md@${VERSION:-unknown}" --out outcome.json \
             --spec-out spec-comment.md --plan-out plan-comment.md
 
       - name: Post spec and plan, then move to stage:planned

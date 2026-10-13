@@ -6,11 +6,15 @@ name: Pipeline engine · Develop
 # pin: as in engine-plan.yml (OIDC claims, target from the workflow context).
 # implement: the agent works in the target checkout with a READ-ONLY token
 # and no other secret than its own model token; the engine sits outside the
-# workspace. Its commits leave the job as a patch plus a manifest that binds
+# workspace. Its prompt and allowed commands come from the target profile.
+# Its commits leave the job as a patch plus a manifest that binds
 # the patch to this target, its base commit and this engine commit.
-# check: a fresh runner with no secrets re-checks the manifest and the patch
-# (protected paths) and that it applies to the base. Nothing here can push;
-# engine-publish.yml checks everything again before it holds a write token.
+# check: a fresh runner with no secrets re-checks the manifest, loads the
+# target profile from the base commit, checks the patch against the policy
+# (engine-protected paths + the profile's additions, writable paths, limits)
+# BEFORE any target code runs, applies it, then runs the profile's built-in
+# checks and its setup and verify commands. Nothing here can push;
+# engine-publish.yml checks again before it holds a write token.
 # See docs/pipeline-engine.md.
 on:
   workflow_call:
@@ -108,6 +112,20 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
+      # The target profile from the default branch, before the agent runs.
+      - id: profile
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" load-profile --target-dir . --out "$RUNNER_TEMP/pipeline/profile.json"
+
+      - if: ${{ hashFiles('.nvmrc') != '' }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Run the profile's setup commands
+        if: ${{ steps.profile.outputs.has_setup == 'true' }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" run-commands --kind setup --profile "$RUNNER_TEMP/pipeline/profile.json"
+
       - name: Collect issue, spec and plan (untrusted data)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -143,14 +161,14 @@ jobs:
           BRANCH: ${{ steps.branch.outputs.branch }}
           N: ${{ needs.pin.outputs.issue }}
           REPOSITORY: ${{ needs.pin.outputs.repository }}
-        working-directory: ${{ runner.temp }}/engine
         run: |
-          node .github/scripts/pipeline.mjs render-prompt \
-            --prompt .github/prompts/develop.md --output prompt \
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" render-prompt \
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/engine-develop.md" \
+            --profile "$RUNNER_TEMP/pipeline/profile.json" \
             --context "repository=$REPOSITORY" \
             --context "issue=#$N" \
             --context "branch=$BRANCH" \
-            --data "issue=$RUNNER_TEMP/pipeline/issue.json"
+            --issue "$RUNNER_TEMP/pipeline/issue.json"
 
       - id: claude
         if: ${{ steps.request.outputs.is_clean == 'true' }}
@@ -162,7 +180,7 @@ jobs:
           prompt: ${{ steps.prompt.outputs.prompt }}
           claude_args: >-
             --max-turns 150
-            --allowedTools "Read,Glob,Grep,Edit,MultiEdit,Write,TodoWrite,Bash(pnpm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git add:*),Bash(git commit:*),Bash(ls:*)"
+            --allowedTools "${{ steps.profile.outputs.allowed_tools }}"
             --disallowedTools "WebFetch,WebSearch,Bash(git push:*),Bash(gh:*),Bash(curl:*),Bash(wget:*)"
             --json-schema '{"type":"object","additionalProperties":false,"required":["status","pr_title","pr_body","blocked_reason","problem"],"properties":{"status":{"type":"string","enum":["done","blocked"]},"pr_title":{"type":"string","maxLength":100},"pr_body":{"type":"string"},"blocked_reason":{"type":"string"},"problem":{"type":"string","enum":["none","verify_failed","plan_gap","protected_surface","needs_secrets_ci_infra","agent_error"]}}}'
 
@@ -194,7 +212,7 @@ jobs:
       # engine-publish.yml repeat it on fresh runners.
       - id: guard
         if: ${{ fromJSON(steps.claude.outputs.structured_output || '{}').status == 'done' }}
-        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-patch "$RUNNER_TEMP/out/changes.patch"
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-patch --profile "$RUNNER_TEMP/pipeline/profile.json" "$RUNNER_TEMP/out/changes.patch"
 
       - if: ${{ fromJSON(steps.claude.outputs.structured_output || '{}').status == 'done' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -209,7 +227,7 @@ jobs:
     needs: [pin, implement]
     if: ${{ fromJSON(needs.implement.outputs.result || '{}').status == 'done' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
     outputs:
@@ -235,15 +253,38 @@ jobs:
           ENGINE_COMMIT: ${{ needs.pin.outputs.commit }}
         run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-manifest --stage develop --engine-commit "$ENGINE_COMMIT" "$RUNNER_TEMP/in/manifest.json"
 
-      - id: guard
-        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-patch "$RUNNER_TEMP/in/changes.patch"
-
+      # The target at the manifest's base: its profile comes from there,
+      # never from the patch (which may not touch it anyway).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.manifest.outputs.base }}
           persist-credentials: false
 
-      - id: applies
+      - id: profile
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" load-profile --target-dir . --out "$RUNNER_TEMP/profile.json"
+
+      # Workflows, the profile and other protected paths stop here, before
+      # any target code runs.
+      - id: guard
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-patch --profile "$RUNNER_TEMP/profile.json" "$RUNNER_TEMP/in/changes.patch"
+
+      - if: ${{ hashFiles('.nvmrc') != '' }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - run: git apply "$RUNNER_TEMP/in/changes.patch"
+
+      - name: Run the profile's built-in checks (engine code)
+        if: ${{ steps.profile.outputs.has_checks == 'true' }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" run-checks --profile "$RUNNER_TEMP/profile.json" --patch "$RUNNER_TEMP/in/changes.patch"
+
+      - name: Run the profile's setup and verify commands (no secrets)
+        if: ${{ steps.profile.outputs.has_verify == 'true' }}
         run: |
-          git apply --check "$RUNNER_TEMP/in/changes.patch"
-          echo "checked=true" >> "$GITHUB_OUTPUT"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" run-commands --kind setup --profile "$RUNNER_TEMP/profile.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" run-commands --kind verify --profile "$RUNNER_TEMP/profile.json"
+
+      - id: applies
+        run: echo "checked=true" >> "$GITHUB_OUTPUT"

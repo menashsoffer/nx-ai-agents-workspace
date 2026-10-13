@@ -2,50 +2,12 @@
 // engine.mjs end to end, without network: the commands the workflows call.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { diffOf, runFor, writeProfile } from './engine-test-run.mjs';
 
-const ENGINE = fileURLToPath(new URL('./engine.mjs', import.meta.url));
 const ENGINE_COMMIT = 'a'.repeat(40);
 const BASE_COMMIT = 'b'.repeat(40);
-
-/** A temporary run: event file, output file, and a runner for engine.mjs. */
-function runFor({
-  repository,
-  repositoryId,
-  issue = 7,
-  label = 'stage:planned',
-}) {
-  const directory = mkdtempSync(join(tmpdir(), 'engine-cli-'));
-  const eventPath = join(directory, 'event.json');
-  const outputPath = join(directory, 'output.txt');
-  writeFileSync(
-    eventPath,
-    JSON.stringify({
-      action: 'labeled',
-      label: { name: label },
-      repository: { full_name: repository, id: repositoryId },
-      issue: { number: issue, state: 'open', title: 'x', body: '' },
-    }),
-  );
-  writeFileSync(outputPath, '');
-  const run = (...args) =>
-    spawnSync(process.execPath, [ENGINE, ...args], {
-      encoding: 'utf8',
-      env: {
-        PATH: process.env.PATH,
-        GITHUB_REPOSITORY: repository,
-        GITHUB_REPOSITORY_ID: String(repositoryId),
-        GITHUB_EVENT_NAME: 'issues',
-        GITHUB_EVENT_PATH: eventPath,
-        GITHUB_OUTPUT: outputPath,
-      },
-    });
-  return { directory, run, output: () => readFileSync(outputPath, 'utf8') };
-}
 
 const sandboxRun = () =>
   runFor({ repository: 'menashsoffer/pipeline-sandbox', repositoryId: 101 });
@@ -161,15 +123,14 @@ test('check-request: clean request, then a secret in the request', () => {
 test('check-patch: a workflow change is rejected, an ordinary file passes', () => {
   const { directory, run, output } = sandboxRun();
   const patch = join(directory, 'changes.patch');
-  const diffOf = (path) =>
-    `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-a\n+b\n`;
+  const profile = writeProfile(directory, {});
   writeFileSync(patch, diffOf('docs/notes.md'));
-  assert.equal(run('check-patch', patch).status, 0);
+  assert.equal(run('check-patch', '--profile', profile, patch).status, 0);
   writeFileSync(
     patch,
     diffOf('docs/notes.md') + diffOf('.github/workflows/ci.yml'),
   );
-  const rejected = run('check-patch', patch);
+  const rejected = run('check-patch', '--profile', profile, patch);
   assert.equal(rejected.status, 1);
   assert.match(output(), /rejected<<.*\ntrue\n/);
   assert.match(rejected.stdout, /protected: \.github\/workflows\/ci\.yml/);

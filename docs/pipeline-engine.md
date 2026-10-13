@@ -73,6 +73,45 @@ read` and `issues: read` only, and no secret but the model token. Its
 --draft`. It never runs target code. Only a person can mark it ready,
   approve and merge.
 
+## Target profile and policy
+
+Every target has a profile at `.github/pipeline-profile.json` on its default
+branch (this repository's own is an example). The engine refuses to run
+without a valid one. It says what the engine may not assume:
+
+| Field           | Meaning                                                                                   |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| `schema`        | `1`                                                                                       |
+| `name`          | lowercase slug                                                                            |
+| `summary`       | the stack in one paragraph, for the prompts                                               |
+| `conventions`   | up to 20 short rules, for the prompts                                                     |
+| `commands`      | `setup` and `verify`: argv lists run without a shell, with no tokens in their environment |
+| `agentCommands` | the only commands the developer agent may run (prefix rules)                              |
+| `checks`        | built-in engine checks: `patch-not-empty`, `writable-paths`, `markdown-files`             |
+| `paths`         | `protected` (added to the engine minimum) and `writable` (an allowlist, optional)         |
+| `limits`        | `maxFiles` and `maxLines` for the plan and the real patch                                 |
+
+`validateProfile` (`engine-profile.mjs`) rejects an unknown field at any
+level, any key that would set the engine version (`engine-ref`, `ref`,
+`sha`, ...: the connector's pin decides), and any command outside its
+grammar: only `node <repository script>`, `pnpm <allowed subcommand or
+script>` (`install` only with `--frozen-lockfile`; never `dlx`, `exec`,
+`add`, ...) and `corepack enable`, with no shell characters, absolute paths
+or `..`. A profile needs at least one verify command or check, so nothing
+passes by checking nothing; every built-in check also fails when it has
+nothing to look at.
+
+The engine policy (`engine-policy.mjs`) protects `.github/**` (the
+workflows and the profile), `**/CODEOWNERS`, `.claude/**`, `.codex/**`,
+`.pipeline/**`, `**/.npmrc` and `.gitmodules` in every target; a profile can
+only add to that list. The plan stage stops a plan that names a protected or
+non-writable path (`protected_surface`). The develop `check` job loads the
+profile from the base commit and checks the patch against the policy and the
+limits before it applies the patch or runs any target command; the publish
+job checks again before it mints its token. The prompts
+(`engine-plan.md`, `engine-develop.md`) name no stack: the profile section
+the engine appends supplies it.
+
 ## Known limits
 
 - The engine repository name is fixed in `engine-pin.mjs` and in every
@@ -84,5 +123,6 @@ read` and `issues: read` only, and no secret but the model token. Its
   `CLAUDE_CODE_OAUTH_TOKEN` and `PIPELINE_APP_PRIVATE_KEY` secrets and the
   `PIPELINE_BOT_LOGIN` and `PIPELINE_APP_CLIENT_ID` variables.
 
-See the decision record
-[2026-10-13-pipeline-engine-workflow-call.md](decisions/2026-10-13-pipeline-engine-workflow-call.md).
+See the decision records
+[2026-10-13-pipeline-engine-workflow-call.md](decisions/2026-10-13-pipeline-engine-workflow-call.md)
+and [2026-10-13-pipeline-target-profile.md](decisions/2026-10-13-pipeline-target-profile.md).

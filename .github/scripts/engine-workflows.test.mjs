@@ -158,3 +158,65 @@ test('engine workflows: per-target concurrency (same issue number, two repositor
       );
     }
 });
+
+const runOf = (step) => step.run ?? '';
+const stepIndex = (job, pattern) =>
+  job.steps.findIndex((step) => pattern.test(runOf(step)));
+
+test('engine workflows: prompts and tools come from the target profile', () => {
+  for (const file of ['engine-plan.yml', 'engine-develop.yml']) {
+    const job = Object.values(workflows[file].jobs).find(isAgentJob);
+    const profileIndex = stepIndex(job, /engine\.mjs" load-profile/);
+    const agentIndex = job.steps.findIndex(isAgentStep);
+    assert.ok(profileIndex >= 0 && profileIndex < agentIndex, file);
+    assert.match(textOf(job), /prompts\/engine-(plan|develop)\.md/);
+    assert.doesNotMatch(textOf(job), /prompts\/(plan|develop)\.md/);
+  }
+  const develop = workflows['engine-develop.yml'].jobs.implement;
+  const agent = develop.steps.find(isAgentStep);
+  assert.match(
+    agent.with.claude_args,
+    /--allowedTools "\$\{\{ steps\.profile\.outputs\.allowed_tools \}\}"/,
+  );
+  assert.doesNotMatch(agent.with.claude_args, /Bash\(pnpm/);
+});
+
+test('engine workflows: every patch check uses the profile policy', () => {
+  let checks = 0;
+  for (const [file, workflow] of Object.entries(workflows))
+    for (const [name, job] of jobsOf(workflow))
+      for (const step of job.steps ?? [])
+        if (/engine\.mjs" check-patch/.test(runOf(step))) {
+          checks += 1;
+          assert.match(
+            runOf(step),
+            /check-patch --profile /,
+            `${file} ${name}`,
+          );
+        }
+  assert.equal(checks, 3);
+});
+
+test('engine-develop check job: the policy stops a change before target code runs', () => {
+  const check = workflows['engine-develop.yml'].jobs.check;
+  assert.deepEqual(check.permissions, { contents: 'read' });
+  assert.doesNotMatch(textOf(check), /secrets\./);
+  const guard = stepIndex(check, /check-patch --profile/);
+  const profile = stepIndex(check, /load-profile/);
+  assert.ok(profile >= 0 && profile < guard);
+  for (const later of [
+    /git apply/,
+    /run-checks/,
+    /run-commands --kind setup/,
+    /run-commands --kind verify/,
+  ])
+    assert.ok(stepIndex(check, later) > guard, String(later));
+});
+
+test('engine-publish: reads the profile but never runs target code', () => {
+  const publish = workflows['engine-publish.yml'].jobs.publish;
+  assert.doesNotMatch(textOf(publish), /run-commands|run-checks|pnpm |npm /);
+  assert.ok(
+    stepIndex(publish, /load-profile/) < stepIndex(publish, /check-patch/),
+  );
+});

@@ -6,8 +6,9 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { setOutput } from './github.mjs';
-import { classifyPatch, parseFlags } from './pipeline-lib.mjs';
+import { parseFlags } from './pipeline-lib.mjs';
 import { checkPin, decodeClaims } from './engine-pin.mjs';
+import { failOn, profileCommands } from './engine-profile-commands.mjs';
 import { requestOutcome, scanRequest } from './engine-request.mjs';
 import {
   buildManifest,
@@ -27,13 +28,6 @@ function currentTarget(stage) {
   });
 }
 
-/** Prints each problem as a workflow error and exits 1 when there is any. */
-function failOn(problems, title) {
-  if (!problems.length) return;
-  for (const problem of problems) console.log(`::error::${title}: ${problem}`);
-  process.exit(1);
-}
-
 /** The pin job's OIDC token, requested from the runner (needs id-token: write). */
 async function requestOidcToken() {
   const { ACTIONS_ID_TOKEN_REQUEST_URL, ACTIONS_ID_TOKEN_REQUEST_TOKEN } =
@@ -51,6 +45,8 @@ async function requestOidcToken() {
 }
 
 const commands = {
+  ...profileCommands,
+
   // Fails unless the target resolves from the workflow context, GitHub ran
   // this engine workflow at --engine-commit for that target, and
   // --engine-dir holds that commit. Outputs the commit and the target.
@@ -123,23 +119,6 @@ const commands = {
     );
     setOutput('base', manifest.base);
     setOutput('branch', manifest.branch);
-  },
-
-  // Exit 1 unless the patch touches no protected path at all: the engine
-  // has no owner-approval flow, so approvable paths are rejected too.
-  'check-patch'(args) {
-    const flags = parseFlags(args);
-    const result = classifyPatch(readFileSync(flags._[0], 'utf8'));
-    setOutput('protected_paths', result.protected.join(','));
-    if (result.kind === 'none') return;
-    setOutput('rejected', 'true');
-    failOn(
-      [
-        ...result.errors,
-        ...result.protected.map((path) => `protected: ${path}`),
-      ],
-      'Patch rejected',
-    );
   },
 };
 
