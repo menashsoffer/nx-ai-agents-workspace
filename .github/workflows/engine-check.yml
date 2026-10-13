@@ -1,0 +1,211 @@
+name: Pipeline engine · Check
+
+# Reusable check stage (workflow_call). The connector calls it in the same
+# run, after engine-develop.yml succeeded, with the develop outputs; it
+# downloads the develop patch artifact of this run. No agent and no secret.
+# pin: OIDC pin check as in engine-plan.yml.
+# verify: a fresh runner loads the target profile from the pinned base,
+# rejects a patch that touches protected paths, has symbolic links or mode
+# changes BEFORE any target code runs, then applies it and runs the
+# profile's setup and verify commands. Target code ran there, so its only
+# trusted product is GitHub's job result.
+# check: after verify passed, a fresh runner with no target or agent code
+# checks the patch again, applies it to the pinned base itself, scans the
+# agent's output for secrets, runs the engine's checks (regular files,
+# 400 lines per file, the profile's checks including the task's exact
+# expected content) and outputs the attestation (target, base, branch,
+# engine commit, patch hash, resulting tree). engine-publish.yml compares
+# all of it again before it holds a write token.
+# See docs/pipeline-engine.md.
+on:
+  workflow_call:
+    inputs:
+      engine-commit:
+        description: The engine commit the connector pinned in `uses:` (40 hex characters).
+        type: string
+        required: true
+      base:
+        description: The develop outputs.base (read from GitHub by the develop pin job).
+        type: string
+        required: true
+      branch:
+        description: The develop outputs.branch.
+        type: string
+        required: true
+      result:
+        description: The develop outputs.result (the developer's JSON).
+        type: string
+        required: true
+    outputs:
+      patch_rejected:
+        value: ${{ jobs.verify.outputs.patch_rejected || jobs.check.outputs.patch_rejected }}
+      attestation:
+        description: The check job's attestation JSON; empty unless every check passed.
+        value: ${{ jobs.check.outputs.attestation }}
+
+permissions: {}
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      commit: ${{ steps.pin.outputs.commit }}
+      repository: ${{ steps.pin.outputs.repository }}
+      issue: ${{ steps.pin.outputs.issue }}
+    steps:
+      - name: Require full commits for the engine and the base
+        env:
+          ENGINE_COMMIT: ${{ inputs.engine-commit }}
+          BASE: ${{ inputs.base }}
+        run: |
+          [[ "$ENGINE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::engine-commit must be a full commit"; exit 1; }
+          [[ "$BASE" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::base must be a full commit"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: menashsoffer/nx-ai-agents-workspace
+          ref: ${{ inputs.engine-commit }}
+          path: .engine
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: pin
+        env:
+          ENGINE_COMMIT: ${{ inputs.engine-commit }}
+        run: |
+          node .engine/.github/scripts/engine.mjs pin --stage check --workflow engine-check.yml \
+            --engine-commit "$ENGINE_COMMIT" --engine-dir .engine
+
+  verify:
+    needs: pin
+    if: ${{ fromJSON(inputs.result || '{}').status == 'done' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      patch_rejected: ${{ steps.guard.outputs.rejected }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: menashsoffer/nx-ai-agents-workspace
+          ref: ${{ needs.pin.outputs.commit }}
+          path: .engine
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - run: mv .engine "$RUNNER_TEMP/engine"
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: engine-develop-patch
+          path: ${{ runner.temp }}/in
+
+      # The base the pin job read from GitHub; the profile comes from it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.base }}
+          persist-credentials: false
+
+      - id: profile
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" load-profile --target-dir . --out "$RUNNER_TEMP/profile.json"
+
+      # Workflows, the profile and other protected paths stop here.
+      - id: guard
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-patch --profile "$RUNNER_TEMP/profile.json" "$RUNNER_TEMP/in/changes.patch"
+
+      - name: Apply the patch to the pinned base
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          git config user.name "pipeline-agent"
+          git config user.email "pipeline-agent@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
+
+      - if: ${{ steps.profile.outputs.has_verify == 'true' && hashFiles('.nvmrc') != '' }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Run the profile's setup and verify commands (no secrets)
+        if: ${{ steps.profile.outputs.has_verify == 'true' }}
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" run-commands --kind setup --profile "$RUNNER_TEMP/profile.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" run-commands --kind verify --profile "$RUNNER_TEMP/profile.json"
+
+  check:
+    needs: [pin, verify]
+    if: ${{ needs.verify.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      patch_rejected: ${{ steps.guard.outputs.rejected }}
+      attestation: ${{ steps.attest.outputs.attestation }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: menashsoffer/nx-ai-agents-workspace
+          ref: ${{ needs.pin.outputs.commit }}
+          path: .engine
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - run: mv .engine "$RUNNER_TEMP/engine"
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: engine-develop-patch
+          path: ${{ runner.temp }}/in
+
+      # The base the pin job read from GitHub; the profile comes from it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.base }}
+          persist-credentials: false
+
+      - id: profile
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" load-profile --target-dir . --out "$RUNNER_TEMP/profile.json"
+
+      # Workflows, the profile and other protected paths stop here.
+      - id: guard
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-patch --profile "$RUNNER_TEMP/profile.json" "$RUNNER_TEMP/in/changes.patch"
+
+      - name: Apply the patch to the pinned base
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          git config user.name "pipeline-agent"
+          git config user.email "pipeline-agent@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
+
+      # The issue from the GitHub API (its expected content), and no secret
+      # in what the agent wrote.
+      - name: Run the engine's checks (engine code only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          RESULT: ${{ inputs.result }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/issues/$N" > "$RUNNER_TEMP/issue.json"
+          printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-output --stage develop \
+            --result "$RUNNER_TEMP/result.json" --patch "$RUNNER_TEMP/in/changes.patch" --fail=true
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" run-checks --profile "$RUNNER_TEMP/profile.json" \
+            --patch "$RUNNER_TEMP/in/changes.patch" --issue "$RUNNER_TEMP/issue.json"
+
+      - id: attest
+        env:
+          BASE: ${{ inputs.base }}
+          BRANCH: ${{ inputs.branch }}
+          ENGINE_COMMIT: ${{ needs.pin.outputs.commit }}
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" attest --stage develop --base "$BASE" \
+            --branch "$BRANCH" --engine-commit "$ENGINE_COMMIT" --patch "$RUNNER_TEMP/in/changes.patch"

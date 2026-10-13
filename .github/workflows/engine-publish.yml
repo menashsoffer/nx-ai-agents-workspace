@@ -132,6 +132,19 @@ jobs:
           name: engine-develop-patch
           path: ${{ runner.temp }}/in
 
+      # What the agent wrote becomes a branch, a PR or an outcome note: scan
+      # its JSON and its patch for secrets first.
+      - id: output
+        if: ${{ !cancelled() && inputs.request-outcome == '' }}
+        env:
+          RESULT: ${{ inputs.result }}
+        run: |
+          printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
+          patch=()
+          [[ -f "$RUNNER_TEMP/in/changes.patch" ]] && patch=(--patch "$RUNNER_TEMP/in/changes.patch")
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-output --stage develop \
+            --result "$RUNNER_TEMP/result.json" "${patch[@]}"
+
       # Before any write token exists: the attestation, the pinned base, the
       # patch hash and the protected paths.
       - id: attestation
@@ -182,7 +195,7 @@ jobs:
 
       - name: Push the branch and open a draft PR
         id: push
-        if: ${{ steps.ready.outputs.publish == 'true' && steps.guard.outcome == 'success' && steps.attestation.outcome == 'success' }}
+        if: ${{ steps.ready.outputs.publish == 'true' && steps.output.outputs.is_clean == 'true' && steps.guard.outcome == 'success' && steps.attestation.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
@@ -197,6 +210,11 @@ jobs:
             echo "::notice::An open PR already exists for $BRANCH; nothing to do."
             exit 0
           fi
+          jq -r '.pr_title' <<<"$RESULT" > "$RUNNER_TEMP/pr-title.txt"
+          { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;
+            echo "<sub>Implemented by Claude with prompt engine-develop.md@$VERSION, pipeline engine ${ENGINE_COMMIT:0:12}. Draft until the review gates pass. Only a human can approve and merge.</sub>"; } > "$RUNNER_TEMP/pr-body.md"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-output --stage develop \
+            --text "$RUNNER_TEMP/pr-title.txt" --text "$RUNNER_TEMP/pr-body.md" --fail=true
           git config user.name "pipeline-agent"
           git config user.email "pipeline-agent@users.noreply.github.com"
           git switch -c "$BRANCH"
@@ -208,17 +226,24 @@ jobs:
             GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
             GIT_CONFIG_VALUE_0="Authorization: basic $auth" \
             git push --force "https://github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
-          title=$(jq -r '.pr_title' <<<"$RESULT")
-          { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;
-            echo "<sub>Implemented by Claude with prompt engine-develop.md@$VERSION, pipeline engine ${ENGINE_COMMIT:0:12}. Draft until the review gates pass. Only a human can approve and merge.</sub>"; } > body.md
           url=$(gh pr create --repo "$GITHUB_REPOSITORY" --draft --base "$DEFAULT_BRANCH" \
-            --head "$BRANCH" --title "$title" --body-file body.md)
+            --head "$BRANCH" --title "$(cat "$RUNNER_TEMP/pr-title.txt")" --body-file "$RUNNER_TEMP/pr-body.md")
           pr=${url##*/}
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" set-stage "$pr" stage:building
           jq -n --arg s "Draft PR #$pr opened." --arg v "engine-develop.md@$VERSION" \
             '{stage: "develop", result: "success", summary: $s, prompt_version: $v}' > outcome.json
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" outcome.json
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" set-stage "$N" stage:building
+
+      - name: Report agent output that held a secret (stage:routing)
+        if: ${{ !cancelled() && steps.output.outputs.is_clean == 'false' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          OUTCOME: ${{ steps.output.outputs.outcome }}
+        run: |
+          printf '%s' "$OUTCOME" > "$RUNNER_TEMP/outcome.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
 
       - name: Report a request that held a secret (stage:routing)
         if: ${{ !cancelled() && inputs.request-outcome != '' }}
@@ -231,7 +256,7 @@ jobs:
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
 
       - name: Report the problem (stage:routing)
-        if: ${{ !cancelled() && inputs.request-outcome == '' && steps.push.outcome != 'success' }}
+        if: ${{ !cancelled() && inputs.request-outcome == '' && steps.output.outputs.is_clean == 'true' && steps.push.outcome != 'success' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
@@ -241,7 +266,6 @@ jobs:
           REJECTED: ${{ inputs.patch-rejected == 'true' || steps.guard.outcome == 'failure' }}
           VERSION: ${{ inputs.prompt-version }}
         run: |
-          printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" classify develop --job-result "$DEVELOP_RESULT" \
             --publish-result "${PUSH:-skipped}" --result "$RUNNER_TEMP/result.json" --patch-rejected "$REJECTED" \
             --prompt-version "engine-develop.md@${VERSION:-unknown}" --out "$RUNNER_TEMP/outcome.json"

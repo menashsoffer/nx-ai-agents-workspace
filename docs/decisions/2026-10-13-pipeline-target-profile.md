@@ -32,3 +32,20 @@ profile is always read from the target's base commit, never from the patch.
 - This repository's own pipeline (`plan.yml`, `develop.yml`) still uses its
   Nx-specific prompts and `pipeline-lib.mjs` rules; its profile documents the
   same facts for the engine.
+
+## Amendment (2026-10-14, after review)
+
+- The size limits are engine ceilings (10 files, 400 changed lines, 400
+  lines per file after the patch); a profile can only lower them.
+- The universal protected minimum now also covers every `package.json`,
+  lockfiles, `pnpm-workspace.yaml`, `.npmrc`/`.yarnrc*`, `.nvmrc` and other
+  runtime pins, `AGENTS.md`/`CLAUDE.md` and nested workflow folders.
+- Symbolic links, submodules, mode changes and binary content are rejected
+  in the patch, and changed files are checked with `lstat` after applying.
+- `exact-content` compares each changed file with the task's
+  `expected <path>` block, byte for byte.
+- The agent's output (JSON, patch, PR title and body) is scanned for
+  secrets before anything is published.
+- Verification that runs target code (`verify` job) is split from the job
+  that writes the attestation (`check` job, engine code only), in the new
+  `engine-check.yml`.

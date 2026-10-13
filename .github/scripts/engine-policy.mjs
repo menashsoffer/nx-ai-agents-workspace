@@ -4,23 +4,55 @@
 // profile under .github/, CODEOWNERS, agent configuration, ...). A target's
 // profile can only ADD protected paths and, optionally, narrow every change
 // to a writable allowlist; it has no way to remove or negate one of the
-// engine's. Used for planned files (plan stage) and for patches (develop
-// check and publish). Pure: no I/O.
+// engine's. The size ceilings are the engine's too: a profile can only
+// lower them. Used for planned files (plan stage) and for patches (develop
+// verify, check and publish). Pure: no I/O.
 import { classifyPlan, patchPaths } from './pipeline-lib.mjs';
+import { patchMetadataProblems } from './engine-patch-metadata.mjs';
 
 /**
  * Protected in every target, whatever its profile says. Patterns are
  * anchored at the repository root; `**` spans directories.
  */
 export const ENGINE_PROTECTED_PATHS = Object.freeze([
+  // workflows (also nested copies, such as a connector folder) and the profile
   '.github/**',
+  '**/.github/workflows/**',
   '**/CODEOWNERS',
+  // agent instructions and configuration
+  '**/AGENTS.md',
+  '**/CLAUDE.md',
   '.claude/**',
   '.codex/**',
   '.pipeline/**',
+  // what package managers and runtimes execute or resolve
+  '**/package.json',
+  '**/package-lock.json',
+  '**/npm-shrinkwrap.json',
+  '**/pnpm-lock.yaml',
+  '**/pnpm-workspace.yaml',
+  '**/yarn.lock',
+  '**/bun.lock',
+  '**/bun.lockb',
   '**/.npmrc',
+  '**/.yarnrc',
+  '**/.yarnrc.yml',
+  '**/.nvmrc',
+  '**/.node-version',
+  '**/.tool-versions',
   '.gitmodules',
+  '**/.gitattributes',
 ]);
+
+/**
+ * Ceilings no profile can raise: files and changed lines per plan or patch,
+ * and lines per file after the patch (the repository's file length cap).
+ */
+export const ENGINE_LIMITS = Object.freeze({
+  maxFiles: 10,
+  maxLines: 400,
+  maxFileLines: 400,
+});
 
 /** One segment: letters, digits, `._-` and `*`; or `**` alone. */
 const SEGMENT = /^(?:\*\*|[A-Za-z0-9._*-]+)$/;
@@ -59,7 +91,11 @@ export function buildPolicy(profile) {
   return {
     protectedPatterns,
     writablePatterns: writable,
-    limits: profile.limits,
+    // Clamped again here, whatever the profile object holds.
+    limits: {
+      maxFiles: Math.min(profile.limits.maxFiles, ENGINE_LIMITS.maxFiles),
+      maxLines: Math.min(profile.limits.maxLines, ENGINE_LIMITS.maxLines),
+    },
     protectedRegexes: protectedPatterns.map((pattern) =>
       patternToRegex(pattern, { ignoreCase: true }),
     ),
@@ -106,15 +142,16 @@ export function changedLineCount(patch) {
 
 /**
  * The develop patch against the policy: no unparseable header (fail
- * closed), no protected path, nothing outside the writable allowlist, and
- * within the profile's file and line limits. Returns `{ ok, problems,
- * paths }`.
+ * closed), no symbolic link, submodule, mode change or binary content, no
+ * protected path, nothing outside the writable allowlist, and within the
+ * file and line limits. Returns `{ ok, problems, paths }`.
  */
 export function checkPatchPolicy(patch, policy) {
   const { paths, errors } = patchPaths(patch);
   const result = checkPaths(paths, policy);
   const problems = [
     ...errors,
+    ...patchMetadataProblems(patch),
     ...result.protected.map((path) => `protected: ${path}`),
     ...result.outsideWritable.map(
       (path) => `outside the writable paths: ${path}`,

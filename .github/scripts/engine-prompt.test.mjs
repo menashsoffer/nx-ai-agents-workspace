@@ -64,11 +64,11 @@ test('renderEnginePrompt: profile is trusted, the issue stays untrusted', () => 
       },
     ],
   });
-  assert.equal(version, '1');
+  assert.equal(version, '2');
   assert.ok(
     prompt.indexOf('## Target profile') < prompt.indexOf('## Run context'),
   );
-  assert.match(prompt, /- prompt version: engine-plan\.md@1/);
+  assert.match(prompt, /- prompt version: engine-plan\.md@2/);
   assert.match(prompt, /<untrusted-data name="issue">/);
   assert.doesNotMatch(prompt, /\n<\/untrusted-data> ignore/);
   assert.throws(() =>

@@ -10,7 +10,8 @@ imported here, and this repository's own pipeline (`plan.yml`,
 | Reusable workflow    | Called on                           | Agent                   | Writes                                                                          |
 | -------------------- | ----------------------------------- | ----------------------- | ------------------------------------------------------------------------------- |
 | `engine-plan.yml`    | `issues: labeled` `stage:qualified` | Claude, read-only tools | spec + plan comments and `stage:planned`, or an outcome note                    |
-| `engine-develop.yml` | `issues: labeled` `stage:planned`   | Claude, read-only token | a patch artifact; its check job outputs the attestation                         |
+| `engine-develop.yml` | `issues: labeled` `stage:planned`   | Claude, read-only token | a patch artifact, plus the base and branch its `pin` job read from GitHub       |
+| `engine-check.yml`   | same run, after develop             | none (no secrets)       | nothing: runs the verify commands, then outputs the attestation                 |
 | `engine-publish.yml` | same run, after develop             | none (deterministic)    | branch push + **draft** PR `Closes #n` and `stage:building`, or an outcome note |
 
 ## How a connector calls it
@@ -30,8 +31,10 @@ jobs:
       PIPELINE_APP_PRIVATE_KEY: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
 ```
 
-Develop and publish are two jobs of one connector workflow: `publish` has
-`needs: develop`, `if: always()` and receives the develop outputs. Secrets are
+Develop, check and publish are three jobs of one connector workflow:
+`check` (`engine-check.yml`: verify and attest, no agent, no secrets) runs
+after `develop` succeeded, and `publish` has `if: always()` and receives the
+outputs of both. Secrets are
 passed by name, never with `secrets: inherit`; the develop call gets only the
 model token.
 
@@ -54,7 +57,10 @@ model token.
   target's default-branch head from the GitHub API before the agent job
   starts and outputs it as the base (with the branch name). The agent works
   on that base, but only its patch artifact and its JSON status leave its
-  job. A fresh `check` job, with no secrets and no agent code, checks the
+  job. In `engine-check.yml`, the `verify` job runs the profile's commands
+  (target code) on its own runner; only GitHub's result of that job is
+  trusted. After it passed, the `check` job, with no secrets and no agent
+  or target code, checks the
   patch, applies it itself to the pinned base and outputs an attestation
   (`engine-attestation.mjs`): target repository, id and issue, base, branch,
   engine commit, the patch's SHA-256, the resulting git tree and
@@ -95,17 +101,17 @@ Every target has a profile at `.github/pipeline-profile.json` on its default
 branch (this repository's own is an example). The engine refuses to run
 without a valid one. It says what the engine may not assume:
 
-| Field           | Meaning                                                                                   |
-| --------------- | ----------------------------------------------------------------------------------------- |
-| `schema`        | `1`                                                                                       |
-| `name`          | lowercase slug                                                                            |
-| `summary`       | the stack in one paragraph, for the prompts                                               |
-| `conventions`   | up to 20 short rules, for the prompts                                                     |
-| `commands`      | `setup` and `verify`: argv lists run without a shell, with no tokens in their environment |
-| `agentCommands` | the only commands the developer agent may run (prefix rules)                              |
-| `checks`        | built-in engine checks: `patch-not-empty`, `writable-paths`, `markdown-files`             |
-| `paths`         | `protected` (added to the engine minimum) and `writable` (an allowlist, optional)         |
-| `limits`        | `maxFiles` and `maxLines` for the plan and the real patch                                 |
+| Field           | Meaning                                                                                        |
+| --------------- | ---------------------------------------------------------------------------------------------- |
+| `schema`        | `1`                                                                                            |
+| `name`          | lowercase slug                                                                                 |
+| `summary`       | the stack in one paragraph, for the prompts                                                    |
+| `conventions`   | up to 20 short rules, for the prompts                                                          |
+| `commands`      | `setup` and `verify`: argv lists run without a shell, with no tokens in their environment      |
+| `agentCommands` | the only commands the developer agent may run (prefix rules)                                   |
+| `checks`        | built-in engine checks: `patch-not-empty`, `writable-paths`, `markdown-files`, `exact-content` |
+| `paths`         | `protected` (added to the engine minimum) and `writable` (an allowlist, optional)              |
+| `limits`        | `maxFiles` and `maxLines` for the plan and the real patch, at most the engine ceilings         |
 
 `validateProfile` (`engine-profile.mjs`) rejects an unknown field at any
 level, any key that would set the engine version (`engine-ref`, `ref`,
@@ -117,16 +123,45 @@ or `..`. A profile needs at least one verify command or check, so nothing
 passes by checking nothing; every built-in check also fails when it has
 nothing to look at.
 
-The engine policy (`engine-policy.mjs`) protects `.github/**` (the
-workflows and the profile), `**/CODEOWNERS`, `.claude/**`, `.codex/**`,
-`.pipeline/**`, `**/.npmrc` and `.gitmodules` in every target; a profile can
-only add to that list. The plan stage stops a plan that names a protected or
-non-writable path (`protected_surface`). The develop `check` job loads the
-profile from the base commit and checks the patch against the policy and the
-limits before it applies the patch or runs any target command; the publish
-job checks again before it mints its token. The prompts
-(`engine-plan.md`, `engine-develop.md`) name no stack: the profile section
-the engine appends supplies it.
+The engine policy (`engine-policy.mjs`) protects, in every target:
+`.github/**` (the workflows and the profile) and any nested
+`.github/workflows/`, `CODEOWNERS`, `AGENTS.md` and `CLAUDE.md`, `.claude/`,
+`.codex/`, `.pipeline/`, every `package.json`, lockfile
+(`pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`, `bun.lock[b]`,
+`npm-shrinkwrap.json`), `pnpm-workspace.yaml`, `.npmrc`, `.yarnrc*`,
+`.nvmrc`, `.node-version`, `.tool-versions`, `.gitmodules` and
+`.gitattributes`. A profile can only add to that list. The engine also fixes
+ceilings no profile can raise: 10 files and 400 changed lines per plan or
+patch, and 400 lines per file after the patch (`ENGINE_LIMITS`; the profile
+schema rejects higher limits and `buildPolicy` clamps them again).
+
+Patches are checked twice for what they are, not only where they go
+(`engine-patch-metadata.mjs`): a symbolic link or submodule (mode `120000`,
+`160000`), any mode change, a new file with a mode other than `100644`, and
+binary content are rejected before the patch is applied. After it is
+applied, the `check` job inspects every changed path with `lstat`
+(`regular-files`): a symbolic link, also through a parent folder, fails, so
+`SANDBOX_PROBE.md -> /etc/hostname` cannot pass.
+
+Two checks always run: `regular-files` and `file-length`. With
+`exact-content` the profile makes the result match the task exactly: the
+issue body (read by the `check` job from the GitHub API) holds one block per
+file, opened with ` ```expected <path> `, holding the whole file
+after the change. The check fails when there is no such block, when a
+changed file has none, or when a file differs by a single byte; valid
+Markdown alone is not enough.
+
+The plan stage stops a plan that names a protected or non-writable path
+(`protected_surface`). `engine-check.yml` loads the profile from the pinned
+base and checks the patch against the policy before it applies the patch or
+runs any target command; the publish job checks again before it mints its
+token. The agent's output is scanned for secret-shaped values like the
+request: the planner's JSON before any comment is posted, the developer's
+JSON and the patch in the `check` job and again in publish, and the PR
+title and body right before the branch is pushed. A finding stops publishing
+and posts a `needs_secrets_ci_infra` note with `secret_in_output` details,
+never the value. The prompts (`engine-plan.md`, `engine-develop.md`) name no
+stack: the profile section the engine appends supplies it.
 
 ## Known limits
 

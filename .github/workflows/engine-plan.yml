@@ -196,14 +196,31 @@ jobs:
           printf '%s' "$OUTCOME" > outcome.json
           node .engine/.github/scripts/pipeline.mjs outcome "$N" outcome.json
 
-      - id: classify
+      # The planner's JSON becomes comments: scan it before anything is posted.
+      - id: output
         if: ${{ needs.plan.outputs.request_outcome == '' }}
         env:
           RESULT: ${{ needs.plan.outputs.result }}
+        run: |
+          printf '%s' "$RESULT" > result.json
+          node .engine/.github/scripts/engine.mjs check-output --stage plan --result result.json
+
+      - name: Report agent output that held a secret (stage:routing)
+        if: ${{ steps.output.outputs.is_clean == 'false' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          OUTCOME: ${{ steps.output.outputs.outcome }}
+        run: |
+          printf '%s' "$OUTCOME" > outcome.json
+          node .engine/.github/scripts/pipeline.mjs outcome "$N" outcome.json
+
+      - id: classify
+        if: ${{ steps.output.outputs.is_clean == 'true' }}
+        env:
           JOB_RESULT: ${{ needs.plan.result }}
           VERSION: ${{ needs.plan.outputs.prompt_version }}
         run: |
-          printf '%s' "$RESULT" > result.json
           node .engine/.github/scripts/engine.mjs classify-plan --job-result "$JOB_RESULT" \
             --profile "$RUNNER_TEMP/profile.json" --result result.json \
             --prompt-version "engine-plan.md@${VERSION:-unknown}" --out outcome.json \

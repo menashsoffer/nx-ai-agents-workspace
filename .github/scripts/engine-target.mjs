@@ -19,6 +19,7 @@ const COMMIT_FORMAT = /^[0-9a-f]{40}$/;
 export const STAGE_LABELS = Object.freeze({
   plan: 'stage:qualified',
   develop: 'stage:planned',
+  check: 'stage:planned',
   publish: 'stage:planned',
 });
 

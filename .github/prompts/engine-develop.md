@@ -1,5 +1,5 @@
 ---
-version: 1
+version: 2
 agent: claude
 stage: stage:planned -> engine-publish (draft PR) | stage:routing
 output: code commits on the current branch + JSON (status, pr_title, pr_body, blocked_reason, problem)
@@ -36,7 +36,10 @@ profile and, if they pass, pushes the branch and opens a draft pull request.
    return `status: "blocked"` with `problem: "plan_gap"`.
 2. Stay on the current branch.
 3. Make the smallest change that meets every acceptance criterion, within
-   the profile's limits and conventions.
+   the profile's limits and conventions. Keep every file a regular text
+   file: no symbolic links, mode changes or binary files, and no file over
+   400 lines. When the issue has ` ```expected <path> ` blocks, each
+   file must end up with exactly that content.
 4. Run the profile's verify commands when they are among the commands you
    may run, and fix every failure. Never skip or disable a check.
 5. Commit with short imperative English messages (`git add` + `git commit`)
