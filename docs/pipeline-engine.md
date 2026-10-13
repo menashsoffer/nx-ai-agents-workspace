@@ -112,6 +112,18 @@ job checks again before it mints its token. The prompts
 (`engine-plan.md`, `engine-develop.md`) name no stack: the profile section
 the engine appends supplies it.
 
+## Connectors
+
+`connectors/<target>/` holds a target's connector files, reviewed and
+tested here, for the owner to copy into the target's root. The first is
+`connectors/pipeline-sandbox/` (see its `README.md`),
+for `menashsoffer/pipeline-sandbox`: two thin workflows pinned to one engine
+commit and a documentation-only profile whose only writable file is
+`SANDBOX_PROBE.md`. `connector-sandbox.test.mjs` checks the pins, each
+call's permissions, secrets and inputs against the engine workflows, and
+runs the sandbox profile through the policy and the checks (positive and
+negative cases).
+
 ## Known limits
 
 - The engine repository name is fixed in `engine-pin.mjs` and in every

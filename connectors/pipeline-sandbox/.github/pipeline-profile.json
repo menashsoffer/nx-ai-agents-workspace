@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "name": "pipeline-sandbox",
+  "summary": "Pilot sandbox for the pipeline engine. Documentation only: Markdown files, no packages, no build, no code to run. The only file a change may touch is SANDBOX_PROBE.md.",
+  "conventions": [
+    "Change only SANDBOX_PROBE.md; every other path is out of bounds.",
+    "Plain Markdown text: no HTML, no scripts, no links to run code.",
+    "Do not install, add or run any package or tool."
+  ],
+  "commands": { "setup": [], "verify": [] },
+  "agentCommands": [],
+  "checks": ["patch-not-empty", "writable-paths", "markdown-files"],
+  "paths": {
+    "protected": ["README.md"],
+    "writable": ["SANDBOX_PROBE.md"]
+  },
+  "limits": { "maxFiles": 1, "maxLines": 50 }
+}
