@@ -11,6 +11,10 @@ to one **router** that decides where the work goes next: re-plan,
 re-develop, retry, or a human. Loops are bounded; hard gates always stop
 at a human. See [Router](pipeline-router.md#router).
 
+The plan, develop and publish stages can also run for another repository,
+called through pinned reusable workflows: see
+[Pipeline engine](pipeline-engine.md).
+
 ## The flow
 
 The full map (every stage, workflow and escalation path, plus
