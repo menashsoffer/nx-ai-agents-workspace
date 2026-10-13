@@ -134,7 +134,11 @@ test('engine-publish: deterministic, and checks before it mints the App token', 
   assert.ok(!jobsOf(workflow).some(([, job]) => isAgentJob(job)));
   const indexOf = (id) => publish.steps.findIndex((step) => step.id === id);
   const appIndex = publish.steps.findIndex(isAppTokenStep);
-  assert.ok(indexOf('manifest') < appIndex && indexOf('guard') < appIndex);
+  assert.ok(indexOf('attestation') < appIndex && indexOf('guard') < appIndex);
+  assert.match(
+    publish.steps[indexOf('push')].run,
+    /engine\.mjs" check-tree\n[\s\S]*git push/,
+  );
   assert.ok(indexOf('push') > appIndex);
   assert.match(
     publish.steps[indexOf('push')].if,
@@ -157,4 +161,61 @@ test('engine workflows: per-target concurrency (same issue number, two repositor
         `${file} ${name}`,
       );
     }
+});
+
+test('engine-develop: the base comes from the pin job, never the agent runner', () => {
+  const develop = workflows['engine-develop.yml'];
+  const pinRun = develop.jobs.pin.steps
+    .map((step) => step.run ?? '')
+    .join('\n');
+  assert.match(pinRun, /--resolve-base/);
+  assert.equal(develop.jobs.pin.outputs.base, '${{ steps.pin.outputs.base }}');
+  const { implement, check } = develop.jobs;
+  const targetCheckout = (job) =>
+    job.steps.find(
+      (step) =>
+        String(step.uses).startsWith('actions/checkout@') &&
+        !step.with.repository,
+    );
+  assert.equal(
+    targetCheckout(implement).with.ref,
+    '${{ needs.pin.outputs.base }}',
+  );
+  assert.equal(targetCheckout(check).with.ref, '${{ needs.pin.outputs.base }}');
+  // the check job takes nothing from the agent job but its patch artifact
+  // and its status; the attestation's base and branch come from pin
+  assert.doesNotMatch(textOf(check), /needs\.implement\.outputs\.(?!result)/);
+  const attest = check.steps.find((step) => step.id === 'attest');
+  assert.equal(attest.env.BASE, '${{ needs.pin.outputs.base }}');
+  assert.equal(attest.env.BRANCH, '${{ needs.pin.outputs.branch }}');
+  const outputs = triggersOf(develop).workflow_call.outputs;
+  assert.equal(outputs.base.value, '${{ jobs.pin.outputs.base }}');
+  assert.equal(
+    outputs.attestation.value,
+    '${{ jobs.check.outputs.attestation }}',
+  );
+});
+
+test('engine-publish: compares the attestation with the pinned base and the patch', () => {
+  const publish = workflows['engine-publish.yml'].jobs.publish;
+  const step = publish.steps.find(
+    (candidate) => candidate.id === 'attestation',
+  );
+  assert.equal(step.env.BASE, '${{ inputs.base }}');
+  assert.equal(step.env.ATTESTATION, '${{ inputs.attestation }}');
+  assert.match(step.run, /check-attestation .*--base "\$BASE" --patch/s);
+  const targetCheckout = publish.steps.find(
+    (candidate) =>
+      String(candidate.uses).startsWith('actions/checkout@') &&
+      !candidate.with.repository,
+  );
+  assert.equal(
+    targetCheckout.with.ref,
+    '${{ steps.attestation.outputs.base }}',
+  );
+  assert.ok(
+    publish.steps.some((candidate) =>
+      /merge-base --is-ancestor/.test(candidate.run ?? ''),
+    ),
+  );
 });

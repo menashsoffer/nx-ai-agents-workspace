@@ -2,15 +2,18 @@ name: Pipeline engine · Develop
 
 # Reusable develop stage (workflow_call). The connector calls it on
 # `issues: labeled` (stage:planned), pinned to an engine commit, then calls
-# engine-publish.yml in the same run (it downloads this run's artifact).
-# pin: as in engine-plan.yml (OIDC claims, target from the workflow context).
-# implement: the agent works in the target checkout with a READ-ONLY token
-# and no other secret than its own model token; the engine sits outside the
-# workspace. Its commits leave the job as a patch plus a manifest that binds
-# the patch to this target, its base commit and this engine commit.
-# check: a fresh runner with no secrets re-checks the manifest and the patch
-# (protected paths) and that it applies to the base. Nothing here can push;
-# engine-publish.yml checks everything again before it holds a write token.
+# engine-publish.yml in the same run with this workflow's outputs.
+# Nothing produced on the agent's runner is trusted: the agent can read and
+# write that whole machine (keeping the engine outside the workspace only
+# keeps it out of the patch; it is not isolation).
+# pin: OIDC pin check as in engine-plan.yml, then the target's base: its
+# default-branch head, read from the GitHub API before the agent job starts.
+# implement: the agent works on that base with a READ-ONLY token and its
+# model token only. Its commits leave the job as a patch artifact.
+# check: a fresh runner with no secrets and no agent code checks the patch,
+# applies it to the pinned base itself and outputs the attestation (target,
+# base, branch, engine commit, patch hash, resulting tree, verification).
+# engine-publish.yml compares all of it again before it holds a write token.
 # See docs/pipeline-engine.md.
 on:
   workflow_call:
@@ -37,9 +40,12 @@ on:
         value: ${{ jobs.implement.outputs.request_outcome }}
       patch_rejected:
         value: ${{ jobs.implement.outputs.patch_rejected || jobs.check.outputs.patch_rejected }}
-      checked:
-        description: true only when the check job passed on this run's patch.
-        value: ${{ jobs.check.outputs.checked }}
+      base:
+        description: The target base the pin job read from GitHub (publish compares the attestation with it).
+        value: ${{ jobs.pin.outputs.base }}
+      attestation:
+        description: The check job's attestation JSON; empty unless every check passed.
+        value: ${{ jobs.check.outputs.attestation }}
 
 permissions: {}
 
@@ -54,6 +60,8 @@ jobs:
       commit: ${{ steps.pin.outputs.commit }}
       repository: ${{ steps.pin.outputs.repository }}
       issue: ${{ steps.pin.outputs.issue }}
+      base: ${{ steps.pin.outputs.base }}
+      branch: ${{ steps.pin.outputs.branch }}
     steps:
       - name: Require a full engine commit
         env:
@@ -72,9 +80,10 @@ jobs:
       - id: pin
         env:
           ENGINE_COMMIT: ${{ inputs.engine-commit }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           node .engine/.github/scripts/engine.mjs pin --stage develop --workflow engine-develop.yml \
-            --engine-commit "$ENGINE_COMMIT" --engine-dir .engine
+            --engine-commit "$ENGINE_COMMIT" --engine-dir .engine --resolve-base
 
   implement:
     needs: pin
@@ -105,7 +114,7 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ needs.pin.outputs.base }}
           persist-credentials: false
 
       - name: Collect issue, spec and plan (untrusted data)
@@ -119,19 +128,10 @@ jobs:
         name: Stop if the request holds a secret
         run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-request --stage develop "$RUNNER_TEMP/pipeline/issue.json"
 
-      - id: branch
-        if: ${{ steps.request.outputs.is_clean == 'true' }}
-        env:
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-          N: ${{ needs.pin.outputs.issue }}
-        run: |
-          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" branch-name "$N"
-          echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
       - name: Create working branch
         if: ${{ steps.request.outputs.is_clean == 'true' }}
         env:
-          BRANCH: ${{ steps.branch.outputs.branch }}
+          BRANCH: ${{ needs.pin.outputs.branch }}
         run: |
           git switch -c "$BRANCH"
           git config user.name "pipeline-agent"
@@ -140,7 +140,7 @@ jobs:
       - id: prompt
         if: ${{ steps.request.outputs.is_clean == 'true' }}
         env:
-          BRANCH: ${{ steps.branch.outputs.branch }}
+          BRANCH: ${{ needs.pin.outputs.branch }}
           N: ${{ needs.pin.outputs.issue }}
           REPOSITORY: ${{ needs.pin.outputs.repository }}
         working-directory: ${{ runner.temp }}/engine
@@ -172,12 +172,10 @@ jobs:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: node "$RUNNER_TEMP/engine/.github/scripts/agent-failure-summary.mjs" "$EXECUTION_FILE"
 
-      - name: Package commits as a patch with its manifest
+      - name: Package commits as a patch
         if: ${{ fromJSON(steps.claude.outputs.structured_output || '{}').status == 'done' }}
         env:
-          BASE: ${{ steps.branch.outputs.base }}
-          BRANCH: ${{ steps.branch.outputs.branch }}
-          ENGINE_COMMIT: ${{ needs.pin.outputs.commit }}
+          BASE: ${{ needs.pin.outputs.base }}
         run: |
           git checkout -- .claude 2>/dev/null || true
           git clean -fdq -- .claude
@@ -187,10 +185,8 @@ jobs:
           fi
           git -c core.quotePath=false format-patch "$BASE..HEAD" --stdout > "$RUNNER_TEMP/out/changes.patch"
           test -s "$RUNNER_TEMP/out/changes.patch" || { echo "::error::The agent produced no commits"; exit 1; }
-          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" manifest --stage develop \
-            --base "$BASE" --branch "$BRANCH" --engine-commit "$ENGINE_COMMIT" --out "$RUNNER_TEMP/out/manifest.json"
 
-      # Early answer only: the agent shared this runner. The check job and
+      # Early answer only: the agent controls this runner. The check job and
       # engine-publish.yml repeat it on fresh runners.
       - id: guard
         if: ${{ fromJSON(steps.claude.outputs.structured_output || '{}').status == 'done' }}
@@ -200,9 +196,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: engine-develop-patch
-          path: |
-            ${{ runner.temp }}/out/changes.patch
-            ${{ runner.temp }}/out/manifest.json
+          path: ${{ runner.temp }}/out/changes.patch
           retention-days: 7
 
   check:
@@ -214,7 +208,7 @@ jobs:
       contents: read
     outputs:
       patch_rejected: ${{ steps.guard.outputs.rejected }}
-      checked: ${{ steps.applies.outputs.checked }}
+      attestation: ${{ steps.attest.outputs.attestation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -230,20 +224,29 @@ jobs:
           name: engine-develop-patch
           path: ${{ runner.temp }}/in
 
-      - id: manifest
-        env:
-          ENGINE_COMMIT: ${{ needs.pin.outputs.commit }}
-        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-manifest --stage develop --engine-commit "$ENGINE_COMMIT" "$RUNNER_TEMP/in/manifest.json"
-
       - id: guard
         run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-patch "$RUNNER_TEMP/in/changes.patch"
 
+      # The base the pin job read from GitHub, never one from the agent's runner.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.manifest.outputs.base }}
+          ref: ${{ needs.pin.outputs.base }}
           persist-credentials: false
 
-      - id: applies
+      - name: Apply the patch to the pinned base
+        env:
+          BRANCH: ${{ needs.pin.outputs.branch }}
         run: |
-          git apply --check "$RUNNER_TEMP/in/changes.patch"
-          echo "checked=true" >> "$GITHUB_OUTPUT"
+          git config user.name "pipeline-agent"
+          git config user.email "pipeline-agent@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
+
+      - id: attest
+        env:
+          BASE: ${{ needs.pin.outputs.base }}
+          BRANCH: ${{ needs.pin.outputs.branch }}
+          ENGINE_COMMIT: ${{ needs.pin.outputs.commit }}
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" attest --stage develop --base "$BASE" \
+            --branch "$BRANCH" --engine-commit "$ENGINE_COMMIT" --patch "$RUNNER_TEMP/in/changes.patch"

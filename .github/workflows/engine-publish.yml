@@ -5,9 +5,12 @@ name: Pipeline engine · Publish
 # develop outputs. Publishing is deterministic: no model runs here, and the
 # only writes are a branch push and a DRAFT pull request ("Closes #n") in
 # the target, or an outcome note. It never executes target code.
-# pin: as in engine-plan.yml. publish: re-checks the manifest (same target
-# repository and issue, same engine commit) and the patch on a fresh runner
-# BEFORE it mints the App token; only then pushes and opens the draft PR.
+# pin: as in engine-plan.yml. publish: before it mints the App token, checks
+# the develop attestation against this target and engine commit, the base
+# the develop pin job read from GitHub (an older base fails), the hash of
+# the patch it downloads and the protected paths; checks that the base is
+# on the default branch. After applying the patch it requires the attested
+# tree, then pushes and opens the draft PR.
 # See docs/pipeline-engine.md.
 on:
   workflow_call:
@@ -41,7 +44,12 @@ on:
       patch-rejected:
         type: string
         default: ''
-      checked:
+      base:
+        description: The develop outputs.base (read from GitHub by the develop pin job).
+        type: string
+        default: ''
+      attestation:
+        description: The develop outputs.attestation (built by the develop check job).
         type: string
         default: ''
     secrets:
@@ -108,11 +116,11 @@ jobs:
           DEVELOP_RESULT: ${{ inputs.develop-result }}
           RESULT: ${{ inputs.result }}
           REQUEST_OUTCOME: ${{ inputs.request-outcome }}
-          CHECKED: ${{ inputs.checked }}
+          ATTESTATION: ${{ inputs.attestation }}
           REJECTED: ${{ inputs.patch-rejected }}
         run: |
           status=$(printf '%s' "$RESULT" | jq -r 'try .status // ""' 2>/dev/null || true)
-          if [[ -z "$REQUEST_OUTCOME" && "$DEVELOP_RESULT" == "success" && "$status" == "done" && "$CHECKED" == "true" && "$REJECTED" != "true" ]]; then
+          if [[ -z "$REQUEST_OUTCOME" && "$DEVELOP_RESULT" == "success" && "$status" == "done" && -n "$ATTESTATION" && "$REJECTED" != "true" ]]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
@@ -124,12 +132,17 @@ jobs:
           name: engine-develop-patch
           path: ${{ runner.temp }}/in
 
-      # Before any write token exists: same target, same engine, allowed paths.
-      - id: manifest
+      # Before any write token exists: the attestation, the pinned base, the
+      # patch hash and the protected paths.
+      - id: attestation
         if: ${{ steps.ready.outputs.publish == 'true' }}
         env:
+          ATTESTATION: ${{ inputs.attestation }}
+          BASE: ${{ inputs.base }}
           ENGINE_COMMIT: ${{ needs.pin.outputs.commit }}
-        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-manifest --stage publish --engine-commit "$ENGINE_COMMIT" "$RUNNER_TEMP/in/manifest.json"
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-attestation --stage publish \
+            --engine-commit "$ENGINE_COMMIT" --base "$BASE" --patch "$RUNNER_TEMP/in/changes.patch"
 
       - id: guard
         if: ${{ steps.ready.outputs.publish == 'true' }}
@@ -138,8 +151,16 @@ jobs:
       - if: ${{ steps.ready.outputs.publish == 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.manifest.outputs.base }}
+          ref: ${{ steps.attestation.outputs.base }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Require the base on the default branch
+        if: ${{ steps.ready.outputs.publish == 'true' }}
+        env:
+          BASE: ${{ steps.attestation.outputs.base }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: git merge-base --is-ancestor "$BASE" "refs/remotes/origin/$DEFAULT_BRANCH"
 
       # Scoped to the calling repository (the target) only. No `workflows`
       # permission, so it can never push a workflow change.
@@ -155,11 +176,12 @@ jobs:
 
       - name: Push the branch and open a draft PR
         id: push
-        if: ${{ steps.ready.outputs.publish == 'true' && steps.guard.outcome == 'success' }}
+        if: ${{ steps.ready.outputs.publish == 'true' && steps.guard.outcome == 'success' && steps.attestation.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
-          BRANCH: ${{ steps.manifest.outputs.branch }}
+          BRANCH: ${{ steps.attestation.outputs.branch }}
+          ATTESTATION: ${{ inputs.attestation }}
           RESULT: ${{ inputs.result }}
           VERSION: ${{ inputs.prompt-version }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -173,6 +195,7 @@ jobs:
           git config user.email "pipeline-agent@users.noreply.github.com"
           git switch -c "$BRANCH"
           git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-tree
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
           echo "::add-mask::$auth"
           GIT_CONFIG_COUNT=1 \

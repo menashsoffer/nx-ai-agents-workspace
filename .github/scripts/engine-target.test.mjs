@@ -3,12 +3,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   STAGE_LABELS,
-  buildManifest,
-  checkManifest,
+  baseFromReference,
+  defaultBranchOf,
   resolveTarget,
 } from './engine-target.mjs';
 
-const ENGINE_COMMIT = 'a'.repeat(40);
 const BASE_COMMIT = 'b'.repeat(40);
 
 const environmentFor = (repository, repositoryId = '101') => ({
@@ -102,7 +101,7 @@ test('resolveTarget: repository names compare case-insensitively', () => {
   assert.equal(target.repository, 'MenashSoffer/Pipeline-Sandbox');
 });
 
-test('same issue number in two repositories: distinct keys, manifests do not cross', () => {
+test('same issue number in two repositories: distinct keys', () => {
   const sandbox = sandboxTarget('develop');
   const workspace = resolveTarget({
     environment: environmentFor('menashsoffer/nx-ai-agents-workspace', '202'),
@@ -115,58 +114,35 @@ test('same issue number in two repositories: distinct keys, manifests do not cro
   });
   assert.equal(sandbox.issue, workspace.issue);
   assert.notEqual(sandbox.key, workspace.key);
-  const manifest = buildManifest({
-    target: sandbox,
-    base: BASE_COMMIT,
-    branch: 'issue-7-probe',
-    engineCommit: ENGINE_COMMIT,
-  });
-  assert.deepEqual(
-    checkManifest(manifest, { target: sandbox, engineCommit: ENGINE_COMMIT }),
-    [],
-  );
-  assert.deepEqual(
-    checkManifest(manifest, { target: workspace, engineCommit: ENGINE_COMMIT }),
-    [
-      'the manifest names another repository',
-      'the manifest names another repository id',
-    ],
-  );
+  assert.notEqual(sandbox.repositoryId, workspace.repositoryId);
 });
 
-test('checkManifest: rejects another issue, engine, branch or shape', () => {
-  const target = sandboxTarget('publish');
-  const good = buildManifest({
-    target,
-    base: BASE_COMMIT,
-    branch: 'issue-7-probe',
-    engineCommit: ENGINE_COMMIT,
-  });
-  const check = (manifest, engineCommit = ENGINE_COMMIT) =>
-    checkManifest(manifest, { target, engineCommit });
-  assert.deepEqual(check({ ...good, issue: 8 }), [
-    'the manifest names another issue',
-  ]);
-  assert.deepEqual(check(good, 'c'.repeat(40)), [
-    'the manifest was built by another engine commit',
-  ]);
-  assert.deepEqual(check({ ...good, branch: 'issue-70-probe' }), [
-    'the manifest branch is not the branch of this issue',
-  ]);
-  assert.deepEqual(check({ ...good, base: 'main' }), [
-    'the manifest base is not a commit',
-  ]);
-  assert.deepEqual(check({ ...good, extra: 1 }), [
-    'unknown manifest fields: extra',
-  ]);
-  assert.deepEqual(check({ ...good, schema: 2 }), ['unknown manifest schema']);
-  assert.deepEqual(check(null), ['the manifest is missing']);
+test('defaultBranchOf: from the event payload, safe as a ref name', () => {
+  const withBranch = (name) => ({ repository: { default_branch: name } });
+  assert.equal(defaultBranchOf(withBranch('main')), 'main');
+  assert.equal(defaultBranchOf(withBranch('release/v1')), 'release/v1');
+  for (const bad of ['', '../main', '/main', 'main/', 'a b', 'x;rm', undefined])
+    assert.throws(
+      () => defaultBranchOf(withBranch(bad)),
+      /default branch/,
+      String(bad),
+    );
+  assert.throws(() => defaultBranchOf(null), /default branch/);
 });
 
-test('buildManifest: requires full commits', () => {
-  const target = sandboxTarget('develop');
-  const build = (base, engineCommit) =>
-    buildManifest({ target, base, branch: 'issue-7-x', engineCommit });
-  assert.throws(() => build('main', ENGINE_COMMIT), /base commit/);
-  assert.throws(() => build(BASE_COMMIT, 'v1.0.0'), /engine commit/);
+test('baseFromReference: only a commit object from GitHub is a base', () => {
+  assert.equal(
+    baseFromReference({ object: { type: 'commit', sha: BASE_COMMIT } }),
+    BASE_COMMIT,
+  );
+  for (const reference of [
+    { object: { type: 'tag', sha: BASE_COMMIT } },
+    { object: { type: 'commit', sha: 'main' } },
+    { object: null },
+    null,
+  ])
+    assert.throws(
+      () => baseFromReference(reference),
+      /does not point at a commit/,
+    );
 });
