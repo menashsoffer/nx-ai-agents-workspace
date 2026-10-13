@@ -167,13 +167,17 @@ stack: the profile section the engine appends supplies it.
 
 `connectors/<target>/` holds a target's connector files, reviewed and
 tested here, for the owner to copy into the target's root. The first is
-`connectors/pipeline-sandbox/` (see its `README.md`),
-for `menashsoffer/pipeline-sandbox`: two thin workflows pinned to one engine
+`connectors/pipeline-sandbox/` (see its `README.md`), for
+`menashsoffer/pipeline-sandbox`: two thin workflows pinned to one engine
 commit and a documentation-only profile whose only writable file is
-`SANDBOX_PROBE.md`. `connector-sandbox.test.mjs` checks the pins, each
-call's permissions, secrets and inputs against the engine workflows, and
-runs the sandbox profile through the policy and the checks (positive and
-negative cases).
+`SANDBOX_PROBE.md`, checked for the task's exact content. It is a template
+in this repository: no pull request to the sandbox exists, nothing has run
+end to end, and the sandbox has no CI, review gates or router after the
+draft PR (its README lists what is missing). `connector-sandbox.test.mjs`
+checks the pins and each call's permissions, secrets and inputs against the
+engine workflows; `connector-sandbox-pilot.test.mjs` runs the sandbox profile
+through the policy and the checks; `connector-coexistence.mjs` checks a
+target's own Claude workflows against the connector.
 
 ## Known limits
 

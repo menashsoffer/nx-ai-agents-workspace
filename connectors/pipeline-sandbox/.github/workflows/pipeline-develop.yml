@@ -1,9 +1,10 @@
-name: Pipeline · Develop and publish (engine)
+name: Pipeline · Develop, check and publish (engine)
 
 # Thin event adapter: on stage:planned it calls the engine's develop stage
-# (the agent, read-only, with the model token only), then its publish stage
-# in the same run (deterministic: checks again, then a draft PR, or an
-# outcome note). Both pinned to the same engine commit. No steps run here.
+# (the agent, read-only, with the model token only), its check stage (no
+# agent, no secrets: verify, then the attestation) and its publish stage
+# (deterministic: checks again, then a draft PR, or an outcome note), all in
+# one run and pinned to the same engine commit. No steps run here.
 # Source: menashsoffer/nx-ai-agents-workspace, connectors/pipeline-sandbox.
 on:
   issues:
@@ -14,33 +15,48 @@ permissions: {}
 jobs:
   develop:
     if: ${{ github.event.label.name == 'stage:planned' && !github.event.issue.pull_request && github.event.issue.state == 'open' }}
-    uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-develop.yml@fd6855ae05fc30898c38f9e01393fc073edf0567
+    uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-develop.yml@c654385e64bb096b961210686fce1fd276d63439
     permissions:
       contents: read
       issues: read
       id-token: write
     with:
-      engine-commit: fd6855ae05fc30898c38f9e01393fc073edf0567
+      engine-commit: c654385e64bb096b961210686fce1fd276d63439
       bot-login: ${{ vars.PIPELINE_BOT_LOGIN }}
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-  publish:
+  check:
     needs: develop
+    if: ${{ needs.develop.result == 'success' && fromJSON(needs.develop.outputs.result || '{}').status == 'done' }}
+    uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-check.yml@c654385e64bb096b961210686fce1fd276d63439
+    permissions:
+      contents: read
+      issues: read
+      id-token: write
+    with:
+      engine-commit: c654385e64bb096b961210686fce1fd276d63439
+      base: ${{ needs.develop.outputs.base }}
+      branch: ${{ needs.develop.outputs.branch }}
+      result: ${{ needs.develop.outputs.result }}
+
+  publish:
+    needs: [develop, check]
     if: ${{ always() && needs.develop.result != 'skipped' }}
-    uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-publish.yml@fd6855ae05fc30898c38f9e01393fc073edf0567
+    uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-publish.yml@c654385e64bb096b961210686fce1fd276d63439
     permissions:
       contents: read
       id-token: write
     with:
-      engine-commit: fd6855ae05fc30898c38f9e01393fc073edf0567
+      engine-commit: c654385e64bb096b961210686fce1fd276d63439
       bot-login: ${{ vars.PIPELINE_BOT_LOGIN }}
       app-client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
       develop-result: ${{ needs.develop.result }}
       result: ${{ needs.develop.outputs.result }}
       prompt-version: ${{ needs.develop.outputs.prompt_version }}
       request-outcome: ${{ needs.develop.outputs.request_outcome }}
-      patch-rejected: ${{ needs.develop.outputs.patch_rejected }}
-      checked: ${{ needs.develop.outputs.checked }}
+      patch-rejected: ${{ needs.develop.outputs.patch_rejected || needs.check.outputs.patch_rejected }}
+      base: ${{ needs.develop.outputs.base }}
+      attestation: ${{ needs.check.outputs.attestation }}
     secrets:
       PIPELINE_APP_PRIVATE_KEY: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}

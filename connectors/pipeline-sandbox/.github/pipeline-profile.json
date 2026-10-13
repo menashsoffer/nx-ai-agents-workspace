@@ -9,7 +9,12 @@
   ],
   "commands": { "setup": [], "verify": [] },
   "agentCommands": [],
-  "checks": ["patch-not-empty", "writable-paths", "markdown-files"],
+  "checks": [
+    "patch-not-empty",
+    "writable-paths",
+    "markdown-files",
+    "exact-content"
+  ],
   "paths": {
     "protected": ["README.md"],
     "writable": ["SANDBOX_PROBE.md"]
