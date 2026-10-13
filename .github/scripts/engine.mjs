@@ -8,12 +8,15 @@ import { readFileSync } from 'node:fs';
 import { api, setOutput } from './github.mjs';
 import { branchName, parseFlags } from './pipeline-lib.mjs';
 import { checkPin, decodeClaims } from './engine-pin.mjs';
+import { scanRequest } from './engine-request.mjs';
 import {
-  outputOutcome,
-  requestOutcome,
+  COMMIT_LOG_FORMAT,
+  scanCommits,
   scanOutput,
-  scanRequest,
-} from './engine-request.mjs';
+} from './engine-output-scan.mjs';
+import { encodeFindings } from './engine-notes.mjs';
+import { noteCommands } from './engine-note-commands.mjs';
+import { verifyCommands } from './engine-verify-commands.mjs';
 import { baseFromReference, defaultBranchOf } from './engine-target.mjs';
 import { attestationCommands } from './engine-attestation-commands.mjs';
 import { profileCommands } from './engine-profile-commands.mjs';
@@ -45,6 +48,8 @@ const readIfGiven = (path) => (path ? readFileSync(path, 'utf8') : '');
 const commands = {
   ...attestationCommands,
   ...profileCommands,
+  ...noteCommands,
+  ...verifyCommands,
 
   // Fails unless the target resolves from the workflow context, GitHub ran
   // this engine workflow at --engine-commit for that target, and
@@ -84,7 +89,8 @@ const commands = {
 
   // Scans the agent's output before anything from it is published or
   // posted: --result (its JSON), --patch, and each --text <file> (for
-  // example the PR body). Outputs is_clean and, when false, `outcome`.
+  // example the PR body). Outputs is_clean and, when false, `findings` as
+  // `field:kind,...` (safe-note --kind output validates them).
   // With --fail it also exits 1 when it finds something.
   'check-output'(args) {
     const flags = parseFlags(args);
@@ -98,11 +104,7 @@ const commands = {
       patch: readIfGiven(flags.patch),
       texts,
     });
-    if (!isClean)
-      setOutput(
-        'outcome',
-        JSON.stringify(outputOutcome(flags.stage, findings)),
-      );
+    if (!isClean) setOutput('findings', encodeFindings(findings));
     setOutput('is_clean', String(isClean));
     if (Object.hasOwn(flags, 'fail'))
       failOn(
@@ -114,16 +116,37 @@ const commands = {
       );
   },
 
+  // Scans the commits that would be pushed (base..HEAD in cwd): author,
+  // committer, subject and body. Outputs is_clean and `findings`; exit 1
+  // with --fail.
+  'check-commits'(args) {
+    const flags = parseFlags(args);
+    const log = execFileSync(
+      'git',
+      ['log', `--format=${COMMIT_LOG_FORMAT}`, `${flags.base}..HEAD`],
+      { encoding: 'utf8' },
+    );
+    const { isClean, findings } = scanCommits(log);
+    if (!isClean) setOutput('findings', encodeFindings(findings));
+    setOutput('is_clean', String(isClean));
+    if (Object.hasOwn(flags, 'fail'))
+      failOn(
+        findings.map(
+          (finding) =>
+            `secret-shaped value in ${finding.field} (${finding.kinds.join(', ')})`,
+        ),
+        'Commits',
+      );
+  },
+
   // Scans the collected issue for secrets. Outputs is_clean (true | false)
-  // and, when false, `outcome`: the outcome note JSON to post.
+  // and, when false, `findings` as `field:kind,...` (engine-notes.mjs); the
+  // publish job builds the note from them after validating each one.
   'check-request'(args) {
     const flags = parseFlags(args);
     const { isClean, findings } = scanRequest(readJson(flags._[0]));
     if (!isClean) {
-      setOutput(
-        'outcome',
-        JSON.stringify(requestOutcome(flags.stage, findings)),
-      );
+      setOutput('findings', encodeFindings(findings));
       for (const finding of findings)
         console.log(
           `::warning::Secret-shaped value in ${finding.field} (${finding.kinds.join(', ')}); the agent will not run.`,

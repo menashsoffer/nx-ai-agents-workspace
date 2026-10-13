@@ -20,3 +20,10 @@ export function failOn(problems, title) {
   for (const problem of problems) console.log(`::error::${title}: ${problem}`);
   process.exit(1);
 }
+
+/** Environment for target commands: no tokens, no runner internals. */
+export const commandEnvironment = () => ({
+  PATH: process.env.PATH,
+  HOME: process.env.HOME,
+  CI: 'true',
+});

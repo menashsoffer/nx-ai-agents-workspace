@@ -62,12 +62,22 @@ test('check verify job: the policy stops a change before target code runs', () =
   const guard = stepIndex(verify, /check-patch --profile/);
   assert.ok(stepIndex(verify, /load-profile/) >= 0);
   assert.ok(stepIndex(verify, /load-profile/) < guard);
-  for (const later of [
-    /git am/,
-    /run-commands --kind setup/,
-    /run-commands --kind verify/,
-  ])
-    assert.ok(stepIndex(verify, later) > guard, String(later));
+  const apply = stepIndex(verify, /git am/);
+  const lock = stepIndex(verify, /sudo sh -c 'rm -f \/etc\/sudoers\.d\/\*'/);
+  const orchestrator = stepIndex(
+    verify,
+    /engine\.mjs" verify-target --profile/,
+  );
+  assert.ok(guard < apply && apply < lock && lock < orchestrator);
+  assert.match(
+    verify.steps[lock].run,
+    /chown -R root:root "\$RUNNER_TEMP\/engine" "\$RUNNER_TEMP\/profile\.json"/,
+  );
+  assert.match(verify.steps[lock].run, /if sudo -n true .*exit 1/);
+  // the orchestrator is the last step, and no other engine process runs
+  // after target code could have changed the engine
+  assert.equal(orchestrator, verify.steps.length - 1);
+  assert.doesNotMatch(textOf(verify), /run-commands/);
 });
 
 test('check job: engine code only, after verify passed, then the attestation', () => {
@@ -116,7 +126,7 @@ test('publish: attestation, pinned base, patch hash and output scan before the t
   // the PR title and body are scanned before the branch is pushed
   assert.match(
     push.run,
-    /check-output [\s\S]*--text [\s\S]*pr-body\.md" --fail=true[\s\S]*git push/,
+    /check-text [\s\S]*pr-body\.md"\n[\s\S]*check-commits --base "\$BASE" --fail=true\n[\s\S]*git push/,
   );
   assert.match(push.run, /engine\.mjs" check-tree\n[\s\S]*git push/);
 });

@@ -2,9 +2,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  outputOutcome,
+  SECRET_KINDS,
   requestOutcome,
-  scanOutput,
   scanRequest,
   secretKinds,
 } from './engine-request.mjs';
@@ -65,36 +64,8 @@ test('scanRequest: the spec and plan fields are scanned too', () => {
   ]);
 });
 
-test('scanOutput: the agent JSON, the added patch lines and named texts', () => {
-  const token = SAMPLES.github_token;
-  assert.deepEqual(
-    scanOutput({ result: '{"pr_body":"fine"}', patch: '+ok\n' }),
-    {
-      isClean: true,
-      findings: [],
-    },
-  );
-  const { findings } = scanOutput({
-    result: JSON.stringify({
-      pr_body: token,
-      details: ['x', SAMPLES.aws_access_key],
-    }),
-    patch: `--- a/x\n+++ b/x\n-${SAMPLES.anthropic_key}\n+${token}\n`,
-    texts: { 'pr-body.md': SAMPLES.private_key },
-  });
-  assert.deepEqual(findings, [
-    { field: 'result.pr_body', kinds: ['github_token'] },
-    { field: 'result.details[1]', kinds: ['aws_access_key'] },
-    { field: 'patch', kinds: ['github_token'] },
-    { field: 'pr-body.md', kinds: ['private_key'] },
-  ]);
-  // a removed line is not new output, and unparsable JSON is scanned as text
-  assert.equal(scanOutput({ patch: `-${token}\n` }).isClean, true);
-  assert.equal(
-    scanOutput({ result: `not json ${token}` }).findings[0].field,
-    'result',
-  );
-  const outcome = outputOutcome('develop', findings);
-  assert.equal(outcome.problem, 'needs_secrets_ci_infra');
-  assert.ok(!JSON.stringify(outcome).includes(token));
+test('SECRET_KINDS lists every kind once', () => {
+  assert.equal(new Set(SECRET_KINDS).size, SECRET_KINDS.length);
+  for (const [kind] of Object.entries(SAMPLES))
+    assert.ok(SECRET_KINDS.includes(kind), kind);
 });

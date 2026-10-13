@@ -20,7 +20,7 @@ import {
   classifyEnginePlan,
 } from './engine-policy.mjs';
 import { PROFILE_PATH, validateProfile } from './engine-profile.mjs';
-import { failOn, readJson } from './engine-cli-support.mjs';
+import { commandEnvironment, failOn, readJson } from './engine-cli-support.mjs';
 import { developAllowedTools, renderEnginePrompt } from './engine-prompt.mjs';
 
 const many = (value) => (value === undefined ? [] : [].concat(value));
@@ -44,13 +44,6 @@ function inspectFile(path) {
   }
   return { kind: 'file', content: readFileSync(path) };
 }
-
-/** Environment for target commands: no tokens, no runner internals. */
-const commandEnvironment = () => ({
-  PATH: process.env.PATH,
-  HOME: process.env.HOME,
-  CI: 'true',
-});
 
 export const profileCommands = {
   // Reads PROFILE_PATH from the target checkout (--target-dir), validates it
@@ -171,14 +164,15 @@ export const profileCommands = {
     );
   },
 
-  // Runs the profile's setup or verify commands in the target (cwd), each
-  // as an argv without a shell and without tokens in its environment.
+  // Runs the profile's setup commands in the target (cwd) on the agent's
+  // runner, each as an argv without a shell and without tokens in its
+  // environment. Verification uses verify-target instead.
   'run-commands'(args) {
     const flags = parseFlags(args);
-    const commands = readJson(flags.profile).commands[flags.kind];
-    if (!Array.isArray(commands))
-      failOn([`unknown kind ${flags.kind}`], 'Commands');
-    for (const [program, ...commandArguments] of commands) {
+    if (flags.kind !== 'setup')
+      failOn([`run-commands only runs setup; use verify-target`], 'Commands');
+    for (const [program, ...commandArguments] of readJson(flags.profile)
+      .commands.setup) {
       console.log(`$ ${[program, ...commandArguments].join(' ')}`);
       execFileSync(program, commandArguments, {
         stdio: 'inherit',

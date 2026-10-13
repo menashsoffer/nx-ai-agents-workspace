@@ -6,12 +6,12 @@ name: Pipeline engine · Check
 # pin: OIDC pin check as in engine-plan.yml.
 # verify: a fresh runner loads the target profile from the pinned base,
 # rejects a patch that touches protected paths, has symbolic links or mode
-# changes BEFORE any target code runs, then applies it and runs the
-# profile's setup and verify commands. Target code ran there, so its only
-# trusted product is GitHub's job result.
+# changes BEFORE any target code runs, applies it, locks the engine
+# (root-owned, read-only, no sudo or Docker), then one engine process that
+# started before any target code runs setup and verify as children.
 # check: after verify passed, a fresh runner with no target or agent code
 # checks the patch again, applies it to the pinned base itself, scans the
-# agent's output for secrets, runs the engine's checks (regular files,
+# agent's output and the commits to be pushed for secrets, runs the engine's checks (regular files,
 # 400 lines per file, the profile's checks including the task's exact
 # expected content) and outputs the attestation (target, base, branch,
 # engine commit, patch hash, resulting tree). engine-publish.yml compares
@@ -132,11 +132,23 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
 
-      - name: Run the profile's setup and verify commands (no secrets)
+      # Before any target code: the engine and the profile become root-owned
+      # and read-only, and sudo and Docker (root through the socket) go away,
+      # so target code cannot change them back. Fails closed if sudo stays.
+      - name: Lock the engine and drop root access
         if: ${{ steps.profile.outputs.has_verify == 'true' }}
         run: |
-          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" run-commands --kind setup --profile "$RUNNER_TEMP/profile.json"
-          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" run-commands --kind verify --profile "$RUNNER_TEMP/profile.json"
+          sudo chown -R root:root "$RUNNER_TEMP/engine" "$RUNNER_TEMP/profile.json"
+          sudo chmod -R a-w "$RUNNER_TEMP/engine" "$RUNNER_TEMP/profile.json"
+          if [[ -S /var/run/docker.sock ]]; then sudo chmod 600 /var/run/docker.sock; fi
+          sudo sh -c 'rm -f /etc/sudoers.d/*'
+          if sudo -n true 2>/dev/null; then echo "::error::sudo is still available"; exit 1; fi
+
+      # One trusted process reads the commands, then runs setup and verify as
+      # children (engine-verify-commands.mjs). The last step of the job.
+      - name: Run the profile's setup and verify commands (no secrets)
+        if: ${{ steps.profile.outputs.has_verify == 'true' }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" verify-target --profile "$RUNNER_TEMP/profile.json"
 
   check:
     needs: [pin, verify]
@@ -193,11 +205,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           N: ${{ needs.pin.outputs.issue }}
           RESULT: ${{ inputs.result }}
+          BASE: ${{ inputs.base }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/issues/$N" > "$RUNNER_TEMP/issue.json"
           printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
           node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-output --stage develop \
             --result "$RUNNER_TEMP/result.json" --patch "$RUNNER_TEMP/in/changes.patch" --fail=true
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-commits --base "$BASE" --fail=true
           node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" run-checks --profile "$RUNNER_TEMP/profile.json" \
             --patch "$RUNNER_TEMP/in/changes.patch" --issue "$RUNNER_TEMP/issue.json"
 
