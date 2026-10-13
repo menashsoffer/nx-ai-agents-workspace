@@ -1,9 +1,8 @@
-// Secret guards for the pipeline engine. An issue (the request) that
-// carries something shaped like a credential never reaches the model; the
-// engine stops before the agent step. The agent's output (its JSON, the
-// patch it wrote, the PR title and body built from them) is scanned the
-// same way before anything is published or posted. Either way the engine
-// reports which field and which kind of secret it saw, never the value.
+// Secret guard for the pipeline engine's request: an issue that carries
+// something shaped like a credential never reaches the model; the engine
+// stops before the agent step. The agent's output is scanned with the same
+// patterns (engine-output-scan.mjs). Either way the engine reports which
+// field and which kind of secret it saw, never the value.
 //
 // Pure: no I/O.
 
@@ -23,6 +22,11 @@ const SECRET_PATTERNS = [
   ['private_key', /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/],
   ['jwt', /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
 ];
+
+/** Every kind name secretKinds can report. */
+export const SECRET_KINDS = Object.freeze([
+  ...new Set(SECRET_PATTERNS.map(([kind]) => kind)),
+]);
 
 /** Kinds of secret found in one text, deduplicated, in pattern order. */
 export function secretKinds(text) {
@@ -70,67 +74,6 @@ export function requestOutcome(stage, findings) {
     details: findings.map(
       (finding) =>
         `secret_in_request: ${finding.field} (${finding.kinds.join(', ')})`,
-    ),
-  };
-}
-
-/** Every string inside a parsed JSON value, with its path (`result.pr_body`). */
-function stringLeaves(value, path, leaves = []) {
-  if (typeof value === 'string') leaves.push([path, value]);
-  else if (Array.isArray(value))
-    value.forEach((item, index) =>
-      stringLeaves(item, `${path}[${index}]`, leaves),
-    );
-  else if (value && typeof value === 'object')
-    for (const [key, item] of Object.entries(value))
-      stringLeaves(item, `${path}.${key}`, leaves);
-  return leaves;
-}
-
-/** The lines a patch adds (what would land in the repository). */
-const addedLines = (patch) =>
-  String(patch ?? '')
-    .split('\n')
-    .filter((line) => line.startsWith('+') && !line.startsWith('+++'))
-    .join('\n');
-
-/**
- * Scans what the agent produced: `result` (its raw JSON text), `patch` and
- * any other named `texts` (for example the PR body). Returns `{ isClean,
- * findings }` like scanRequest.
- */
-export function scanOutput({ result = '', patch = '', texts = {} }) {
-  const findings = [];
-  const scan = (field, text) => {
-    const kinds = secretKinds(text);
-    if (kinds.length) findings.push({ field, kinds });
-  };
-  let parsed;
-  try {
-    parsed = JSON.parse(result);
-  } catch {
-    parsed = undefined;
-  }
-  if (parsed === undefined) scan('result', result);
-  else
-    for (const [field, text] of stringLeaves(parsed, 'result'))
-      scan(field, text);
-  scan('patch', addedLines(patch));
-  for (const [field, text] of Object.entries(texts)) scan(field, text);
-  return { isClean: findings.length === 0, findings };
-}
-
-/** The outcome note for agent output that held a secret-shaped value. */
-export function outputOutcome(stage, findings) {
-  return {
-    stage,
-    result: 'problem',
-    problem: 'needs_secrets_ci_infra',
-    summary:
-      "The agent's output contains a value shaped like a secret, so nothing from it was published. Check where it came from (and rotate it).",
-    details: findings.map(
-      (finding) =>
-        `secret_in_output: ${finding.field} (${finding.kinds.join(', ')})`,
     ),
   };
 }

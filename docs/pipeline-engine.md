@@ -58,8 +58,13 @@ model token.
   starts and outputs it as the base (with the branch name). The agent works
   on that base, but only its patch artifact and its JSON status leave its
   job. In `engine-check.yml`, the `verify` job runs the profile's commands
-  (target code) on its own runner; only GitHub's result of that job is
-  trusted. After it passed, the `check` job, with no secrets and no agent
+  (target code) on its own runner, through a trusted orchestrator: before
+  any target code, the engine checkout and the profile become root-owned
+  and read-only and sudo and Docker access are removed (the step fails if
+  sudo stays); then one engine process (`verify-target`), already loaded,
+  runs every setup and verify command as a child and decides from their
+  exit codes. A setup command that rewrites the engine cannot change that
+  process (`engine-verify-cli.test.mjs`). After it passed, the `check` job, with no secrets and no agent
   or target code, checks the
   patch, applies it itself to the pinned base and outputs an attestation
   (`engine-attestation.mjs`): target repository, id and issue, base, branch,
@@ -90,6 +95,15 @@ read` and `issues: read` only, and no secret but the model token. Its
   again on a fresh runner before it mints the App token. A patch that
   touches a protected path (`.github/`, `CODEOWNERS`, ...) never reaches a
   push.
+- **Notes from closed sets.** Nothing from the agent's runner is posted as
+  it is (`engine-notes.mjs`). The request findings leave the agent's job
+  only as `field:kind` pairs, which publish checks against the known fields
+  and secret kinds (anything else gives a fixed note without details). The
+  develop problem note keeps the developer's problem code only if it is in
+  the allowed enum, and never its free text. The prompt version comes from
+  the engine's own prompt file at the pinned commit. Every note, spec, plan,
+  PR title and PR body is scanned for secret-shaped values right before it
+  is written.
 - **Deterministic publishing.** No model runs in publish. It applies the
   patch, pushes `issue-<n>-<slug>` and opens a draft PR with `gh pr create
 --draft`. It never runs target code. Only a person can mark it ready,
@@ -156,11 +170,15 @@ The plan stage stops a plan that names a protected or non-writable path
 base and checks the patch against the policy before it applies the patch or
 runs any target command; the publish job checks again before it mints its
 token. The agent's output is scanned for secret-shaped values like the
-request: the planner's JSON before any comment is posted, the developer's
-JSON and the patch in the `check` job and again in publish, and the PR
-title and body right before the branch is pushed. A finding stops publishing
-and posts a `needs_secrets_ci_infra` note with `secret_in_output` details,
-never the value. The prompts (`engine-plan.md`, `engine-develop.md`) name no
+request (`engine-output-scan.mjs`): the planner's JSON before any comment
+is posted; the developer's JSON and every publishable part of the patch
+(commit subject, body and author, file names, diff headers and added
+lines) in the `check` job and again in publish; the commits that would be
+pushed (author, committer, subject, body) after `git am`, in both jobs; and
+the PR title and body right before the branch is pushed. A finding stops
+publishing and posts a `needs_secrets_ci_infra` note whose
+`secret_in_output` details name only engine-made fields and kinds, never a
+value or a name the agent chose. The prompts (`engine-plan.md`, `engine-develop.md`) name no
 stack: the profile section the engine appends supplies it.
 
 ## Known limits

@@ -135,31 +135,20 @@ test('run-checks: passes on the probe file, fails on an empty or wrong change', 
   assert.match(wrong.stdout, /writable-paths: not writable: README\.md/);
 });
 
-test('run-commands: argv without a shell, and no tokens in the environment', () => {
+test('verify-target: argv without a shell, and no tokens in the environment', () => {
   const { directory, runIn } = sandboxRun();
   const target = targetWith(directory, {
     'scripts/check.mjs':
       "import { writeFileSync } from 'node:fs';\nwriteFileSync('seen.json', JSON.stringify(Object.keys(process.env)));\n",
   });
   const profile = writeProfile(directory, {});
-  const result = runIn(
-    target,
-    'run-commands',
-    '--kind',
-    'verify',
-    '--profile',
-    profile,
-  );
+  const result = runIn(target, 'verify-target', '--profile', profile);
   assert.equal(result.status, 0, result.stdout);
   const seen = JSON.parse(readFileSync(join(target, 'seen.json'), 'utf8'));
   assert.ok(!seen.includes('GITHUB_TOKEN'));
   assert.ok(!seen.some((name) => /TOKEN|SECRET|KEY/.test(name)), seen.join());
   writeFileSync(join(target, 'scripts/check.mjs'), 'process.exit(3);\n');
-  assert.equal(
-    runIn(target, 'run-commands', '--kind', 'verify', '--profile', profile)
-      .status,
-    1,
-  );
+  assert.equal(runIn(target, 'verify-target', '--profile', profile).status, 1);
 });
 
 test('classify-plan: the profile decides; protected paths stop the plan', () => {

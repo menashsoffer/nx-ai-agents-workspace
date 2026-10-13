@@ -86,8 +86,7 @@ jobs:
       issues: read
     outputs:
       result: ${{ steps.claude.outputs.structured_output }}
-      prompt_version: ${{ steps.prompt.outputs.version }}
-      request_outcome: ${{ steps.request.outputs.outcome }}
+      request_findings: ${{ steps.request.outputs.findings }}
     steps:
       # The engine leaves the workspace before the target is checked out, so
       # the agent's tree holds only the target.
@@ -174,7 +173,13 @@ jobs:
           ref: ${{ needs.pin.outputs.commit }}
           path: .engine
           persist-credentials: false
-          sparse-checkout: .github/scripts
+          sparse-checkout: |
+            .github/scripts
+            .github/prompts
+
+      # The prompt version from the pinned engine, never from the agent's job.
+      - id: version
+        run: node .engine/.github/scripts/engine.mjs prompt-version --prompt .engine/.github/prompts/engine-plan.md --prompt-name engine-plan.md
 
       - run: node .engine/.github/scripts/engine.mjs load-profile --target-dir . --out "$RUNNER_TEMP/profile.json"
 
@@ -187,18 +192,19 @@ jobs:
           permission-issues: write
 
       - name: Report a request that held a secret (stage:routing)
-        if: ${{ needs.plan.outputs.request_outcome != '' }}
+        if: ${{ needs.plan.outputs.request_findings != '' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
-          OUTCOME: ${{ needs.plan.outputs.request_outcome }}
+          FINDINGS: ${{ needs.plan.outputs.request_findings }}
         run: |
-          printf '%s' "$OUTCOME" > outcome.json
+          node .engine/.github/scripts/engine.mjs safe-note --kind request --stage plan --findings "$FINDINGS" \
+            --prompt .engine/.github/prompts/engine-plan.md --prompt-name engine-plan.md --out outcome.json
           node .engine/.github/scripts/pipeline.mjs outcome "$N" outcome.json
 
       # The planner's JSON becomes comments: scan it before anything is posted.
       - id: output
-        if: ${{ needs.plan.outputs.request_outcome == '' }}
+        if: ${{ needs.plan.outputs.request_findings == '' }}
         env:
           RESULT: ${{ needs.plan.outputs.result }}
         run: |
@@ -210,20 +216,21 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
-          OUTCOME: ${{ steps.output.outputs.outcome }}
+          FINDINGS: ${{ steps.output.outputs.findings }}
         run: |
-          printf '%s' "$OUTCOME" > outcome.json
+          node .engine/.github/scripts/engine.mjs safe-note --kind output --stage plan --findings "$FINDINGS" \
+            --prompt .engine/.github/prompts/engine-plan.md --prompt-name engine-plan.md --out outcome.json
           node .engine/.github/scripts/pipeline.mjs outcome "$N" outcome.json
 
       - id: classify
         if: ${{ steps.output.outputs.is_clean == 'true' }}
         env:
           JOB_RESULT: ${{ needs.plan.result }}
-          VERSION: ${{ needs.plan.outputs.prompt_version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           node .engine/.github/scripts/engine.mjs classify-plan --job-result "$JOB_RESULT" \
             --profile "$RUNNER_TEMP/profile.json" --result result.json \
-            --prompt-version "engine-plan.md@${VERSION:-unknown}" --out outcome.json \
+            --prompt-version "$VERSION" --out outcome.json \
             --spec-out spec-comment.md --plan-out plan-comment.md
 
       - name: Post spec and plan, then move to stage:planned
@@ -233,6 +240,7 @@ jobs:
           N: ${{ needs.pin.outputs.issue }}
           PIPELINE_BOT_LOGIN: ${{ inputs.bot-login }}
         run: |
+          node .engine/.github/scripts/engine.mjs check-text --text spec-comment.md --text plan-comment.md --text outcome.json
           node .engine/.github/scripts/pipeline.mjs upsert-comment "$N" spec spec-comment.md
           node .engine/.github/scripts/pipeline.mjs upsert-comment "$N" plan plan-comment.md
           node .engine/.github/scripts/pipeline.mjs outcome "$N" outcome.json
@@ -243,4 +251,6 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
-        run: node .engine/.github/scripts/pipeline.mjs outcome "$N" outcome.json
+        run: |
+          node .engine/.github/scripts/engine.mjs check-text --text outcome.json
+          node .engine/.github/scripts/pipeline.mjs outcome "$N" outcome.json
