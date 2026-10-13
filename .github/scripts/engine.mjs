@@ -4,29 +4,19 @@
 // checked out at its pinned commit. See docs/pipeline-engine.md.
 // Usage: node engine.mjs <command> [args...]
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { setOutput } from './github.mjs';
-import { parseFlags } from './pipeline-lib.mjs';
+import { api, setOutput } from './github.mjs';
+import { branchName, parseFlags } from './pipeline-lib.mjs';
 import { checkPin, decodeClaims } from './engine-pin.mjs';
-import { failOn, profileCommands } from './engine-profile-commands.mjs';
 import { requestOutcome, scanRequest } from './engine-request.mjs';
+import { baseFromReference, defaultBranchOf } from './engine-target.mjs';
+import { attestationCommands } from './engine-attestation-commands.mjs';
+import { profileCommands } from './engine-profile-commands.mjs';
 import {
-  buildManifest,
-  checkManifest,
-  resolveTarget,
-} from './engine-target.mjs';
-
-const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
-
-/** The target of this run, from the workflow context only (engine-target.mjs). */
-function currentTarget(stage) {
-  const eventPath = process.env.GITHUB_EVENT_PATH;
-  return resolveTarget({
-    environment: process.env,
-    event: eventPath ? readJson(eventPath) : null,
-    stage,
-  });
-}
+  currentEvent,
+  currentTarget,
+  failOn,
+  readJson,
+} from './engine-cli-support.mjs';
 
 /** The pin job's OIDC token, requested from the runner (needs id-token: write). */
 async function requestOidcToken() {
@@ -45,11 +35,15 @@ async function requestOidcToken() {
 }
 
 const commands = {
+  ...attestationCommands,
   ...profileCommands,
 
   // Fails unless the target resolves from the workflow context, GitHub ran
   // this engine workflow at --engine-commit for that target, and
-  // --engine-dir holds that commit. Outputs the commit and the target.
+  // --engine-dir holds that commit. Outputs the commit and the target. With
+  // --resolve-base it also reads the target's default-branch head from the
+  // GitHub API (GH_TOKEN) and outputs it as `base`, with the branch name:
+  // the only base later jobs use, recorded before the agent job starts.
   async pin(args) {
     const flags = parseFlags(args);
     const target = currentTarget(flags.stage);
@@ -73,6 +67,11 @@ const commands = {
     setOutput('repository', target.repository);
     setOutput('issue', target.issue);
     setOutput('key', target.key);
+    if (flags['resolve-base'] === undefined) return;
+    const defaultBranch = defaultBranchOf(currentEvent());
+    const reference = api(`git/ref/heads/${defaultBranch}`);
+    setOutput('base', baseFromReference(reference));
+    setOutput('branch', branchName(target.issue, currentEvent().issue.title));
   },
 
   // Scans the collected issue for secrets. Outputs is_clean (true | false)
@@ -91,34 +90,6 @@ const commands = {
         );
     }
     setOutput('is_clean', String(isClean));
-  },
-
-  // Writes the patch manifest that binds a develop patch to its target.
-  manifest(args) {
-    const flags = parseFlags(args);
-    const manifest = buildManifest({
-      target: currentTarget(flags.stage),
-      base: flags.base,
-      branch: flags.branch,
-      engineCommit: flags['engine-commit'],
-    });
-    writeFileSync(flags.out, JSON.stringify(manifest, null, 2));
-  },
-
-  // Exit 1 unless the manifest belongs to this run's target and engine.
-  // Outputs the base commit and branch it names.
-  'check-manifest'(args) {
-    const flags = parseFlags(args);
-    const manifest = readJson(flags._[0]);
-    failOn(
-      checkManifest(manifest, {
-        target: currentTarget(flags.stage),
-        engineCommit: flags['engine-commit'],
-      }),
-      'Patch manifest',
-    );
-    setOutput('base', manifest.base);
-    setOutput('branch', manifest.branch);
   },
 };
 

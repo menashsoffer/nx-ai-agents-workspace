@@ -19,17 +19,10 @@ import {
   classifyEnginePlan,
 } from './engine-policy.mjs';
 import { PROFILE_PATH, validateProfile } from './engine-profile.mjs';
+import { failOn, readJson } from './engine-cli-support.mjs';
 import { developAllowedTools, renderEnginePrompt } from './engine-prompt.mjs';
 
-const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 const many = (value) => (value === undefined ? [] : [].concat(value));
-
-/** Prints each problem as a workflow error and exits 1 when there is any. */
-export function failOn(problems, title) {
-  if (!problems.length) return;
-  for (const problem of problems) console.log(`::error::${title}: ${problem}`);
-  process.exit(1);
-}
 
 /** Environment for target commands: no tokens, no runner internals. */
 const commandEnvironment = () => ({
