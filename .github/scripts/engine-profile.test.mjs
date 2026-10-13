@@ -173,18 +173,32 @@ test('commandProblems: invalid commands are rejected', () => {
     assert.ok(commandProblems(command).length > 0, JSON.stringify(command));
 });
 
-test('CHECK_NAMES: every name has an implementation', async () => {
+test('CHECK_NAMES: every name has an implementation that fails on nothing', async () => {
   const { runChecks } = await import('./engine-checks.mjs');
   for (const name of CHECK_NAMES) {
-    const [result] = runChecks({
+    const result = runChecks({
       profile: {
         checks: [name],
         paths: { writable: ['x'], protected: [] },
         limits: {},
       },
       changedPaths: [],
-      readFile: () => null,
-    });
-    assert.deepEqual(result.problems, ['nothing to check'], name);
+      inspect: () => ({ kind: 'missing' }),
+    }).find((candidate) => candidate.name === name);
+    assert.equal(result.isPassing, false, name);
+    assert.doesNotMatch(result.problems.join(), /unknown check/, name);
   }
+});
+
+test('validateProfile: limits can only go below the engine ceilings', () => {
+  const withLimits = (limits) => problemsOf({ ...docsProfile(), limits });
+  assert.deepEqual(withLimits({ maxFiles: 10, maxLines: 400 }), []);
+  assert.deepEqual(withLimits({ maxFiles: 1, maxLines: 1 }), []);
+  assert.deepEqual(withLimits({ maxFiles: 11 }), [
+    'profile.limits.maxFiles must be an integer 1-10 (the engine ceiling)',
+  ]);
+  assert.deepEqual(withLimits({ maxFiles: 50, maxLines: 2000 }).length, 2);
+  assert.deepEqual(withLimits({ maxFileLines: 1000 }), [
+    'profile.limits.maxFileLines is not a known field',
+  ]);
 });

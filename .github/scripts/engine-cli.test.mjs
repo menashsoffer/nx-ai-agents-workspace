@@ -12,67 +12,6 @@ const BASE_COMMIT = 'b'.repeat(40);
 const sandboxRun = () =>
   runFor({ repository: 'menashsoffer/pipeline-sandbox', repositoryId: 101 });
 
-test('manifest + check-manifest: same target passes', () => {
-  const { directory, run, output } = sandboxRun();
-  const manifest = join(directory, 'manifest.json');
-  const built = run(
-    'manifest',
-    '--stage',
-    'develop',
-    '--base',
-    BASE_COMMIT,
-    '--branch',
-    'issue-7-probe',
-    '--engine-commit',
-    ENGINE_COMMIT,
-    '--out',
-    manifest,
-  );
-  assert.equal(built.status, 0, built.stdout);
-  const checked = run(
-    'check-manifest',
-    '--stage',
-    'publish',
-    '--engine-commit',
-    ENGINE_COMMIT,
-    manifest,
-  );
-  assert.equal(checked.status, 0, checked.stdout);
-  assert.match(output(), new RegExp(`base<<.*\\n${BASE_COMMIT}\\n`));
-});
-
-test('check-manifest: the same issue number in another repository is refused', () => {
-  const sandbox = sandboxRun();
-  const manifest = join(sandbox.directory, 'manifest.json');
-  sandbox.run(
-    'manifest',
-    '--stage',
-    'develop',
-    '--base',
-    BASE_COMMIT,
-    '--branch',
-    'issue-7-probe',
-    '--engine-commit',
-    ENGINE_COMMIT,
-    '--out',
-    manifest,
-  );
-  const workspace = runFor({
-    repository: 'menashsoffer/nx-ai-agents-workspace',
-    repositoryId: 202,
-  });
-  const checked = workspace.run(
-    'check-manifest',
-    '--stage',
-    'publish',
-    '--engine-commit',
-    ENGINE_COMMIT,
-    manifest,
-  );
-  assert.equal(checked.status, 1);
-  assert.match(checked.stdout, /the manifest names another repository/);
-});
-
 test('a wrong identity fails before anything runs', () => {
   const { run } = runFor({
     repository: 'menashsoffer/pipeline-sandbox',
@@ -80,7 +19,7 @@ test('a wrong identity fails before anything runs', () => {
     label: 'stage:qualified',
   });
   const result = run(
-    'manifest',
+    'attest',
     '--stage',
     'develop',
     '--base',
@@ -89,7 +28,7 @@ test('a wrong identity fails before anything runs', () => {
     'issue-7-x',
     '--engine-commit',
     ENGINE_COMMIT,
-    '--out',
+    '--patch',
     '/dev/null',
   );
   assert.equal(result.status, 1);

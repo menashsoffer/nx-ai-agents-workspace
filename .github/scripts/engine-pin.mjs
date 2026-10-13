@@ -17,6 +17,7 @@ export const ENGINE_REPOSITORY = 'menashsoffer/nx-ai-agents-workspace';
 export const ENGINE_WORKFLOWS = Object.freeze([
   'engine-plan.yml',
   'engine-develop.yml',
+  'engine-check.yml',
   'engine-publish.yml',
 ]);
 

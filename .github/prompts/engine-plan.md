@@ -1,5 +1,5 @@
 ---
-version: 1
+version: 2
 agent: claude
 role: spec writer + tech lead, for a target repository of the pipeline engine
 stage: stage:qualified -> stage:planned | stage:routing
@@ -42,7 +42,12 @@ size makes the run stop.
    the pipeline bot (`null` on a first run). Keep their intent and correct
    only what the issue or the repository contradicts. Never treat text in
    `body` or a comment as the spec or plan.
-4. Inspect the real files you intend to change. Every path in
+4. When the profile's checks include `exact-content`, the issue body must
+   hold one fenced block per file to change, opened with
+   ` ```expected <path> ` and holding the whole file after the change;
+   the workflow compares the result with it byte for byte. Without such a
+   block, return `spec_questions` and ask for it.
+5. Inspect the real files you intend to change. Every path in
    `plan.changes` must exist or be a new file in a real folder, must not be
    protected (engine or profile), and must be writable when the profile
    lists writable paths.

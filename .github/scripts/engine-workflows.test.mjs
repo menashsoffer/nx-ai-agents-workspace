@@ -134,7 +134,11 @@ test('engine-publish: deterministic, and checks before it mints the App token', 
   assert.ok(!jobsOf(workflow).some(([, job]) => isAgentJob(job)));
   const indexOf = (id) => publish.steps.findIndex((step) => step.id === id);
   const appIndex = publish.steps.findIndex(isAppTokenStep);
-  assert.ok(indexOf('manifest') < appIndex && indexOf('guard') < appIndex);
+  assert.ok(indexOf('attestation') < appIndex && indexOf('guard') < appIndex);
+  assert.match(
+    publish.steps[indexOf('push')].run,
+    /engine\.mjs" check-tree\n[\s\S]*git push/,
+  );
   assert.ok(indexOf('push') > appIndex);
   assert.match(
     publish.steps[indexOf('push')].if,
@@ -194,23 +198,7 @@ test('engine workflows: every patch check uses the profile policy', () => {
             `${file} ${name}`,
           );
         }
-  assert.equal(checks, 3);
-});
-
-test('engine-develop check job: the policy stops a change before target code runs', () => {
-  const check = workflows['engine-develop.yml'].jobs.check;
-  assert.deepEqual(check.permissions, { contents: 'read' });
-  assert.doesNotMatch(textOf(check), /secrets\./);
-  const guard = stepIndex(check, /check-patch --profile/);
-  const profile = stepIndex(check, /load-profile/);
-  assert.ok(profile >= 0 && profile < guard);
-  for (const later of [
-    /git apply/,
-    /run-checks/,
-    /run-commands --kind setup/,
-    /run-commands --kind verify/,
-  ])
-    assert.ok(stepIndex(check, later) > guard, String(later));
+  assert.equal(checks, 4);
 });
 
 test('engine-publish: reads the profile but never runs target code', () => {

@@ -6,7 +6,7 @@
 // validateProfile is strict: an unknown field anywhere, a field that tries to
 // steer the engine version, or a command outside the grammar below makes
 // the whole profile invalid (fail closed). Pure: no I/O.
-import { isPathPattern } from './engine-policy.mjs';
+import { ENGINE_LIMITS, isPathPattern } from './engine-policy.mjs';
 
 /** Where the profile lives in a target. `.github/` is protected by the engine. */
 export const PROFILE_PATH = '.github/pipeline-profile.json';
@@ -16,6 +16,7 @@ export const CHECK_NAMES = Object.freeze([
   'patch-not-empty',
   'writable-paths',
   'markdown-files',
+  'exact-content',
 ]);
 
 const PROFILE_FIELDS = {
@@ -33,8 +34,11 @@ const COMMAND_FIELDS = { setup: 'optional', verify: 'required' };
 const PATH_FIELDS = { protected: 'optional', writable: 'optional' };
 const LIMIT_FIELDS = { maxFiles: 'optional', maxLines: 'optional' };
 
-const DEFAULT_LIMITS = Object.freeze({ maxFiles: 10, maxLines: 400 });
-const LIMIT_RANGES = { maxFiles: [1, 50], maxLines: [1, 2000] };
+/** A profile may lower the engine's ceilings, never raise them. */
+const LIMIT_RANGES = {
+  maxFiles: [1, ENGINE_LIMITS.maxFiles],
+  maxLines: [1, ENGINE_LIMITS.maxLines],
+};
 
 /** Engine settings live in the connector's pin, never in the profile. */
 const ENGINE_OVERRIDE = /engine|workflow[-_]?ref|^ref$|^sha$|^commit$/i;
@@ -224,7 +228,11 @@ export function validateProfile(raw) {
   }
   if (checks.includes?.('writable-paths') && writable === null)
     problems.push('the writable-paths check needs profile.paths.writable');
-  const limits = { ...DEFAULT_LIMITS, ...(raw.limits ?? {}) };
+  const limits = {
+    maxFiles: ENGINE_LIMITS.maxFiles,
+    maxLines: ENGINE_LIMITS.maxLines,
+    ...(raw.limits ?? {}),
+  };
   problems.push(
     ...fieldProblems(raw.limits ?? {}, LIMIT_FIELDS, 'profile.limits'),
   );
@@ -234,7 +242,9 @@ export function validateProfile(raw) {
       limits[key] < low ||
       limits[key] > high
     )
-      problems.push(`profile.limits.${key} must be an integer ${low}-${high}`);
+      problems.push(
+        `profile.limits.${key} must be an integer ${low}-${high} (the engine ceiling)`,
+      );
   if (problems.length) return { profile: null, problems };
   return {
     profile: {

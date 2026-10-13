@@ -10,7 +10,7 @@ Every path through the issue → PR pipeline, derived from `.github/workflows/*.
 
 Blue: stage labels. Grey: workflows; an arrow from a label into a workflow is its label gate. Red, dashed: escalations to a problem stage. Amber: humans.
 
-Not on the map, because no pipeline step or label leads to them: `deploy.yml`, `engine-develop.yml`. See the table.
+Not on the map, because no pipeline step or label leads to them: `deploy.yml`, `engine-check.yml`, `engine-develop.yml`. See the table.
 
 ```mermaid
 flowchart TD
@@ -134,6 +134,7 @@ flowchart TD
 | `develop.yml`           | `issues: labeled`                                                                                                       | `stage:planned`                                                       | `stage:awaiting-approval`, `stage:building`, `stage:routing` (escalation) | `outcome`, `protectedApproval`                      |
 | `disposition.yml`       | `issue_comment: created`, `pull_request_review_comment: created`                                                        | -                                                                     | -                                                                         | `disposition`, `dispositionReply`                   |
 | `done.yml`              | `pull_request: closed`                                                                                                  | -                                                                     | `stage:done`, `stage:routing` (escalation)                                | `outcome`                                           |
+| `engine-check.yml`      | `workflow_call`                                                                                                         | -                                                                     | -                                                                         | -                                                   |
 | `engine-develop.yml`    | `workflow_call`                                                                                                         | -                                                                     | -                                                                         | -                                                   |
 | `engine-plan.yml`       | `workflow_call`                                                                                                         | -                                                                     | `stage:planned`, `stage:routing` (escalation)                             | `outcome`, `plan`, `spec`                           |
 | `engine-publish.yml`    | `workflow_call`                                                                                                         | -                                                                     | `stage:building`, `stage:routing` (escalation)                            | `outcome`                                           |

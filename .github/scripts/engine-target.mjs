@@ -19,19 +19,9 @@ const COMMIT_FORMAT = /^[0-9a-f]{40}$/;
 export const STAGE_LABELS = Object.freeze({
   plan: 'stage:qualified',
   develop: 'stage:planned',
+  check: 'stage:planned',
   publish: 'stage:planned',
 });
-
-const MANIFEST_SCHEMA = 1;
-const MANIFEST_FIELDS = [
-  'schema',
-  'repository',
-  'repository_id',
-  'issue',
-  'base',
-  'branch',
-  'engine_commit',
-];
 
 const isPlainObject = (value) =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -91,55 +81,24 @@ export function resolveTarget({ environment, event, stage }) {
   };
 }
 
-/**
- * The manifest that travels with the develop patch (an artifact of the same
- * run). It binds the patch to one target, one base commit of that target and
- * one engine commit.
- */
-export function buildManifest({ target, base, branch, engineCommit }) {
-  if (!COMMIT_FORMAT.test(base)) throw new Error('Bad base commit');
-  if (!COMMIT_FORMAT.test(engineCommit)) throw new Error('Bad engine commit');
-  return {
-    schema: MANIFEST_SCHEMA,
-    repository: target.repository,
-    repository_id: target.repositoryId,
-    issue: target.issue,
-    base,
-    branch,
-    engine_commit: engineCommit,
-  };
+/** Branch names GitHub accepts that are also safe in a git ref path. */
+const BRANCH_FORMAT = /^(?!.*\.\.)(?!\/)(?!.*\/$)[A-Za-z0-9._/-]{1,200}$/;
+
+/** The default branch named by the event payload (workflow context). */
+export function defaultBranchOf(event) {
+  const branch = event?.repository?.default_branch;
+  if (typeof branch !== 'string' || !BRANCH_FORMAT.test(branch))
+    throw new Error('Target identity rejected: no valid default branch');
+  return branch;
 }
 
 /**
- * Checks that `manifest` belongs to `target` and `engineCommit`. Returns a
- * list of problems (empty when it matches). The publish job refuses a patch
- * whose manifest names another repository, even with the same issue number.
+ * The base commit from GitHub's answer to `GET git/ref/heads/<default>`:
+ * read by the pin job, before and outside the agent's job.
  */
-export function checkManifest(manifest, { target, engineCommit }) {
-  if (!isPlainObject(manifest)) return ['the manifest is missing'];
-  const problems = [];
-  const extra = Object.keys(manifest).filter(
-    (key) => !MANIFEST_FIELDS.includes(key),
-  );
-  if (extra.length)
-    problems.push(`unknown manifest fields: ${extra.sort().join(', ')}`);
-  if (manifest.schema !== MANIFEST_SCHEMA)
-    problems.push('unknown manifest schema');
-  if (!sameRepository(manifest.repository, target.repository))
-    problems.push('the manifest names another repository');
-  if (manifest.repository_id !== target.repositoryId)
-    problems.push('the manifest names another repository id');
-  if (manifest.issue !== target.issue)
-    problems.push('the manifest names another issue');
-  if (!COMMIT_FORMAT.test(String(manifest.base)))
-    problems.push('the manifest base is not a commit');
-  if (manifest.engine_commit !== engineCommit)
-    problems.push('the manifest was built by another engine commit');
-  const branchPrefix = `issue-${target.issue}-`;
-  if (
-    typeof manifest.branch !== 'string' ||
-    !manifest.branch.startsWith(branchPrefix)
-  )
-    problems.push('the manifest branch is not the branch of this issue');
-  return problems;
+export function baseFromReference(reference) {
+  const object = reference?.object;
+  if (object?.type !== 'commit' || !COMMIT_FORMAT.test(String(object.sha)))
+    throw new Error('The default branch does not point at a commit');
+  return object.sha;
 }

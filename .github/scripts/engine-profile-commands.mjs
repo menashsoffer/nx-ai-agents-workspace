@@ -2,7 +2,7 @@
 // loading it, the prompt, the plan classification, the patch policy, the
 // built-in checks and the profile's own commands.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { setOutput } from './github.mjs';
 import {
@@ -13,22 +13,36 @@ import {
   renderSpecComment,
 } from './pipeline-lib.mjs';
 import { runChecks } from './engine-checks.mjs';
+import { parseExpectations } from './engine-expectations.mjs';
 import {
   buildPolicy,
   checkPatchPolicy,
   classifyEnginePlan,
 } from './engine-policy.mjs';
 import { PROFILE_PATH, validateProfile } from './engine-profile.mjs';
+import { failOn, readJson } from './engine-cli-support.mjs';
 import { developAllowedTools, renderEnginePrompt } from './engine-prompt.mjs';
 
-const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 const many = (value) => (value === undefined ? [] : [].concat(value));
 
-/** Prints each problem as a workflow error and exits 1 when there is any. */
-export function failOn(problems, title) {
-  if (!problems.length) return;
-  for (const problem of problems) console.log(`::error::${title}: ${problem}`);
-  process.exit(1);
+/**
+ * What is at `path` in the checked-out target (cwd), without following
+ * symbolic links: also a link in a parent folder counts as a link.
+ */
+function inspectFile(path) {
+  const parts = path.split('/');
+  for (let depth = 1; depth <= parts.length; depth++) {
+    let status;
+    try {
+      status = lstatSync(parts.slice(0, depth).join('/'));
+    } catch {
+      return { kind: 'missing' };
+    }
+    if (status.isSymbolicLink()) return { kind: 'symlink' };
+    if (depth < parts.length && !status.isDirectory()) return { kind: 'other' };
+    if (depth === parts.length && !status.isFile()) return { kind: 'other' };
+  }
+  return { kind: 'file', content: readFileSync(path) };
 }
 
 /** Environment for target commands: no tokens, no runner internals. */
@@ -128,16 +142,22 @@ export const profileCommands = {
     failOn(check.problems, 'Patch rejected');
   },
 
-  // The profile's built-in checks on the patched target (cwd). Exit 1 on
-  // any failure, including a check with nothing to check.
+  // The engine's checks on the patched target (cwd). --issue is the issue
+  // as the GitHub API returned it (for the expected content). Exit 1 on any
+  // failure, including a check with nothing to check.
   'run-checks'(args) {
     const flags = parseFlags(args);
     const profile = readJson(flags.profile);
     const { paths } = patchPaths(readFileSync(flags.patch, 'utf8'));
+    const parsed = flags.issue
+      ? parseExpectations(readJson(flags.issue).body)
+      : { expectations: [], problems: [] };
+    failOn(parsed.problems, 'Expected content');
     const results = runChecks({
       profile,
       changedPaths: paths,
-      readFile: (path) => (existsSync(path) ? readFileSync(path) : null),
+      inspect: inspectFile,
+      expectations: parsed.expectations,
     });
     for (const { name, isPassing, checkedCount } of results)
       console.log(

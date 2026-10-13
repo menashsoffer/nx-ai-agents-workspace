@@ -5,10 +5,12 @@ name: Pipeline engine · Publish
 # develop outputs. Publishing is deterministic: no model runs here, and the
 # only writes are a branch push and a DRAFT pull request ("Closes #n") in
 # the target, or an outcome note. It never executes target code.
-# pin: as in engine-plan.yml. publish: re-checks the manifest (same target
-# repository and issue, same engine commit) and the patch against the
-# target profile's policy on a fresh runner BEFORE it mints the App token;
-# only then pushes and opens the draft PR.
+# pin: as in engine-plan.yml. publish: before it mints the App token, checks
+# the develop attestation against this target and engine commit, the base
+# the develop pin job read from GitHub (an older base fails), the hash of
+# the patch it downloads, and the patch against the target profile's policy;
+# checks that the base is on the default branch. After applying the patch
+# it requires the attested tree, then pushes and opens the draft PR.
 # See docs/pipeline-engine.md.
 on:
   workflow_call:
@@ -42,7 +44,12 @@ on:
       patch-rejected:
         type: string
         default: ''
-      checked:
+      base:
+        description: The develop outputs.base (read from GitHub by the develop pin job).
+        type: string
+        default: ''
+      attestation:
+        description: The develop outputs.attestation (built by the develop check job).
         type: string
         default: ''
     secrets:
@@ -109,11 +116,11 @@ jobs:
           DEVELOP_RESULT: ${{ inputs.develop-result }}
           RESULT: ${{ inputs.result }}
           REQUEST_OUTCOME: ${{ inputs.request-outcome }}
-          CHECKED: ${{ inputs.checked }}
+          ATTESTATION: ${{ inputs.attestation }}
           REJECTED: ${{ inputs.patch-rejected }}
         run: |
           status=$(printf '%s' "$RESULT" | jq -r 'try .status // ""' 2>/dev/null || true)
-          if [[ -z "$REQUEST_OUTCOME" && "$DEVELOP_RESULT" == "success" && "$status" == "done" && "$CHECKED" == "true" && "$REJECTED" != "true" ]]; then
+          if [[ -z "$REQUEST_OUTCOME" && "$DEVELOP_RESULT" == "success" && "$status" == "done" && -n "$ATTESTATION" && "$REJECTED" != "true" ]]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
@@ -125,20 +132,46 @@ jobs:
           name: engine-develop-patch
           path: ${{ runner.temp }}/in
 
-      # Before any write token exists: same target, same engine, allowed paths.
-      - id: manifest
+      # What the agent wrote becomes a branch, a PR or an outcome note: scan
+      # its JSON and its patch for secrets first.
+      - id: output
+        if: ${{ !cancelled() && inputs.request-outcome == '' }}
+        env:
+          RESULT: ${{ inputs.result }}
+        run: |
+          printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
+          patch=()
+          [[ -f "$RUNNER_TEMP/in/changes.patch" ]] && patch=(--patch "$RUNNER_TEMP/in/changes.patch")
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-output --stage develop \
+            --result "$RUNNER_TEMP/result.json" "${patch[@]}"
+
+      # Before any write token exists: the attestation, the pinned base, the
+      # patch hash and the protected paths.
+      - id: attestation
         if: ${{ steps.ready.outputs.publish == 'true' }}
         env:
+          ATTESTATION: ${{ inputs.attestation }}
+          BASE: ${{ inputs.base }}
           ENGINE_COMMIT: ${{ needs.pin.outputs.commit }}
-        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-manifest --stage publish --engine-commit "$ENGINE_COMMIT" "$RUNNER_TEMP/in/manifest.json"
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-attestation --stage publish \
+            --engine-commit "$ENGINE_COMMIT" --base "$BASE" --patch "$RUNNER_TEMP/in/changes.patch"
 
-      # The target at the manifest's base. Only its profile is read here; no
+      # The target at the attested base. Only its profile is read here; no
       # target code runs in this job.
       - if: ${{ steps.ready.outputs.publish == 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.manifest.outputs.base }}
+          ref: ${{ steps.attestation.outputs.base }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Require the base on the default branch
+        if: ${{ steps.ready.outputs.publish == 'true' }}
+        env:
+          BASE: ${{ steps.attestation.outputs.base }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: git merge-base --is-ancestor "$BASE" "refs/remotes/origin/$DEFAULT_BRANCH"
 
       - id: profile
         if: ${{ steps.ready.outputs.publish == 'true' }}
@@ -162,11 +195,12 @@ jobs:
 
       - name: Push the branch and open a draft PR
         id: push
-        if: ${{ steps.ready.outputs.publish == 'true' && steps.guard.outcome == 'success' }}
+        if: ${{ steps.ready.outputs.publish == 'true' && steps.output.outputs.is_clean == 'true' && steps.guard.outcome == 'success' && steps.attestation.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
-          BRANCH: ${{ steps.manifest.outputs.branch }}
+          BRANCH: ${{ steps.attestation.outputs.branch }}
+          ATTESTATION: ${{ inputs.attestation }}
           RESULT: ${{ inputs.result }}
           VERSION: ${{ inputs.prompt-version }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -176,27 +210,40 @@ jobs:
             echo "::notice::An open PR already exists for $BRANCH; nothing to do."
             exit 0
           fi
+          jq -r '.pr_title' <<<"$RESULT" > "$RUNNER_TEMP/pr-title.txt"
+          { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;
+            echo "<sub>Implemented by Claude with prompt engine-develop.md@$VERSION, pipeline engine ${ENGINE_COMMIT:0:12}. Draft until the review gates pass. Only a human can approve and merge.</sub>"; } > "$RUNNER_TEMP/pr-body.md"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-output --stage develop \
+            --text "$RUNNER_TEMP/pr-title.txt" --text "$RUNNER_TEMP/pr-body.md" --fail=true
           git config user.name "pipeline-agent"
           git config user.email "pipeline-agent@users.noreply.github.com"
           git switch -c "$BRANCH"
           git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-tree
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
           echo "::add-mask::$auth"
           GIT_CONFIG_COUNT=1 \
             GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
             GIT_CONFIG_VALUE_0="Authorization: basic $auth" \
             git push --force "https://github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
-          title=$(jq -r '.pr_title' <<<"$RESULT")
-          { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;
-            echo "<sub>Implemented by Claude with prompt engine-develop.md@$VERSION, pipeline engine ${ENGINE_COMMIT:0:12}. Draft until the review gates pass. Only a human can approve and merge.</sub>"; } > body.md
           url=$(gh pr create --repo "$GITHUB_REPOSITORY" --draft --base "$DEFAULT_BRANCH" \
-            --head "$BRANCH" --title "$title" --body-file body.md)
+            --head "$BRANCH" --title "$(cat "$RUNNER_TEMP/pr-title.txt")" --body-file "$RUNNER_TEMP/pr-body.md")
           pr=${url##*/}
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" set-stage "$pr" stage:building
           jq -n --arg s "Draft PR #$pr opened." --arg v "engine-develop.md@$VERSION" \
             '{stage: "develop", result: "success", summary: $s, prompt_version: $v}' > outcome.json
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" outcome.json
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" set-stage "$N" stage:building
+
+      - name: Report agent output that held a secret (stage:routing)
+        if: ${{ !cancelled() && steps.output.outputs.is_clean == 'false' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          OUTCOME: ${{ steps.output.outputs.outcome }}
+        run: |
+          printf '%s' "$OUTCOME" > "$RUNNER_TEMP/outcome.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
 
       - name: Report a request that held a secret (stage:routing)
         if: ${{ !cancelled() && inputs.request-outcome != '' }}
@@ -209,7 +256,7 @@ jobs:
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
 
       - name: Report the problem (stage:routing)
-        if: ${{ !cancelled() && inputs.request-outcome == '' && steps.push.outcome != 'success' }}
+        if: ${{ !cancelled() && inputs.request-outcome == '' && steps.output.outputs.is_clean == 'true' && steps.push.outcome != 'success' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
@@ -219,7 +266,6 @@ jobs:
           REJECTED: ${{ inputs.patch-rejected == 'true' || steps.guard.outcome == 'failure' }}
           VERSION: ${{ inputs.prompt-version }}
         run: |
-          printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" classify develop --job-result "$DEVELOP_RESULT" \
             --publish-result "${PUSH:-skipped}" --result "$RUNNER_TEMP/result.json" --patch-rejected "$REJECTED" \
             --prompt-version "engine-develop.md@${VERSION:-unknown}" --out "$RUNNER_TEMP/outcome.json"

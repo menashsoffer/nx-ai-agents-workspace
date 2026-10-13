@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  ENGINE_LIMITS,
   ENGINE_PROTECTED_PATHS,
   buildPolicy,
   changedLineCount,
@@ -41,6 +42,46 @@ test('engine minimum: protected whatever the profile says', () => {
   ])
     assert.deepEqual(checkPaths([path], policy).protected, [path], path);
   assert.equal(checkPaths(['src/app.ts', 'README.md'], policy).ok, true);
+});
+
+test('engine minimum: manifests, lockfiles, runtimes, agent rules, workflows', () => {
+  const policy = buildPolicy(profileWith({ writable: ['**'] }));
+  for (const path of [
+    'package.json',
+    'apps/site/package.json',
+    'pnpm-lock.yaml',
+    'package-lock.json',
+    'yarn.lock',
+    'bun.lockb',
+    'pnpm-workspace.yaml',
+    '.nvmrc',
+    'tools/.node-version',
+    'AGENTS.md',
+    'docs/AGENTS.md',
+    'CLAUDE.md',
+    'connectors/x/.github/workflows/plan.yml',
+    '.gitattributes',
+  ])
+    assert.deepEqual(checkPaths([path], policy).protected, [path], path);
+  assert.equal(
+    checkPaths(['docs/package-notes.md', 'src/AGENTS.ts'], policy).ok,
+    true,
+  );
+});
+
+test('engine ceilings: a profile object above them is clamped anyway', () => {
+  assert.deepEqual(ENGINE_LIMITS, {
+    maxFiles: 10,
+    maxLines: 400,
+    maxFileLines: 400,
+  });
+  const forged = {
+    ...profileWith({}),
+    limits: { maxFiles: 50, maxLines: 2000 },
+  };
+  assert.deepEqual(buildPolicy(forged).limits, { maxFiles: 10, maxLines: 400 });
+  const lower = profileWith({}, { maxFiles: 2, maxLines: 30 });
+  assert.deepEqual(buildPolicy(lower).limits, { maxFiles: 2, maxLines: 30 });
 });
 
 test('the profile can only add protected paths', () => {

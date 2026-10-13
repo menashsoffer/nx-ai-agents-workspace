@@ -242,8 +242,8 @@ test('render-prompt: engine prompt + profile + context + untrusted issue', () =>
   );
   assert.equal(result.status, 0, result.stdout);
   assert.match(output(), /## Target profile/);
-  assert.match(output(), /- prompt version: engine-plan\.md@1/);
-  assert.match(output(), /version<<.*\n1\n/);
+  assert.match(output(), /- prompt version: engine-plan\.md@2/);
+  assert.match(output(), /version<<.*\n2\n/);
   const forged = run(
     'render-prompt',
     '--prompt',
