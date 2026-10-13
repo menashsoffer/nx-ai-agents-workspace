@@ -8,7 +8,9 @@ import { readFileSync } from 'node:fs';
 import { api, setOutput } from './github.mjs';
 import { branchName, classifyPatch, parseFlags } from './pipeline-lib.mjs';
 import { checkPin, decodeClaims } from './engine-pin.mjs';
-import { requestOutcome, scanRequest } from './engine-request.mjs';
+import { scanRequest } from './engine-request.mjs';
+import { encodeFindings } from './engine-notes.mjs';
+import { noteCommands } from './engine-note-commands.mjs';
 import { baseFromReference, defaultBranchOf } from './engine-target.mjs';
 import { attestationCommands } from './engine-attestation-commands.mjs';
 import {
@@ -36,6 +38,7 @@ async function requestOidcToken() {
 
 const commands = {
   ...attestationCommands,
+  ...noteCommands,
 
   // Fails unless the target resolves from the workflow context, GitHub ran
   // this engine workflow at --engine-commit for that target, and
@@ -74,15 +77,13 @@ const commands = {
   },
 
   // Scans the collected issue for secrets. Outputs is_clean (true | false)
-  // and, when false, `outcome`: the outcome note JSON to post.
+  // and, when false, `findings` as `field:kind,...` (engine-notes.mjs); the
+  // publish job builds the note from them after validating each one.
   'check-request'(args) {
     const flags = parseFlags(args);
     const { isClean, findings } = scanRequest(readJson(flags._[0]));
     if (!isClean) {
-      setOutput(
-        'outcome',
-        JSON.stringify(requestOutcome(flags.stage, findings)),
-      );
+      setOutput('findings', encodeFindings(findings));
       for (const finding of findings)
         console.log(
           `::warning::Secret-shaped value in ${finding.field} (${finding.kinds.join(', ')}); the agent will not run.`,

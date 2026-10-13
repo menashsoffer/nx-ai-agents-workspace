@@ -219,3 +219,29 @@ test('engine-publish: compares the attestation with the pinned base and the patc
     ),
   );
 });
+
+test('engine workflows: notes never repeat agent-runner values as they are', () => {
+  for (const [file, workflow] of Object.entries(workflows)) {
+    const text = textOf(workflow);
+    assert.doesNotMatch(
+      text,
+      /request[-_]outcome|prompt[-_]version: \$|inputs\.prompt-version|outputs\.prompt_version/,
+      file,
+    );
+    for (const [name, job] of jobsOf(workflow))
+      for (const step of job.steps ?? []) {
+        const run = step.run ?? '';
+        if (!/pipeline\.mjs"? outcome /.test(run)) continue;
+        assert.match(
+          run,
+          /engine\.mjs"? (safe-note|check-text) /,
+          `${file} ${name}: ${step.name}`,
+        );
+      }
+  }
+  // the PR title and body are scanned before the branch is pushed
+  const push = workflows['engine-publish.yml'].jobs.publish.steps.find(
+    (step) => step.id === 'push',
+  );
+  assert.match(push.run, /check-text [^\n]*pr-body\.md"\n[\s\S]*git push/);
+});

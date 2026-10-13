@@ -84,6 +84,15 @@ read` and `issues: read` only, and no secret but the model token. Its
   again on a fresh runner before it mints the App token. A patch that
   touches a protected path (`.github/`, `CODEOWNERS`, ...) never reaches a
   push.
+- **Notes from closed sets.** Nothing from the agent's runner is posted as
+  it is (`engine-notes.mjs`). The request findings leave the agent's job
+  only as `field:kind` pairs, which publish checks against the known fields
+  and secret kinds (anything else gives a fixed note without details). The
+  develop problem note keeps the developer's problem code only if it is in
+  the allowed enum, and never its free text. The prompt version comes from
+  the engine's own prompt file at the pinned commit. Every note, spec, plan,
+  PR title and PR body is scanned for secret-shaped values right before it
+  is written.
 - **Deterministic publishing.** No model runs in publish. It applies the
   patch, pushes `issue-<n>-<slug>` and opens a draft PR with `gh pr create
 --draft`. It never runs target code. Only a person can mark it ready,

@@ -22,6 +22,11 @@ const SECRET_PATTERNS = [
   ['jwt', /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
 ];
 
+/** Every kind name secretKinds can report. */
+export const SECRET_KINDS = Object.freeze([
+  ...new Set(SECRET_PATTERNS.map(([kind]) => kind)),
+]);
+
 /** Kinds of secret found in one text, deduplicated, in pattern order. */
 export function secretKinds(text) {
   const value = String(text ?? '');

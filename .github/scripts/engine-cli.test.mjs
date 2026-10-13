@@ -55,7 +55,7 @@ test('check-request: clean request, then a secret in the request', () => {
   const stopped = run('check-request', '--stage', 'plan', request);
   assert.equal(stopped.status, 0);
   assert.match(output(), /is_clean<<.*\nfalse\n/);
-  assert.match(output(), /needs_secrets_ci_infra/);
+  assert.match(output(), /findings<<.*\nbody:github_token\n/);
   assert.ok(!output().includes(token) && !stopped.stdout.includes(token));
 });
 

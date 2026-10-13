@@ -4,7 +4,10 @@ name: Pipeline engine · Publish
 # run as engine-develop.yml (needs: develop, if: always()) and passes the
 # develop outputs. Publishing is deterministic: no model runs here, and the
 # only writes are a branch push and a DRAFT pull request ("Closes #n") in
-# the target, or an outcome note. It never executes target code.
+# the target, or an outcome note. It never executes target code. Notes are
+# built from closed sets (engine-notes.mjs): nothing from the agent's
+# runner is posted as it is, and every note and PR text is scanned for
+# secrets before it is written.
 # pin: as in engine-plan.yml. publish: before it mints the App token, checks
 # the develop attestation against this target and engine commit, the base
 # the develop pin job read from GitHub (an older base fails), the hash of
@@ -35,10 +38,8 @@ on:
         description: The develop outputs.result (the developer's JSON).
         type: string
         default: ''
-      prompt-version:
-        type: string
-        default: ''
-      request-outcome:
+      request-findings:
+        description: The develop outputs.request_findings (`field:kind,...`, validated here).
         type: string
         default: ''
       patch-rejected:
@@ -107,20 +108,26 @@ jobs:
           ref: ${{ needs.pin.outputs.commit }}
           path: .engine
           persist-credentials: false
-          sparse-checkout: .github/scripts
+          sparse-checkout: |
+            .github/scripts
+            .github/prompts
       - run: mv .engine "$RUNNER_TEMP/engine"
+
+      # The prompt version from the pinned engine, never from the agent's job.
+      - id: version
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" prompt-version --prompt "$RUNNER_TEMP/engine/.github/prompts/develop.md" --prompt-name develop.md
 
       - id: ready
         name: Decide whether there is a checked patch to publish
         env:
           DEVELOP_RESULT: ${{ inputs.develop-result }}
           RESULT: ${{ inputs.result }}
-          REQUEST_OUTCOME: ${{ inputs.request-outcome }}
+          REQUEST_FINDINGS: ${{ inputs.request-findings }}
           ATTESTATION: ${{ inputs.attestation }}
           REJECTED: ${{ inputs.patch-rejected }}
         run: |
           status=$(printf '%s' "$RESULT" | jq -r 'try .status // ""' 2>/dev/null || true)
-          if [[ -z "$REQUEST_OUTCOME" && "$DEVELOP_RESULT" == "success" && "$status" == "done" && -n "$ATTESTATION" && "$REJECTED" != "true" ]]; then
+          if [[ -z "$REQUEST_FINDINGS" && "$DEVELOP_RESULT" == "success" && "$status" == "done" && -n "$ATTESTATION" && "$REJECTED" != "true" ]]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
@@ -183,7 +190,7 @@ jobs:
           BRANCH: ${{ steps.attestation.outputs.branch }}
           ATTESTATION: ${{ inputs.attestation }}
           RESULT: ${{ inputs.result }}
-          VERSION: ${{ inputs.prompt-version }}
+          VERSION: ${{ steps.version.outputs.version }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           ENGINE_COMMIT: ${{ needs.pin.outputs.commit }}
         run: |
@@ -191,6 +198,10 @@ jobs:
             echo "::notice::An open PR already exists for $BRANCH; nothing to do."
             exit 0
           fi
+          jq -r '.pr_title' <<<"$RESULT" > "$RUNNER_TEMP/pr-title.txt"
+          { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;
+            echo "<sub>Implemented by Claude with prompt $VERSION, pipeline engine ${ENGINE_COMMIT:0:12}. Draft until the review gates pass. Only a human can approve and merge.</sub>"; } > "$RUNNER_TEMP/pr-body.md"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-text --text "$RUNNER_TEMP/pr-title.txt" --text "$RUNNER_TEMP/pr-body.md"
           git config user.name "pipeline-agent"
           git config user.email "pipeline-agent@users.noreply.github.com"
           git switch -c "$BRANCH"
@@ -202,30 +213,28 @@ jobs:
             GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
             GIT_CONFIG_VALUE_0="Authorization: basic $auth" \
             git push --force "https://github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
-          title=$(jq -r '.pr_title' <<<"$RESULT")
-          { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;
-            echo "<sub>Implemented by Claude with prompt develop.md@$VERSION, pipeline engine ${ENGINE_COMMIT:0:12}. Draft until the review gates pass. Only a human can approve and merge.</sub>"; } > body.md
           url=$(gh pr create --repo "$GITHUB_REPOSITORY" --draft --base "$DEFAULT_BRANCH" \
-            --head "$BRANCH" --title "$title" --body-file body.md)
+            --head "$BRANCH" --title "$(cat "$RUNNER_TEMP/pr-title.txt")" --body-file "$RUNNER_TEMP/pr-body.md")
           pr=${url##*/}
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" set-stage "$pr" stage:building
-          jq -n --arg s "Draft PR #$pr opened." --arg v "develop.md@$VERSION" \
-            '{stage: "develop", result: "success", summary: $s, prompt_version: $v}' > outcome.json
-          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" outcome.json
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" safe-note --kind published --stage develop --pr "$pr" \
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/develop.md" --prompt-name develop.md --out "$RUNNER_TEMP/outcome.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" set-stage "$N" stage:building
 
       - name: Report a request that held a secret (stage:routing)
-        if: ${{ !cancelled() && inputs.request-outcome != '' }}
+        if: ${{ !cancelled() && inputs.request-findings != '' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
-          OUTCOME: ${{ inputs.request-outcome }}
+          FINDINGS: ${{ inputs.request-findings }}
         run: |
-          printf '%s' "$OUTCOME" > "$RUNNER_TEMP/outcome.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" safe-note --kind request --stage develop --findings "$FINDINGS" \
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/develop.md" --prompt-name develop.md --out "$RUNNER_TEMP/outcome.json"
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
 
       - name: Report the problem (stage:routing)
-        if: ${{ !cancelled() && inputs.request-outcome == '' && steps.push.outcome != 'success' }}
+        if: ${{ !cancelled() && inputs.request-findings == '' && steps.push.outcome != 'success' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
@@ -233,10 +242,9 @@ jobs:
           DEVELOP_RESULT: ${{ inputs.develop-result }}
           PUSH: ${{ steps.push.outcome }}
           REJECTED: ${{ inputs.patch-rejected == 'true' || steps.guard.outcome == 'failure' }}
-          VERSION: ${{ inputs.prompt-version }}
         run: |
           printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
-          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" classify develop --job-result "$DEVELOP_RESULT" \
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" safe-note --kind develop --stage develop --job-result "$DEVELOP_RESULT" \
             --publish-result "${PUSH:-skipped}" --result "$RUNNER_TEMP/result.json" --patch-rejected "$REJECTED" \
-            --prompt-version "develop.md@${VERSION:-unknown}" --out "$RUNNER_TEMP/outcome.json"
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/develop.md" --prompt-name develop.md --out "$RUNNER_TEMP/outcome.json"
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"

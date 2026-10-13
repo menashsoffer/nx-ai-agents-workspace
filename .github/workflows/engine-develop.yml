@@ -33,11 +33,9 @@ on:
       result:
         description: The developer's JSON (status, pr_title, pr_body, blocked_reason, problem).
         value: ${{ jobs.implement.outputs.result }}
-      prompt_version:
-        value: ${{ jobs.implement.outputs.prompt_version }}
-      request_outcome:
-        description: Outcome note JSON when the request held a secret (the agent did not run).
-        value: ${{ jobs.implement.outputs.request_outcome }}
+      request_findings:
+        description: '`field:kind,...` when the request held a secret (the agent did not run); publish validates each entry.'
+        value: ${{ jobs.implement.outputs.request_findings }}
       patch_rejected:
         value: ${{ jobs.implement.outputs.patch_rejected || jobs.check.outputs.patch_rejected }}
       base:
@@ -97,8 +95,7 @@ jobs:
       issues: read
     outputs:
       result: ${{ steps.claude.outputs.structured_output }}
-      prompt_version: ${{ steps.prompt.outputs.version }}
-      request_outcome: ${{ steps.request.outputs.outcome }}
+      request_findings: ${{ steps.request.outputs.findings }}
       patch_rejected: ${{ steps.guard.outputs.rejected }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
