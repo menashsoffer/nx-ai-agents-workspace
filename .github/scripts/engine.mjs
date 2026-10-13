@@ -66,7 +66,7 @@ const commands = {
     setOutput('repository', target.repository);
     setOutput('issue', target.issue);
     setOutput('key', target.key);
-    if (flags['resolve-base'] === undefined) return;
+    if (!Object.hasOwn(flags, 'resolve-base')) return;
     const defaultBranch = defaultBranchOf(currentEvent());
     const reference = api(`git/ref/heads/${defaultBranch}`);
     setOutput('base', baseFromReference(reference));
