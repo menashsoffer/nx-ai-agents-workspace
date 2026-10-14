@@ -15,7 +15,7 @@ to the sandbox exists yet**: the owner copies these files there by hand.
 
 The workflows are thin adapters: they have no steps, only `uses:` calls to
 the engine's reusable workflows, all pinned to one engine commit
-(`80c0874459d91fe5e55076915a67f55ad403bc4a`, the head of the profile
+(`96eba04676776b893a92e0152242e4202a4f0685`, the head of the profile
 branch). The same commit is passed as `engine-commit`, and the engine checks
 both against GitHub's OIDC claims. The engine takes the repository and the
 issue from the workflow context, never from the issue text.
@@ -24,8 +24,19 @@ issue from the workflow context, never from the issue text.
 
 Nothing here has run on GitHub. The engine's parts are tested in this
 repository (`pnpm test:pipeline`) with simulated events, a fake GitHub CLI and
-OIDC endpoint, and real git patches, but no issue has gone through the
-sandbox. Do not read the tests as proof that the pilot works end to end.
+a local stand-in for the OIDC endpoint, and real git patches, but no issue has
+gone through the sandbox. Do not read the tests as proof that the pilot works
+end to end. In particular:
+
+- **There has been no real OIDC run yet.** The pin check reads
+  `job_workflow_ref` and `job_workflow_sha` from GitHub's OIDC token and
+  expects `<engine>/.github/workflows/<file>@<commit>` when a workflow is
+  called by commit. That format comes from GitHub's documentation and has
+  not been seen on a real run; if it differs, every engine run stops at the
+  pin job (fail closed) until the check is adjusted.
+- The verify lock step (root-owned toolchain, no sudo or Docker) has not run
+  on a GitHub runner. The sandbox has no verify commands, so it is skipped
+  there.
 
 ## The sandbox profile
 
@@ -88,17 +99,24 @@ node .github/scripts/connector-coexistence.mjs \
 After copying, the same check runs on the installed folder:
 `node .github/scripts/connector-coexistence.mjs <sandbox>/.github/workflows`.
 
-It fails when:
+It is a review aid, not a guarantee: it reads workflow files and cannot
+see what a workflow does at run time (a script it calls, an action's
+internals, an expression it builds). It fails when:
 
 - an existing workflow has a connector file's name (the copy would
   overwrite it);
 - another workflow runs on issue label changes and not every job filters
-  out the pipeline's `stage:*` labels. A job counts as filtered when its
-  `if:` holds `!startsWith(github.event.label.name, 'stage:')`, matches one
-  named non-stage label, or skips `labeled` events, with no `||`;
-- another workflow runs on a push of an `issue-<n>-*` branch, reads
-  `PIPELINE_APP_PRIVATE_KEY`, passes `secrets: inherit`, calls the engine
-  outside the connector or shares its concurrency groups.
+  out the pipeline's `stage:*` labels. A job counts as filtered when one
+  `&&` part of its `if:` is `!startsWith(github.event.label.name,
+'stage:')`, matches one named non-stage label (`== 'bug'`), or skips
+  `labeled` events, with no `||` and no negated group. `!= 'bug'` is not a
+  filter: it still runs on every stage label;
+- another workflow runs on a push of an `issue-<n>-*` branch, or pushes to
+  one (`git push` in a step, or an action input such as claude-code-action's
+  `branch_prefix: issue-` or create-pull-request's `branch: issue-...`);
+- another workflow reads `PIPELINE_APP_PRIVATE_KEY`, passes
+  `secrets: inherit`, calls the engine outside the connector, or shares the
+  engine's concurrency groups (at job or workflow level).
 
 It warns when a direct Claude job can push branches (it could push to an
 `issue-<n>-*` branch the engine publishes) or answers on pipeline issues.

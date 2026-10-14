@@ -211,10 +211,14 @@ engine workflows; `connector-sandbox-pilot.test.mjs` runs the sandbox profile
 through the policy and the checks; `connector-coexistence.mjs` checks,
 before the copy, the candidate made of a target's existing workflows and the
 connector's, and after it the installed folder; it checks a
-target's own Claude workflows against the connector.
+target's own Claude workflows against the connector. It is a review aid,
+not a guarantee: it reads workflow files only.
 
 ## Known limits
 
+- No real OIDC run yet: the pin check's expected `job_workflow_ref` format
+  (`<engine>/.github/workflows/<file>@<commit>`) has not been seen on a
+  GitHub run; a different format stops every run at the pin job.
 - The engine repository name is fixed in `engine-pin.mjs` and in every
   engine checkout (`menashsoffer/nx-ai-agents-workspace`); a fork changes
   both.

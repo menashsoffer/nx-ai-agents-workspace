@@ -103,7 +103,7 @@ test('conflicts: label triggers, engine branch pushes, the App key, inherited se
   );
   assert.match(
     conflicts(directClaude({ on: { push: { branches: ['**'] } } })).join(),
-    /runs on a push of the engine's issue-7-probe branch/,
+    /runs on a push of an engine issue-<n>-\* branch/,
   );
   assert.deepEqual(
     conflicts(directClaude({ on: { push: { branches: ['main'] } } })),

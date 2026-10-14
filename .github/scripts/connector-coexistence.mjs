@@ -31,22 +31,69 @@ const asMap = (triggers) =>
       ? Object.fromEntries(triggers.map((name) => [name, null]))
       : triggers;
 
+/** Branch names the engine publishes (`issue-<n>-<slug>`), as push samples. */
+const ENGINE_BRANCH_SAMPLES = ['issue-1-a', 'issue-7-probe', 'issue-123-task'];
+
+/** Branch settings of actions that create or push a branch. */
+const BRANCH_INPUTS = [
+  'branch',
+  'branch_prefix',
+  'branch-prefix',
+  'head',
+  'ref',
+];
+
 /**
- * True when a job's `if:` keeps it off the pipeline's stage labels: it
- * skips labels that start with `stage:`, runs only on one named non-stage
- * label, or skips `labeled` events. An `||` could bypass the filter, so a
- * condition with one does not count.
+ * True when a job pushes to an `issue-<n>-*` branch: a `git push` naming
+ * one in a run step, or an action input (claude-code-action's
+ * branch_prefix, create-pull-request's branch, ...) that starts with
+ * `issue-` or names `refs/heads/issue-`.
+ */
+function pushesToEngineBranches(jobs) {
+  return jobs.some((job) =>
+    (job?.steps ?? []).some((step) => {
+      const run = String(step?.run ?? '');
+      if (/git\s+push\b/.test(run) && /\bissue-/.test(run)) return true;
+      return Object.entries(step?.with ?? {}).some(
+        ([name, value]) =>
+          (BRANCH_INPUTS.includes(name) &&
+            /^\s*(?:refs\/heads\/)?issue-/i.test(String(value))) ||
+          /refs\/heads\/issue-/i.test(String(value)),
+      );
+    }),
+  );
+}
+
+/** Filters that keep a job off the stage labels, each a whole conjunct. */
+const STAGE_FILTERS = [
+  /^!\s*startsWith\(\s*github\.event\.label\.name\s*,\s*'stage:'\s*\)$/i,
+  /^github\.event\.label\.name\s*==\s*'(?!stage:)[^']+'$/i,
+  /^'(?!stage:)[^']+'\s*==\s*github\.event\.label\.name$/i,
+  /^github\.event\.action\s*!=\s*'labeled'$/i,
+];
+
+/**
+ * True when a job's `if:` keeps it off the pipeline's stage labels: one of
+ * its `&&` parts skips labels that start with `stage:`, matches one named
+ * non-stage label (GitHub compares case-insensitively), or skips `labeled`
+ * events. `||` or a negated group could undo the filter, so a condition
+ * with either does not count; neither does `label.name != 'bug'`, which
+ * still runs on every stage label.
  */
 export function filtersStageLabels(condition) {
-  const text = String(condition ?? '').replace(/\$\{\{|\}\}/g, ' ');
-  if (!text.trim() || text.includes('||')) return false;
-  return (
-    /!\s*startsWith\(\s*github\.event\.label\.name\s*,\s*'stage:'\s*\)/.test(
-      text,
-    ) ||
-    /github\.event\.label\.name\s*==\s*'(?!stage:)[^']+'/.test(text) ||
-    /github\.event\.action\s*!=\s*'labeled'/.test(text)
-  );
+  const text = String(condition ?? '')
+    .replace(/\$\{\{|\}\}/g, ' ')
+    .trim();
+  if (!text || text.includes('||') || /!\s*\(/.test(text)) return false;
+  return text
+    .split('&&')
+    .map((part) =>
+      part
+        .trim()
+        .replace(/^\((.*)\)$/, '$1')
+        .trim(),
+    )
+    .some((part) => STAGE_FILTERS.some((filter) => filter.test(part)));
 }
 
 /**
@@ -84,9 +131,17 @@ export function checkCoexistence(workflows) {
       errors.push(
         `${file}: runs on issue label changes, also the pipeline's stage:* labels (no job filters them out)`,
       );
-    for (const branch of ['issue-7-probe', 'issue-123-task'])
-      if (branchPushTriggers(asMap(triggersOf(workflow)), branch).length)
-        errors.push(`${file}: runs on a push of the engine's ${branch} branch`);
+    if (
+      ENGINE_BRANCH_SAMPLES.some(
+        (branch) =>
+          branchPushTriggers(asMap(triggersOf(workflow)), branch).length,
+      )
+    )
+      errors.push(`${file}: runs on a push of an engine issue-<n>-* branch`);
+    if (pushesToEngineBranches(jobs))
+      errors.push(
+        `${file}: pushes to issue-<n>-* branches, which the engine owns and force-pushes`,
+      );
     if (/PIPELINE_APP_PRIVATE_KEY/.test(text))
       errors.push(`${file}: reads the pipeline App's private key`);
     if (jobs.some((job) => job?.secrets === 'inherit'))
@@ -95,7 +150,10 @@ export function checkCoexistence(workflows) {
       errors.push(`${file}: calls the engine outside the connector`);
     if (
       /pipeline-engine-/.test(
-        JSON.stringify(jobs.map((job) => job?.concurrency ?? null)),
+        JSON.stringify([
+          workflow?.concurrency ?? null,
+          ...jobs.map((job) => job?.concurrency ?? null),
+        ]),
       )
     )
       errors.push(`${file}: shares the engine's concurrency groups`);

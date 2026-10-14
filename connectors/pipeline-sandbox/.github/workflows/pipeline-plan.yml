@@ -15,13 +15,13 @@ permissions: {}
 jobs:
   plan:
     if: ${{ github.event.label.name == 'stage:qualified' && !github.event.issue.pull_request && github.event.issue.state == 'open' }}
-    uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-plan.yml@80c0874459d91fe5e55076915a67f55ad403bc4a
+    uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-plan.yml@96eba04676776b893a92e0152242e4202a4f0685
     permissions:
       contents: read
       issues: read
       id-token: write
     with:
-      engine-commit: 80c0874459d91fe5e55076915a67f55ad403bc4a
+      engine-commit: 96eba04676776b893a92e0152242e4202a4f0685
       bot-login: ${{ vars.PIPELINE_BOT_LOGIN }}
       app-client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
     secrets:
