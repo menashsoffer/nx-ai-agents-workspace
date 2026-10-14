@@ -15,7 +15,7 @@ to the sandbox exists yet**: the owner copies these files there by hand.
 
 The workflows are thin adapters: they have no steps, only `uses:` calls to
 the engine's reusable workflows, all pinned to one engine commit
-(`96eba04676776b893a92e0152242e4202a4f0685`, the head of the profile
+(`dd3421076573b2948a7774418ef08bd6cec8225c`, the head of the profile
 branch). The same commit is passed as `engine-commit`, and the engine checks
 both against GitHub's OIDC claims. The engine takes the repository and the
 issue from the workflow context, never from the issue text.
@@ -113,7 +113,12 @@ internals, an expression it builds). It fails when:
   filter: it still runs on every stage label;
 - another workflow runs on a push of an `issue-<n>-*` branch, or pushes to
   one (`git push` in a step, or an action input such as claude-code-action's
-  `branch_prefix: issue-` or create-pull-request's `branch: issue-...`);
+  `branch_prefix: issue-` or create-pull-request's `branch: issue-...`).
+  The push filter is checked against every engine branch name, not a
+  sample: `connector-branch-filters.mjs` searches the product of the branch
+  language and the filter (`*`, `**`, `?`, `+`, `[...]`, `\`, `!`) and
+  names a branch that would run it (`branches: ['issue-42-*']` is caught).
+  A pattern outside that syntax is an error to review by hand;
 - another workflow reads `PIPELINE_APP_PRIVATE_KEY`, passes
   `secrets: inherit`, calls the engine outside the connector, or shares the
   engine's concurrency groups (at job or workflow level).

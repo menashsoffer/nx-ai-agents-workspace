@@ -14,7 +14,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { branchPushTriggers } from './pipeline-lib.mjs';
+import { findTriggeringEngineBranch } from './connector-branch-filters.mjs';
 
 /** The connector's own workflow files (connectors/pipeline-sandbox). */
 const CONNECTOR_FILES = ['pipeline-develop.yml', 'pipeline-plan.yml'];
@@ -30,9 +30,6 @@ const asMap = (triggers) =>
     : Array.isArray(triggers)
       ? Object.fromEntries(triggers.map((name) => [name, null]))
       : triggers;
-
-/** Branch names the engine publishes (`issue-<n>-<slug>`), as push samples. */
-const ENGINE_BRANCH_SAMPLES = ['issue-1-a', 'issue-7-probe', 'issue-123-task'];
 
 /** Branch settings of actions that create or push a branch. */
 const BRANCH_INPUTS = [
@@ -131,13 +128,14 @@ export function checkCoexistence(workflows) {
       errors.push(
         `${file}: runs on issue label changes, also the pipeline's stage:* labels (no job filters them out)`,
       );
-    if (
-      ENGINE_BRANCH_SAMPLES.some(
-        (branch) =>
-          branchPushTriggers(asMap(triggersOf(workflow)), branch).length,
-      )
-    )
-      errors.push(`${file}: runs on a push of an engine issue-<n>-* branch`);
+    // every engine branch name counts, not a sample of them
+    const pushed = findTriggeringEngineBranch(asMap(triggersOf(workflow)));
+    for (const problem of pushed.problems)
+      errors.push(`${file}: push branch filter: ${problem}; review it by hand`);
+    if (pushed.branch)
+      errors.push(
+        `${file}: runs on a push of an engine issue-<n>-* branch (for example ${pushed.branch})`,
+      );
     if (pushesToEngineBranches(jobs))
       errors.push(
         `${file}: pushes to issue-<n>-* branches, which the engine owns and force-pushes`,
