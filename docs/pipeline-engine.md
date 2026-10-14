@@ -58,13 +58,20 @@ model token.
   starts and outputs it as the base (with the branch name). The agent works
   on that base, but only its patch artifact and its JSON status leave its
   job. In `engine-check.yml`, the `verify` job runs the profile's commands
-  (target code) on its own runner, through a trusted orchestrator: before
-  any target code, the engine checkout and the profile become root-owned
-  and read-only and sudo and Docker access are removed (the step fails if
-  sudo stays); then one engine process (`verify-target`), already loaded,
-  runs every setup and verify command as a child and decides from their
-  exit codes. A setup command that rewrites the engine cannot change that
-  process (`engine-verify-cli.test.mjs`). After it passed, the `check` job, with no secrets and no agent
+  (target code) on its own runner, through a trusted orchestrator. Before
+  any target code, the toolchain is prepared (corepack and the target's pnpm,
+  into a root-owned `COREPACK_HOME`), then node's install folder and every
+  folder above it, the engine and the profile become root-owned and not
+  writable by others, and sudo and Docker access are removed (the step fails
+  if sudo stays). Then one engine process (`verify-target`) resolves every
+  program, node included, to an absolute path once, and refuses to run
+  anything unless each path and every folder above it is root-owned and not
+  writable by group or others, and it does not run as root itself
+  (`engine-programs.mjs`). It runs every setup and verify command as a child
+  by that path, with a PATH of those protected folders only, and decides from
+  the exit codes. A setup command that replaces a `node` shim or rewrites the
+  engine cannot turn a failing verify into a pass (`engine-verify-cli.test.mjs`).
+  None of this has run on a GitHub runner yet. After it passed, the `check` job, with no secrets and no agent
   or target code, checks the
   patch, applies it itself to the pinned base and outputs an attestation
   (`engine-attestation.mjs`): target repository, id and issue, base, branch,

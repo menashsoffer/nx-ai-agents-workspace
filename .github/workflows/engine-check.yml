@@ -132,22 +132,40 @@ jobs:
           node-version-file: .nvmrc
           package-manager-cache: false
 
-      # Before any target code: the engine and the profile become root-owned
-      # and read-only, and sudo and Docker (root through the socket) go away,
-      # so target code cannot change them back. Fails closed if sudo stays.
-      - name: Lock the engine and drop root access
+      # Before any target code: the toolchain is prepared (corepack and the
+      # target's pnpm, into a root-owned COREPACK_HOME), then node's install
+      # folder and every folder above it, the engine and the profile become
+      # root-owned and not writable by others; sudo and Docker (root through
+      # the socket) go away. Fails closed if sudo stays.
+      - name: Lock the toolchain and the engine, drop root access
         if: ${{ steps.profile.outputs.has_verify == 'true' }}
+        env:
+          USES_COREPACK: ${{ steps.profile.outputs.uses_corepack }}
         run: |
-          sudo chown -R root:root "$RUNNER_TEMP/engine" "$RUNNER_TEMP/profile.json"
-          sudo chmod -R a-w "$RUNNER_TEMP/engine" "$RUNNER_TEMP/profile.json"
+          if [[ "$USES_COREPACK" == "true" ]]; then
+            corepack enable
+            sudo mkdir -p /opt/pipeline-engine/corepack
+            sudo env "PATH=$PATH" COREPACK_HOME=/opt/pipeline-engine/corepack corepack install
+          fi
+          node_root=$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")
+          sudo chown -R root:root "$node_root" "$RUNNER_TEMP/engine" "$RUNNER_TEMP/profile.json"
+          sudo chmod -R go-w "$node_root" "$RUNNER_TEMP/engine" "$RUNNER_TEMP/profile.json"
+          folder=$(dirname "$node_root")
+          while [[ "$folder" != "/" ]]; do
+            sudo chown root:root "$folder"; sudo chmod go-w "$folder"; folder=$(dirname "$folder")
+          done
           if [[ -S /var/run/docker.sock ]]; then sudo chmod 600 /var/run/docker.sock; fi
           sudo sh -c 'rm -f /etc/sudoers.d/*'
           if sudo -n true 2>/dev/null; then echo "::error::sudo is still available"; exit 1; fi
 
-      # One trusted process reads the commands, then runs setup and verify as
-      # children (engine-verify-commands.mjs). The last step of the job.
+      # One trusted process resolves every program to a protected absolute
+      # path, then runs setup and verify as children by those paths
+      # (engine-verify-commands.mjs). It refuses unprotected programs. The
+      # last step of the job.
       - name: Run the profile's setup and verify commands (no secrets)
         if: ${{ steps.profile.outputs.has_verify == 'true' }}
+        env:
+          COREPACK_HOME: ${{ steps.profile.outputs.uses_corepack == 'true' && '/opt/pipeline-engine/corepack' || '' }}
         run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" verify-target --profile "$RUNNER_TEMP/profile.json"
 
   check:

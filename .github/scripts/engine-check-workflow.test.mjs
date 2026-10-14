@@ -69,9 +69,30 @@ test('check verify job: the policy stops a change before target code runs', () =
     /engine\.mjs" verify-target --profile/,
   );
   assert.ok(guard < apply && apply < lock && lock < orchestrator);
+  const lockRun = verify.steps[lock].run;
+  // node's install folder, the engine and the profile, then every folder
+  // above node up to /, become root-owned and not writable by others
   assert.match(
-    verify.steps[lock].run,
-    /chown -R root:root "\$RUNNER_TEMP\/engine" "\$RUNNER_TEMP\/profile\.json"/,
+    lockRun,
+    /chown -R root:root "\$node_root" "\$RUNNER_TEMP\/engine" "\$RUNNER_TEMP\/profile\.json"/,
+  );
+  assert.match(
+    lockRun,
+    /while \[\[ "\$folder" != "\/" \]\]; do\n\s*sudo chown root:root "\$folder"; sudo chmod go-w "\$folder"/,
+  );
+  // pnpm comes from a root-owned COREPACK_HOME prepared before the lock
+  assert.match(
+    lockRun,
+    /COREPACK_HOME=\/opt\/pipeline-engine\/corepack corepack install/,
+  );
+  assert.match(
+    verify.steps[orchestrator].env.COREPACK_HOME,
+    /\/opt\/pipeline-engine\/corepack/,
+  );
+  // everything that touches the toolchain happens before sudo goes away
+  assert.ok(
+    lockRun.indexOf('corepack install') <
+      lockRun.indexOf('rm -f /etc/sudoers.d/*'),
   );
   assert.match(verify.steps[lock].run, /if sudo -n true .*exit 1/);
   // the orchestrator is the last step, and no other engine process runs
