@@ -1,7 +1,12 @@
 // Run: pnpm test:pipeline
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { requestOutcome, scanRequest, secretKinds } from './engine-request.mjs';
+import {
+  SECRET_KINDS,
+  requestOutcome,
+  scanRequest,
+  secretKinds,
+} from './engine-request.mjs';
 
 // Built at runtime so no secret-shaped literal sits in the repository.
 const repeat = (character, count) => character.repeat(count);
@@ -57,4 +62,10 @@ test('scanRequest: the spec and plan fields are scanned too', () => {
   assert.deepEqual(scanRequest(request).findings, [
     { field: 'plan', kinds: ['aws_access_key'] },
   ]);
+});
+
+test('SECRET_KINDS lists every kind once', () => {
+  assert.equal(new Set(SECRET_KINDS).size, SECRET_KINDS.length);
+  for (const [kind] of Object.entries(SAMPLES))
+    assert.ok(SECRET_KINDS.includes(kind), kind);
 });

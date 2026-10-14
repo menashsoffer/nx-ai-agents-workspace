@@ -245,3 +245,33 @@ test('engine workflows: notes never repeat agent-runner values as they are', () 
   );
   assert.match(push.run, /check-text [^\n]*pr-body\.md"\n[\s\S]*git push/);
 });
+
+test('engine workflows: the agent output and the commits are scanned before publishing', () => {
+  const plan = workflows['engine-plan.yml'].jobs.publish.steps;
+  const planIndex = (id) => plan.findIndex((step) => step.id === id);
+  assert.ok(
+    planIndex('output') >= 0 && planIndex('output') < planIndex('classify'),
+  );
+  assert.match(
+    plan[planIndex('classify')].if,
+    /steps\.output\.outputs\.is_clean == 'true'/,
+  );
+  const check = workflows['engine-develop.yml'].jobs.check.steps;
+  const scan = check.findIndex((step) =>
+    /check-output [\s\S]*--fail=true[\s\S]*check-commits --base/.test(
+      step.run ?? '',
+    ),
+  );
+  const attest = check.findIndex((step) => step.id === 'attest');
+  assert.ok(scan >= 0 && scan < attest);
+  const publish = workflows['engine-publish.yml'].jobs.publish.steps;
+  const output = publish.findIndex((step) => step.id === 'output');
+  const app = publish.findIndex(isAppTokenStep);
+  assert.ok(output >= 0 && output < app);
+  const push = publish.find((step) => step.id === 'push');
+  assert.match(push.if, /steps\.output\.outputs\.is_clean == 'true'/);
+  assert.match(
+    push.run,
+    /check-tree\n[^\n]*check-commits --base "\$BASE" --fail=true\n[\s\S]*git push/,
+  );
+});

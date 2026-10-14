@@ -18,6 +18,7 @@ import {
   requestOutcome,
   secretKinds,
 } from './engine-request.mjs';
+import { OUTPUT_FIELD } from './engine-output-scan.mjs';
 
 const JOB_RESULTS = ['success', 'failure', 'cancelled', 'skipped'];
 /** Problems the developer may report (its --json-schema enum). */
@@ -39,7 +40,7 @@ export const encodeFindings = (findings) =>
     .join(',');
 
 /** The findings, or null when any entry is not a known field and kind. */
-export function decodeFindings(text) {
+export function decodeFindings(text, fieldFormat = REQUEST_FIELD) {
   const entries = String(text ?? '').split(',');
   if (!text || entries.length > MAX_FINDINGS) return null;
   const findings = [];
@@ -47,7 +48,7 @@ export function decodeFindings(text) {
     const separator = entry.lastIndexOf(':');
     const field = entry.slice(0, separator);
     const kind = entry.slice(separator + 1);
-    if (!REQUEST_FIELD.test(field) || !SECRET_KINDS.includes(kind)) return null;
+    if (!fieldFormat.test(field) || !SECRET_KINDS.includes(kind)) return null;
     const existing = findings.find((finding) => finding.field === field);
     if (existing) existing.kinds.push(kind);
     else findings.push({ field, kinds: [kind] });
@@ -64,6 +65,24 @@ export function requestNote(stage, findingsText) {
     details: [
       'secret_in_request: details withheld (the findings did not validate)',
     ],
+  };
+}
+
+/** The note for agent output that held a secret-shaped value. */
+export function outputNote(stage, findingsText) {
+  const findings = decodeFindings(findingsText, OUTPUT_FIELD);
+  return {
+    stage,
+    result: 'problem',
+    problem: 'needs_secrets_ci_infra',
+    summary:
+      "The agent's output contains a value shaped like a secret, so nothing from it was published. Check where it came from (and rotate it).",
+    details: findings
+      ? findings.map(
+          (finding) =>
+            `secret_in_output: ${finding.field} (${finding.kinds.join(', ')})`,
+        )
+      : ['secret_in_output: details withheld (the findings did not validate)'],
   };
 }
 

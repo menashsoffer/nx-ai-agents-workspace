@@ -9,6 +9,11 @@ import { api, setOutput } from './github.mjs';
 import { branchName, classifyPatch, parseFlags } from './pipeline-lib.mjs';
 import { checkPin, decodeClaims } from './engine-pin.mjs';
 import { scanRequest } from './engine-request.mjs';
+import {
+  COMMIT_LOG_FORMAT,
+  scanCommits,
+  scanOutput,
+} from './engine-output-scan.mjs';
 import { encodeFindings } from './engine-notes.mjs';
 import { noteCommands } from './engine-note-commands.mjs';
 import { baseFromReference, defaultBranchOf } from './engine-target.mjs';
@@ -35,6 +40,8 @@ async function requestOidcToken() {
     throw new Error(`OIDC token request failed: HTTP ${response.status}`);
   return (await response.json()).value;
 }
+
+const readIfGiven = (path) => (path ? readFileSync(path, 'utf8') : '');
 
 const commands = {
   ...attestationCommands,
@@ -74,6 +81,58 @@ const commands = {
     const reference = api(`git/ref/heads/${defaultBranch}`);
     setOutput('base', baseFromReference(reference));
     setOutput('branch', branchName(target.issue, currentEvent().issue.title));
+  },
+
+  // Scans the agent's output before anything from it is published or
+  // posted: --result (its JSON), --patch, and each --text <file> (for
+  // example the PR body). Outputs is_clean and, when false, `findings` as
+  // `field:kind,...` (safe-note --kind output validates them).
+  // With --fail it also exits 1 when it finds something.
+  'check-output'(args) {
+    const flags = parseFlags(args);
+    const texts = Object.fromEntries(
+      []
+        .concat(flags.text ?? [])
+        .map((path) => [path.split('/').pop(), readFileSync(path, 'utf8')]),
+    );
+    const { isClean, findings } = scanOutput({
+      result: readIfGiven(flags.result),
+      patch: readIfGiven(flags.patch),
+      texts,
+    });
+    if (!isClean) setOutput('findings', encodeFindings(findings));
+    setOutput('is_clean', String(isClean));
+    if (Object.hasOwn(flags, 'fail'))
+      failOn(
+        findings.map(
+          (finding) =>
+            `secret-shaped value in ${finding.field} (${finding.kinds.join(', ')})`,
+        ),
+        'Output',
+      );
+  },
+
+  // Scans the commits that would be pushed (base..HEAD in cwd): author,
+  // committer, subject and body. Outputs is_clean and `findings`; exit 1
+  // with --fail.
+  'check-commits'(args) {
+    const flags = parseFlags(args);
+    const log = execFileSync(
+      'git',
+      ['log', `--format=${COMMIT_LOG_FORMAT}`, `${flags.base}..HEAD`],
+      { encoding: 'utf8' },
+    );
+    const { isClean, findings } = scanCommits(log);
+    if (!isClean) setOutput('findings', encodeFindings(findings));
+    setOutput('is_clean', String(isClean));
+    if (Object.hasOwn(flags, 'fail'))
+      failOn(
+        findings.map(
+          (finding) =>
+            `secret-shaped value in ${finding.field} (${finding.kinds.join(', ')})`,
+        ),
+        'Commits',
+      );
   },
 
   // Scans the collected issue for secrets. Outputs is_clean (true | false)

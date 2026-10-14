@@ -139,6 +139,19 @@ jobs:
           name: engine-develop-patch
           path: ${{ runner.temp }}/in
 
+      # What the agent wrote becomes a branch, a PR or an outcome note: scan
+      # its JSON and every publishable part of its patch for secrets first.
+      - id: output
+        if: ${{ !cancelled() && inputs.request-findings == '' }}
+        env:
+          RESULT: ${{ inputs.result }}
+        run: |
+          printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
+          patch=()
+          [[ -f "$RUNNER_TEMP/in/changes.patch" ]] && patch=(--patch "$RUNNER_TEMP/in/changes.patch")
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-output --stage develop \
+            --result "$RUNNER_TEMP/result.json" "${patch[@]}"
+
       # Before any write token exists: the attestation, the pinned base, the
       # patch hash and the protected paths.
       - id: attestation
@@ -183,11 +196,12 @@ jobs:
 
       - name: Push the branch and open a draft PR
         id: push
-        if: ${{ steps.ready.outputs.publish == 'true' && steps.guard.outcome == 'success' && steps.attestation.outcome == 'success' }}
+        if: ${{ steps.ready.outputs.publish == 'true' && steps.output.outputs.is_clean == 'true' && steps.guard.outcome == 'success' && steps.attestation.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
           BRANCH: ${{ steps.attestation.outputs.branch }}
+          BASE: ${{ steps.attestation.outputs.base }}
           ATTESTATION: ${{ inputs.attestation }}
           RESULT: ${{ inputs.result }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -207,6 +221,7 @@ jobs:
           git switch -c "$BRANCH"
           git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
           node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-tree
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-commits --base "$BASE" --fail=true
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
           echo "::add-mask::$auth"
           GIT_CONFIG_COUNT=1 \
@@ -222,6 +237,17 @@ jobs:
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" set-stage "$N" stage:building
 
+      - name: Report agent output that held a secret (stage:routing)
+        if: ${{ !cancelled() && steps.output.outputs.is_clean == 'false' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          FINDINGS: ${{ steps.output.outputs.findings }}
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" safe-note --kind output --stage develop --findings "$FINDINGS" \
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/develop.md" --prompt-name develop.md --out "$RUNNER_TEMP/outcome.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
+
       - name: Report a request that held a secret (stage:routing)
         if: ${{ !cancelled() && inputs.request-findings != '' }}
         env:
@@ -234,7 +260,7 @@ jobs:
           node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
 
       - name: Report the problem (stage:routing)
-        if: ${{ !cancelled() && inputs.request-findings == '' && steps.push.outcome != 'success' }}
+        if: ${{ !cancelled() && inputs.request-findings == '' && steps.output.outputs.is_clean == 'true' && steps.push.outcome != 'success' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ needs.pin.outputs.issue }}
@@ -243,7 +269,6 @@ jobs:
           PUSH: ${{ steps.push.outcome }}
           REJECTED: ${{ inputs.patch-rejected == 'true' || steps.guard.outcome == 'failure' }}
         run: |
-          printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
           node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" safe-note --kind develop --stage develop --job-result "$DEVELOP_RESULT" \
             --publish-result "${PUSH:-skipped}" --result "$RUNNER_TEMP/result.json" --patch-rejected "$REJECTED" \
             --prompt "$RUNNER_TEMP/engine/.github/prompts/develop.md" --prompt-name develop.md --out "$RUNNER_TEMP/outcome.json"

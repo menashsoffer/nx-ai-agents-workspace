@@ -7,6 +7,7 @@ import { parseFlags } from './pipeline-lib.mjs';
 import {
   developNote,
   enginePromptVersion,
+  outputNote,
   publishedNote,
   requestNote,
   safeNote,
@@ -23,14 +24,15 @@ export const noteCommands = {
     setOutput('version', versionOf(parseFlags(args)));
   },
 
-  // Writes a safe outcome note (--out) of one --kind: request (from
-  // --findings), develop (from job results and the developer's status and
-  // problem code only) or published (--pr). Exit 1 if the rendered note
-  // would hold a secret-shaped value.
+  // Writes a safe outcome note (--out) of one --kind: request or output
+  // (from validated --findings), develop (from job results and the
+  // developer's status and problem code only) or published (--pr). Exit 1
+  // if the rendered note would hold a secret-shaped value.
   'safe-note'(args) {
     const flags = parseFlags(args);
     const notes = {
       request: () => requestNote(flags.stage, flags.findings),
+      output: () => outputNote(flags.stage, flags.findings),
       develop: () =>
         developNote({
           implementResult: flags['job-result'],

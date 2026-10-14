@@ -1,7 +1,8 @@
-// Request guard for the pipeline engine: an issue (the request) that carries
-// something shaped like a credential never reaches the model. The engine
-// stops before the agent step and reports which field and which kind of
-// secret it saw, never the value.
+// Secret guard for the pipeline engine's request: an issue that carries
+// something shaped like a credential never reaches the model; the engine
+// stops before the agent step. The agent's output is scanned with the same
+// patterns (engine-output-scan.mjs). Either way the engine reports which
+// field and which kind of secret it saw, never the value.
 //
 // Pure: no I/O.
 

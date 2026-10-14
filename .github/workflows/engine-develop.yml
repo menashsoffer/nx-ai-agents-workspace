@@ -239,6 +239,18 @@ jobs:
           git switch -c "$BRANCH"
           git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
 
+      # Nothing the agent wrote goes on with a secret in it: its JSON, the
+      # publishable parts of its patch, or the commits that would be pushed.
+      - name: Scan the agent's output and the commits to push
+        env:
+          BASE: ${{ needs.pin.outputs.base }}
+          RESULT: ${{ needs.implement.outputs.result }}
+        run: |
+          printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-output --stage develop \
+            --result "$RUNNER_TEMP/result.json" --patch "$RUNNER_TEMP/in/changes.patch" --fail=true
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-commits --base "$BASE" --fail=true
+
       - id: attest
         env:
           BASE: ${{ needs.pin.outputs.base }}

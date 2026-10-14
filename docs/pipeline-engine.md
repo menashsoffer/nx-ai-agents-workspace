@@ -93,6 +93,13 @@ read` and `issues: read` only, and no secret but the model token. Its
   the engine's own prompt file at the pinned commit. Every note, spec, plan,
   PR title and PR body is scanned for secret-shaped values right before it
   is written.
+- **The agent's output is scanned before it is published**
+  (`engine-output-scan.mjs`): the planner's JSON before any comment; the
+  developer's JSON and every publishable part of its patch (commit subject,
+  body and author, file names, diff headers, added lines) in the `check`
+  job and again in publish; the commits that would be pushed (author,
+  committer, subject, body) after `git am`, in both jobs. A finding stops
+  publishing and posts a note that names only engine-made fields and kinds.
 - **Deterministic publishing.** No model runs in publish. It applies the
   patch, pushes `issue-<n>-<slug>` and opens a draft PR with `gh pr create
 --draft`. It never runs target code. Only a person can mark it ready,
