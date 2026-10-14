@@ -66,6 +66,14 @@ export const profileCommands = {
     setOutput('has_setup', String(profile.commands.setup.length > 0));
     setOutput('has_checks', String(profile.checks.length > 0));
     setOutput('has_verify', String(profile.commands.verify.length > 0));
+    const programs = [
+      ...profile.commands.setup,
+      ...profile.commands.verify,
+    ].map(([program]) => program);
+    setOutput(
+      'uses_corepack',
+      String(programs.includes('pnpm') || programs.includes('corepack')),
+    );
   },
 
   // Engine prompt + profile section + run context + untrusted issue data.
