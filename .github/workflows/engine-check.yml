@@ -147,9 +147,14 @@ jobs:
             sudo mkdir -p /opt/pipeline-engine/corepack
             sudo env "PATH=$PATH" COREPACK_HOME=/opt/pipeline-engine/corepack corepack install
           fi
+          # The engine and the profile run from a root-owned folder: under
+          # $RUNNER_TEMP (writable by the runner user) they could be swapped.
+          sudo mkdir -p /opt/pipeline-engine
+          sudo cp -R "$RUNNER_TEMP/engine" /opt/pipeline-engine/engine
+          sudo cp "$RUNNER_TEMP/profile.json" /opt/pipeline-engine/profile.json
           node_root=$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")
-          sudo chown -R root:root "$node_root" "$RUNNER_TEMP/engine" "$RUNNER_TEMP/profile.json"
-          sudo chmod -R go-w "$node_root" "$RUNNER_TEMP/engine" "$RUNNER_TEMP/profile.json"
+          sudo chown -R root:root "$node_root" /opt/pipeline-engine
+          sudo chmod -R go-w "$node_root" /opt/pipeline-engine
           folder=$(dirname "$node_root")
           while [[ "$folder" != "/" ]]; do
             sudo chown root:root "$folder"; sudo chmod go-w "$folder"; folder=$(dirname "$folder")
@@ -158,15 +163,15 @@ jobs:
           sudo sh -c 'rm -f /etc/sudoers.d/*'
           if sudo -n true 2>/dev/null; then echo "::error::sudo is still available"; exit 1; fi
 
-      # One trusted process resolves every program to a protected absolute
-      # path, then runs setup and verify as children by those paths
-      # (engine-verify-commands.mjs). It refuses unprotected programs. The
-      # last step of the job.
+      # One trusted process checks that its own files, the profile and every
+      # program (each with every folder above it) are protected, resolves the
+      # programs to absolute paths, then runs setup and verify as children by
+      # those paths (engine-verify-commands.mjs). The last step of the job.
       - name: Run the profile's setup and verify commands (no secrets)
         if: ${{ steps.profile.outputs.has_verify == 'true' }}
         env:
           COREPACK_HOME: ${{ steps.profile.outputs.uses_corepack == 'true' && '/opt/pipeline-engine/corepack' || '' }}
-        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" verify-target --profile "$RUNNER_TEMP/profile.json"
+        run: node /opt/pipeline-engine/engine/.github/scripts/engine.mjs verify-target --profile /opt/pipeline-engine/profile.json
 
   check:
     needs: [pin, verify]

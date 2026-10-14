@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  inputProblems,
   protectionProblems,
   resolveProgram,
   resolvePrograms,
@@ -190,4 +191,48 @@ test('runVerification: the exit codes decide, by the planned paths only', () => 
   assert.deepEqual(runVerification({ ...plan, spawn: spawn([7]) }), [
     'setup command failed (7): pnpm install --frozen-lockfile',
   ]);
+});
+
+test('inputProblems: the engine files and the profile, every folder above them', () => {
+  const fileSystem = fakeFileSystem({
+    '/opt/pipeline-engine/engine/engine.mjs': {
+      uid: 0,
+      mode: 0o644,
+      kind: 'file',
+    },
+    '/opt/pipeline-engine/profile.json': { uid: 0, mode: 0o644, kind: 'file' },
+    '/home/runner/work/_temp/engine/engine.mjs': {
+      uid: 0,
+      mode: 0o644,
+      kind: 'file',
+    },
+    '/home/runner/work/_temp/engine': { uid: 0, mode: 0o755, kind: 'folder' },
+    '/home/runner/work/_temp': { uid: 1001, mode: 0o755, kind: 'folder' },
+    '/home/runner/work': { uid: 1001, mode: 0o755, kind: 'folder' },
+    '/home/runner': { uid: 1001, mode: 0o750, kind: 'folder' },
+  });
+  assert.deepEqual(
+    inputProblems(
+      [
+        '/opt/pipeline-engine/engine/engine.mjs',
+        '/opt/pipeline-engine/profile.json',
+      ],
+      fileSystem,
+      'engine',
+    ),
+    [],
+  );
+  // root-owned files under a folder the runner user owns can still be swapped
+  assert.deepEqual(
+    inputProblems(
+      ['/home/runner/work/_temp/engine/engine.mjs'],
+      fileSystem,
+      'engine',
+    ),
+    [
+      'engine: /home/runner/work/_temp is not owned by root',
+      'engine: /home/runner/work is not owned by root',
+      'engine: /home/runner is not owned by root',
+    ],
+  );
 });

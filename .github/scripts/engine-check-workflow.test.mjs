@@ -66,15 +66,29 @@ test('check verify job: the policy stops a change before target code runs', () =
   const lock = stepIndex(verify, /sudo sh -c 'rm -f \/etc\/sudoers\.d\/\*'/);
   const orchestrator = stepIndex(
     verify,
-    /engine\.mjs" verify-target --profile/,
+    /engine\.mjs"? verify-target --profile/,
   );
   assert.ok(guard < apply && apply < lock && lock < orchestrator);
   const lockRun = verify.steps[lock].run;
   // node's install folder, the engine and the profile, then every folder
   // above node up to /, become root-owned and not writable by others
+  // the engine and the profile are copied to a root-owned folder, and the
+  // orchestrator runs from there
   assert.match(
     lockRun,
-    /chown -R root:root "\$node_root" "\$RUNNER_TEMP\/engine" "\$RUNNER_TEMP\/profile\.json"/,
+    /sudo cp -R "\$RUNNER_TEMP\/engine" \/opt\/pipeline-engine\/engine/,
+  );
+  assert.match(
+    lockRun,
+    /sudo cp "\$RUNNER_TEMP\/profile\.json" \/opt\/pipeline-engine\/profile\.json/,
+  );
+  assert.match(
+    lockRun,
+    /chown -R root:root "\$node_root" \/opt\/pipeline-engine/,
+  );
+  assert.equal(
+    verify.steps[orchestrator].run,
+    'node /opt/pipeline-engine/engine/.github/scripts/engine.mjs verify-target --profile /opt/pipeline-engine/profile.json',
   );
   assert.match(
     lockRun,

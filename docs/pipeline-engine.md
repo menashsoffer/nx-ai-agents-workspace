@@ -61,12 +61,15 @@ model token.
   (target code) on its own runner, through a trusted orchestrator. Before
   any target code, the toolchain is prepared (corepack and the target's pnpm,
   into a root-owned `COREPACK_HOME`), then node's install folder and every
-  folder above it, the engine and the profile become root-owned and not
-  writable by others, and sudo and Docker access are removed (the step fails
-  if sudo stays). Then one engine process (`verify-target`) resolves every
-  program, node included, to an absolute path once, and refuses to run
-  anything unless each path and every folder above it is root-owned and not
-  writable by group or others, and it does not run as root itself
+  folder above it become root-owned and not writable by others, the engine
+  and the profile are copied to root-owned `/opt/pipeline-engine` (under
+  `$RUNNER_TEMP` they could be swapped), and sudo and Docker access are
+  removed (the step fails if sudo stays). Then one engine process
+  (`verify-target`), started from `/opt/pipeline-engine`, refuses to run
+  anything unless its own script files, the profile and every program (node
+  included, resolved to an absolute path once) are root-owned and not
+  writable by group or others, every folder above them included, and it
+  does not run as root itself
   (`engine-programs.mjs`). It runs every setup and verify command as a child
   by that path, with a PATH of those protected folders only, and decides from
   the exit codes. A setup command that replaces a `node` shim or rewrites the
