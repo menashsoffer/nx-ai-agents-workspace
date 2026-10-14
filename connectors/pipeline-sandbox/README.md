@@ -15,7 +15,7 @@ to the sandbox exists yet**: the owner copies these files there by hand.
 
 The workflows are thin adapters: they have no steps, only `uses:` calls to
 the engine's reusable workflows, all pinned to one engine commit
-(`c654385e64bb096b961210686fce1fd276d63439`, the head of the profile
+(`80c0874459d91fe5e55076915a67f55ad403bc4a`, the head of the profile
 branch). The same commit is passed as `engine-commit`, and the engine checks
 both against GitHub's OIDC claims. The engine takes the repository and the
 issue from the workflow context, never from the issue text.
@@ -75,26 +75,40 @@ follow; in the sandbox none of them exist:
 ## Coexistence with direct Claude workflows
 
 The sandbox may also run its own Claude workflows (for example the standard
-`claude.yml` that answers `@claude`, or an automatic review). Before copying
-the connector, run the coexistence check on a checkout of the sandbox:
+`claude.yml` that answers `@claude`, or an automatic review). Run the
+coexistence check **before copying**, on the candidate the copy would
+produce: the sandbox's existing workflows plus the connector's.
 
 ```sh
-node .github/scripts/connector-coexistence.mjs <sandbox>/.github/workflows
+node .github/scripts/connector-coexistence.mjs \
+  --existing <sandbox>/.github/workflows \
+  --connector connectors/pipeline-sandbox/.github/workflows
 ```
 
-It fails when another workflow runs on issue label changes (it would also
-run on the pipeline's `stage:*` labels), on a push of an `issue-<n>-*`
-branch, reads `PIPELINE_APP_PRIVATE_KEY`, passes `secrets: inherit`, calls
-the engine outside the connector or shares its concurrency groups. It warns
-when a direct Claude job can push branches (it could push to an
+After copying, the same check runs on the installed folder:
+`node .github/scripts/connector-coexistence.mjs <sandbox>/.github/workflows`.
+
+It fails when:
+
+- an existing workflow has a connector file's name (the copy would
+  overwrite it);
+- another workflow runs on issue label changes and not every job filters
+  out the pipeline's `stage:*` labels. A job counts as filtered when its
+  `if:` holds `!startsWith(github.event.label.name, 'stage:')`, matches one
+  named non-stage label, or skips `labeled` events, with no `||`;
+- another workflow runs on a push of an `issue-<n>-*` branch, reads
+  `PIPELINE_APP_PRIVATE_KEY`, passes `secrets: inherit`, calls the engine
+  outside the connector or shares its concurrency groups.
+
+It warns when a direct Claude job can push branches (it could push to an
 `issue-<n>-*` branch the engine publishes) or answers on pipeline issues.
 The standard `claude.yml` passes with those two warnings
-(`connector-coexistence.test.mjs`); the sandbox's actual workflows were not
+(`connector-coexistence.test.mjs`). The sandbox's actual workflows were not
 available here and have not been checked.
 
 ## Installing it (the owner, by hand)
 
-1. Run the coexistence check above and resolve its errors.
+1. Run the coexistence check above on the candidate and resolve its errors.
 2. Copy these files into the sandbox's default branch.
 3. Install the pipeline GitHub App on the sandbox (issues, contents and pull
    requests: write; no `workflows` permission).

@@ -1,9 +1,15 @@
 // Run: pnpm test:pipeline
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  candidateOf,
   checkCoexistence,
+  filtersStageLabels,
   readWorkflowFolder,
 } from './connector-coexistence.mjs';
 
@@ -127,4 +133,106 @@ test('a missing connector workflow is an error', () => {
     'pipeline-develop.yml: the connector workflow is missing',
     'pipeline-plan.yml: the connector workflow is missing',
   ]);
+});
+
+test('label triggers that filter out the stage labels are no conflict', () => {
+  const onLabels = (...conditions) => ({
+    on: { issues: { types: ['labeled'] } },
+    jobs: Object.fromEntries(
+      conditions.map((condition, index) => [
+        `job${index}`,
+        { if: condition, steps: [] },
+      ]),
+    ),
+  });
+  const conflicts = (workflow) =>
+    checkCoexistence({ ...connector, 'triage.yml': workflow }).errors;
+  for (const condition of [
+    "${{ !startsWith(github.event.label.name, 'stage:') }}",
+    "github.event.label.name == 'bug' && github.actor != 'x'",
+    "github.event.action != 'labeled'",
+  ]) {
+    assert.ok(filtersStageLabels(condition), condition);
+    assert.deepEqual(conflicts(onLabels(condition)), [], condition);
+  }
+  for (const condition of [
+    undefined,
+    "github.event.label.name == 'stage:planned'",
+    "!startsWith(github.event.label.name, 'stage:') || true",
+    "contains(github.event.label.name, 'bug')",
+  ])
+    assert.equal(filtersStageLabels(condition), false, String(condition));
+  // every job must filter: one unfiltered job is enough for a conflict
+  assert.match(
+    conflicts(
+      onLabels(
+        "!startsWith(github.event.label.name, 'stage:')",
+        "github.event.issue.state == 'open'",
+      ),
+    ).join(),
+    /no job filters them out/,
+  );
+  assert.match(conflicts(onLabels()).join(), /runs on issue label changes/);
+});
+
+test('before copying: the candidate is the existing workflows plus the connector', () => {
+  const existing = {
+    'claude.yml': directClaude(),
+    'claude-code-review.yml': directReview,
+  };
+  const candidate = candidateOf(existing, connector);
+  assert.deepEqual(candidate.errors, []);
+  assert.deepEqual(Object.keys(candidate.workflows).sort(), [
+    'claude-code-review.yml',
+    'claude.yml',
+    'pipeline-develop.yml',
+    'pipeline-plan.yml',
+  ]);
+  assert.deepEqual(checkCoexistence(candidate.workflows).errors, []);
+  // an existing file of the same name would be overwritten
+  const clash = candidateOf({ 'pipeline-plan.yml': directClaude() }, connector);
+  assert.deepEqual(clash.errors, [
+    "pipeline-plan.yml: an existing workflow would be overwritten by the connector's",
+  ]);
+  // the same connector file already installed is no clash
+  assert.deepEqual(candidateOf(connector, connector).errors, []);
+});
+
+test('the CLI checks a candidate before copying', () => {
+  const existingFolder = mkdtempSync(join(tmpdir(), 'existing-workflows-'));
+  const connectorFolder = fileURLToPath(
+    new URL(
+      '../../connectors/pipeline-sandbox/.github/workflows/',
+      import.meta.url,
+    ),
+  );
+  const script = fileURLToPath(
+    new URL('./connector-coexistence.mjs', import.meta.url),
+  );
+  const check = () =>
+    spawnSync(
+      process.execPath,
+      [script, '--existing', existingFolder, '--connector', connectorFolder],
+      { encoding: 'utf8' },
+    );
+  writeFileSync(
+    join(existingFolder, 'claude.yml'),
+    JSON.stringify(directClaude()),
+  );
+  const clean = check();
+  assert.equal(clean.status, 0, clean.stdout);
+  assert.match(
+    clean.stdout,
+    /warning: claude\.yml: a direct Claude job can push branches/,
+  );
+  writeFileSync(
+    join(existingFolder, 'labels.yml'),
+    JSON.stringify(directClaude({ on: { issues: { types: ['labeled'] } } })),
+  );
+  const conflict = check();
+  assert.equal(conflict.status, 1);
+  assert.match(
+    conflict.stdout,
+    /error: labels\.yml: runs on issue label changes/,
+  );
 });

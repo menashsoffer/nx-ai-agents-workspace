@@ -194,7 +194,9 @@ end to end, and the sandbox has no CI, review gates or router after the
 draft PR (its README lists what is missing). `connector-sandbox.test.mjs`
 checks the pins and each call's permissions, secrets and inputs against the
 engine workflows; `connector-sandbox-pilot.test.mjs` runs the sandbox profile
-through the policy and the checks; `connector-coexistence.mjs` checks a
+through the policy and the checks; `connector-coexistence.mjs` checks,
+before the copy, the candidate made of a target's existing workflows and the
+connector's, and after it the installed folder; it checks a
 target's own Claude workflows against the connector.
 
 ## Known limits
