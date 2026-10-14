@@ -83,6 +83,10 @@ test('regression: setup replaces the node shim with exit 0, a failing verify sti
 });
 
 test('regression: a setup that overwrites the engine does not get to run', () => {
+  // The engine copy and the profile sit in a temporary folder the test user
+  // can write, as $RUNNER_TEMP is on a runner. Whatever the runtime (node
+  // root-owned or not), the orchestrator must refuse before setup runs:
+  // in the workflow it runs from root-owned /opt/pipeline-engine instead.
   const run = prepared(
     ({ engine }) =>
       `import { readdirSync, writeFileSync } from 'node:fs';\nfor (const file of readdirSync(${JSON.stringify(engine)}))\n  writeFileSync(${JSON.stringify(engine)} + '/' + file, 'process.exit(0);\\n');\n`,
@@ -97,6 +101,15 @@ test('regression: a setup that overwrites the engine does not get to run', () =>
     },
   );
   assert.equal(result.status, 1, result.stdout);
+  assert.match(
+    result.stdout,
+    /Verify: engine: .*(is not owned by root|is writable by group or others)/,
+  );
+  assert.match(
+    result.stdout,
+    /Verify: profile: .*(is not owned by root|is writable by group or others)/,
+  );
+  // setup never ran: the engine is untouched
   assert.notEqual(
     readFileSync(join(run.engine, 'engine.mjs'), 'utf8'),
     'process.exit(0);\n',

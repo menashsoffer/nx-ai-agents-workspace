@@ -7,13 +7,29 @@
 // after setup ran, and the children's PATH holds only those protected
 // folders. A setup command that rewrites the engine, the profile or a
 // program shim on disk cannot turn a failing verify command into a pass.
-// The workflow makes the toolchain and the engine root-owned and removes
-// sudo and Docker access before this step; the orchestrator refuses to run
-// otherwise (fail closed).
+// The workflow copies the engine and the profile to a root-owned folder,
+// makes the toolchain root-owned and removes sudo and Docker access before
+// this step; the orchestrator checks its own files, the profile and every
+// program (each with every folder above it) and refuses to run otherwise
+// (fail closed).
 import { spawnSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
+import { join, resolve as resolvePath } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseFlags } from './pipeline-lib.mjs';
 import { failOn, readJson } from './engine-cli-support.mjs';
-import { realFileSystem, resolvePrograms } from './engine-programs.mjs';
+import {
+  inputProblems,
+  realFileSystem,
+  resolvePrograms,
+} from './engine-programs.mjs';
+
+/** The engine's own script files: what this process runs from. */
+const SCRIPTS_DIRECTORY = fileURLToPath(new URL('.', import.meta.url));
+const engineFiles = () =>
+  readdirSync(SCRIPTS_DIRECTORY)
+    .filter((name) => name.endsWith('.mjs'))
+    .map((name) => join(SCRIPTS_DIRECTORY, name));
 
 /** `corepack enable` is done by the workflow before the lock, not here. */
 const isPrepared = ([program, first]) =>
@@ -62,8 +78,8 @@ export function runVerification({ steps, environment, spawn }) {
 
 export const verifyCommands = {
   // Runs the profile's setup, then verify commands, in the target (cwd).
-  // Exit 1 before running anything when a program is not protected, and on
-  // the first failing command.
+  // Exit 1 before running anything when the engine's own files, the profile
+  // or a program is not protected, and on the first failing command.
   'verify-target'(args) {
     const flags = parseFlags(args);
     const { commands } = readJson(flags.profile);
@@ -82,7 +98,19 @@ export const verifyCommands = {
           userId: process.getuid?.(),
         }),
     });
-    failOn(plan.problems, 'Verify');
+    // Every reason to refuse, reported together, before anything runs.
+    failOn(
+      [
+        ...inputProblems(engineFiles(), realFileSystem, 'engine'),
+        ...inputProblems(
+          [resolvePath(flags.profile)],
+          realFileSystem,
+          'profile',
+        ),
+        ...plan.problems,
+      ],
+      'Verify',
+    );
     failOn(runVerification({ ...plan, spawn: spawnSync }), 'Verify');
     console.log(`verify: ${plan.steps.length} command(s) passed`);
   },

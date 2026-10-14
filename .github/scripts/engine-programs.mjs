@@ -90,3 +90,20 @@ export function resolvePrograms(names, { searchPath, fileSystem, userId }) {
   ];
   return { paths, folders, problems: [...new Set(problems)] };
 }
+
+/**
+ * Why the orchestrator's own inputs could be replaced: each of `paths` (its
+ * script files and the profile) must be protected like a program, every
+ * folder above included. Problems are labelled with `label`.
+ */
+export function inputProblems(paths, fileSystem, label) {
+  return [
+    ...new Set(
+      paths.flatMap((path) =>
+        protectionProblems(path, fileSystem).map(
+          (problem) => `${label}: ${problem}`,
+        ),
+      ),
+    ),
+  ];
+}
