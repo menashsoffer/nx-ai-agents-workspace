@@ -1,0 +1,256 @@
+name: Pipeline engine · Plan
+
+# Reusable plan stage (workflow_call). A target repository's connector calls
+# it on `issues: labeled` (stage:qualified), pinned to an engine commit:
+#   uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-plan.yml@<commit>
+#   with: { engine-commit: <the same commit>, ... }
+# pin: GitHub's OIDC claims must show that exact commit and file, called by
+# the repository in the workflow context; the target (repository, issue)
+# comes from that context only, never from the issue's content.
+# plan: two separate checkouts. The engine (scripts, prompts) at the pinned
+# commit, moved out of the workspace; the target at its default branch as
+# the agent's working directory. That split is not isolation: the read-only
+# agent can still read the whole runner. The target profile
+# (.github/pipeline-profile.json) is validated and given to the prompt. A
+# request holding a secret-shaped value never reaches the agent.
+# publish: deterministic. Checks the JSON against the profile's policy
+# (engine-protected paths + the profile's additions, writable paths,
+# limits), posts the spec and plan comments and sets stage:planned, or
+# appends a problem outcome note.
+# See docs/pipeline-engine.md.
+on:
+  workflow_call:
+    inputs:
+      engine-commit:
+        description: The engine commit the connector pinned in `uses:` (40 hex characters).
+        type: string
+        required: true
+      bot-login:
+        description: The pipeline App's bot login in the target (marker comments count only from it).
+        type: string
+        required: true
+      app-client-id:
+        description: The pipeline App's client id (its token writes the comments and labels).
+        type: string
+        required: true
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+      PIPELINE_APP_PRIVATE_KEY:
+        required: true
+
+permissions: {}
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      commit: ${{ steps.pin.outputs.commit }}
+      repository: ${{ steps.pin.outputs.repository }}
+      issue: ${{ steps.pin.outputs.issue }}
+    steps:
+      - name: Require a full engine commit
+        env:
+          ENGINE_COMMIT: ${{ inputs.engine-commit }}
+        run: |
+          [[ "$ENGINE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::engine-commit must be a full commit"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: menashsoffer/nx-ai-agents-workspace
+          ref: ${{ inputs.engine-commit }}
+          path: .engine
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: pin
+        env:
+          ENGINE_COMMIT: ${{ inputs.engine-commit }}
+        run: |
+          node .engine/.github/scripts/engine.mjs pin --stage plan --workflow engine-plan.yml \
+            --engine-commit "$ENGINE_COMMIT" --engine-dir .engine
+
+  plan:
+    needs: pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: pipeline-engine-${{ needs.pin.outputs.repository }}-${{ needs.pin.outputs.issue }}-plan
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      result: ${{ steps.claude.outputs.structured_output }}
+      request_findings: ${{ steps.request.outputs.findings }}
+    steps:
+      # The engine leaves the workspace before the target is checked out, so
+      # the agent's tree holds only the target.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: menashsoffer/nx-ai-agents-workspace
+          ref: ${{ needs.pin.outputs.commit }}
+          path: .engine
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            .github/prompts
+      - run: mv .engine "$RUNNER_TEMP/engine" && mkdir -p "$RUNNER_TEMP/pipeline"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The target profile from the default branch (fails when missing or invalid).
+      - id: profile
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" load-profile --target-dir . --out "$RUNNER_TEMP/pipeline/profile.json"
+
+      - name: Collect issue, earlier spec/plan and comments (untrusted data)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIPELINE_BOT_LOGIN: ${{ inputs.bot-login }}
+          N: ${{ needs.pin.outputs.issue }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" collect-issue "$N" "$RUNNER_TEMP/pipeline/issue.json"
+
+      - id: request
+        name: Stop if the request holds a secret
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-request --stage plan "$RUNNER_TEMP/pipeline/issue.json"
+
+      - id: prompt
+        if: ${{ steps.request.outputs.is_clean == 'true' }}
+        env:
+          BOT: ${{ inputs.bot-login }}
+          N: ${{ needs.pin.outputs.issue }}
+          REPOSITORY: ${{ needs.pin.outputs.repository }}
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" render-prompt \
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/engine-plan.md" \
+            --profile "$RUNNER_TEMP/pipeline/profile.json" \
+            --context "repository=$REPOSITORY" \
+            --context "issue=#$N" \
+            --context "pipeline bot login=$BOT" \
+            --issue "$RUNNER_TEMP/pipeline/issue.json"
+
+      - id: claude
+        if: ${{ steps.request.outputs.is_clean == 'true' }}
+        uses: anthropics/claude-code-action@9171db3e57d6a3140a37ddc2ba92788584e0ead6 # v1.0.234
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          allowed_bots: ${{ inputs.bot-login }}
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --max-turns 40
+            --allowedTools "Read,Glob,Grep"
+            --disallowedTools "Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch"
+            --json-schema '{"type":"object","additionalProperties":false,"required":["status","problem","questions","details","signals","spec","plan"],"properties":{"status":{"type":"string","enum":["planned","problem"]},"problem":{"type":"string","enum":["none","spec_questions","scope_split","protected_surface","needs_secrets_ci_infra","embedded_instructions"]},"questions":{"type":"array","items":{"type":"string"}},"details":{"type":"array","items":{"type":"string"}},"signals":{"type":"object","additionalProperties":false,"required":["embedded_instructions","needs_secrets_ci_infra"],"properties":{"embedded_instructions":{"type":"boolean"},"needs_secrets_ci_infra":{"type":"boolean"}}},"spec":{"type":"object","additionalProperties":false,"required":["goal","acceptance_criteria","rtl_accessibility","test_plan","out_of_scope","assumptions"],"properties":{"goal":{"type":"string"},"acceptance_criteria":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["text","testable"],"properties":{"text":{"type":"string"},"testable":{"type":"boolean"}}}},"rtl_accessibility":{"type":"string"},"test_plan":{"type":"string"},"out_of_scope":{"type":"string"},"assumptions":{"type":"string"}}},"plan":{"type":"object","additionalProperties":false,"required":["approach","changes","tests","risks","definition_of_done"],"properties":{"approach":{"type":"string"},"changes":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["project","file","change","lines"],"properties":{"project":{"type":"string"},"file":{"type":"string"},"change":{"type":"string"},"lines":{"type":"integer","minimum":0}}}},"tests":{"type":"string"},"risks":{"type":"string"},"definition_of_done":{"type":"string"}}}}}'
+
+  publish:
+    needs: [pin, plan]
+    if: ${{ always() && needs.pin.result == 'success' && needs.plan.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: pipeline-engine-${{ needs.pin.outputs.repository }}-${{ needs.pin.outputs.issue }}-plan-publish
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      # Only the target's profile, from its default branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/pipeline-profile.json
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: menashsoffer/nx-ai-agents-workspace
+          ref: ${{ needs.pin.outputs.commit }}
+          path: .engine
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            .github/prompts
+
+      # The prompt version from the pinned engine, never from the agent's job.
+      - id: version
+        run: node .engine/.github/scripts/engine.mjs prompt-version --prompt .engine/.github/prompts/engine-plan.md --prompt-name engine-plan.md
+
+      - run: node .engine/.github/scripts/engine.mjs load-profile --target-dir . --out "$RUNNER_TEMP/profile.json"
+
+      # Scoped to the calling repository (the target) only.
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ inputs.app-client-id }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-issues: write
+
+      - name: Report a request that held a secret (stage:routing)
+        if: ${{ needs.plan.outputs.request_findings != '' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          FINDINGS: ${{ needs.plan.outputs.request_findings }}
+        run: |
+          node .engine/.github/scripts/engine.mjs safe-note --kind request --stage plan --findings "$FINDINGS" \
+            --prompt .engine/.github/prompts/engine-plan.md --prompt-name engine-plan.md --out outcome.json
+          node .engine/.github/scripts/pipeline.mjs outcome "$N" outcome.json
+
+      # The planner's JSON becomes comments: scan it before anything is posted.
+      - id: output
+        if: ${{ needs.plan.outputs.request_findings == '' }}
+        env:
+          RESULT: ${{ needs.plan.outputs.result }}
+        run: |
+          printf '%s' "$RESULT" > result.json
+          node .engine/.github/scripts/engine.mjs check-output --stage plan --result result.json
+
+      - name: Report agent output that held a secret (stage:routing)
+        if: ${{ steps.output.outputs.is_clean == 'false' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          FINDINGS: ${{ steps.output.outputs.findings }}
+        run: |
+          node .engine/.github/scripts/engine.mjs safe-note --kind output --stage plan --findings "$FINDINGS" \
+            --prompt .engine/.github/prompts/engine-plan.md --prompt-name engine-plan.md --out outcome.json
+          node .engine/.github/scripts/pipeline.mjs outcome "$N" outcome.json
+
+      - id: classify
+        if: ${{ steps.output.outputs.is_clean == 'true' }}
+        env:
+          JOB_RESULT: ${{ needs.plan.result }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          node .engine/.github/scripts/engine.mjs classify-plan --job-result "$JOB_RESULT" \
+            --profile "$RUNNER_TEMP/profile.json" --result result.json \
+            --prompt-version "$VERSION" --out outcome.json \
+            --spec-out spec-comment.md --plan-out plan-comment.md
+
+      - name: Post spec and plan, then move to stage:planned
+        if: ${{ steps.classify.outputs.result == 'success' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          PIPELINE_BOT_LOGIN: ${{ inputs.bot-login }}
+        run: |
+          node .engine/.github/scripts/engine.mjs check-text --text spec-comment.md --text plan-comment.md --text outcome.json
+          node .engine/.github/scripts/pipeline.mjs upsert-comment "$N" spec spec-comment.md
+          node .engine/.github/scripts/pipeline.mjs upsert-comment "$N" plan plan-comment.md
+          node .engine/.github/scripts/pipeline.mjs outcome "$N" outcome.json
+          node .engine/.github/scripts/pipeline.mjs set-stage "$N" stage:planned
+
+      - name: Report the problem (stage:routing)
+        if: ${{ steps.classify.outputs.result == 'problem' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+        run: |
+          node .engine/.github/scripts/engine.mjs check-text --text outcome.json
+          node .engine/.github/scripts/pipeline.mjs outcome "$N" outcome.json

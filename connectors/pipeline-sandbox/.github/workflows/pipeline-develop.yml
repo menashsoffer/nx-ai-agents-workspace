@@ -1,0 +1,61 @@
+name: Pipeline · Develop, check and publish (engine)
+
+# Thin event adapter: on stage:planned it calls the engine's develop stage
+# (the agent, read-only, with the model token only), its check stage (no
+# agent, no secrets: verify, then the attestation) and its publish stage
+# (deterministic: checks again, then a draft PR, or an outcome note), all in
+# one run and pinned to the same engine commit. No steps run here.
+# Source: menashsoffer/nx-ai-agents-workspace, connectors/pipeline-sandbox.
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  develop:
+    if: ${{ github.event.label.name == 'stage:planned' && !github.event.issue.pull_request && github.event.issue.state == 'open' }}
+    uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-develop.yml@dd3421076573b2948a7774418ef08bd6cec8225c
+    permissions:
+      contents: read
+      issues: read
+      id-token: write
+    with:
+      engine-commit: dd3421076573b2948a7774418ef08bd6cec8225c
+      bot-login: ${{ vars.PIPELINE_BOT_LOGIN }}
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+  check:
+    needs: develop
+    if: ${{ needs.develop.result == 'success' && fromJSON(needs.develop.outputs.result || '{}').status == 'done' }}
+    uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-check.yml@dd3421076573b2948a7774418ef08bd6cec8225c
+    permissions:
+      contents: read
+      issues: read
+      id-token: write
+    with:
+      engine-commit: dd3421076573b2948a7774418ef08bd6cec8225c
+      base: ${{ needs.develop.outputs.base }}
+      branch: ${{ needs.develop.outputs.branch }}
+      result: ${{ needs.develop.outputs.result }}
+
+  publish:
+    needs: [develop, check]
+    if: ${{ always() && needs.develop.result != 'skipped' }}
+    uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-publish.yml@dd3421076573b2948a7774418ef08bd6cec8225c
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      engine-commit: dd3421076573b2948a7774418ef08bd6cec8225c
+      bot-login: ${{ vars.PIPELINE_BOT_LOGIN }}
+      app-client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+      develop-result: ${{ needs.develop.result }}
+      result: ${{ needs.develop.outputs.result }}
+      request-findings: ${{ needs.develop.outputs.request_findings }}
+      patch-rejected: ${{ needs.develop.outputs.patch_rejected || needs.check.outputs.patch_rejected }}
+      base: ${{ needs.develop.outputs.base }}
+      attestation: ${{ needs.check.outputs.attestation }}
+    secrets:
+      PIPELINE_APP_PRIVATE_KEY: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}

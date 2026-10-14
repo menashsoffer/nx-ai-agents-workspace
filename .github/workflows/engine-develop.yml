@@ -1,0 +1,209 @@
+name: Pipeline engine · Develop
+
+# Reusable develop stage (workflow_call). The connector calls it on
+# `issues: labeled` (stage:planned), pinned to an engine commit, then calls
+# engine-check.yml and engine-publish.yml in the same run with this
+# workflow's outputs. Nothing produced on the agent's runner is trusted: the
+# agent can read and write that whole machine (keeping the engine outside
+# the workspace only keeps it out of the patch; it is not isolation).
+# pin: OIDC pin check as in engine-plan.yml, then the target's base: its
+# default-branch head, read from the GitHub API before the agent job starts.
+# implement: the agent works on that base with a READ-ONLY token and its
+# model token only; its prompt and allowed commands come from the target
+# profile. Its commits leave the job as a patch artifact, checked by
+# engine-check.yml on other runners.
+# See docs/pipeline-engine.md.
+on:
+  workflow_call:
+    inputs:
+      engine-commit:
+        description: The engine commit the connector pinned in `uses:` (40 hex characters).
+        type: string
+        required: true
+      bot-login:
+        description: The pipeline App's bot login in the target (the spec and plan count only from it).
+        type: string
+        required: true
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+    outputs:
+      result:
+        description: The developer's JSON (status, pr_title, pr_body, blocked_reason, problem).
+        value: ${{ jobs.implement.outputs.result }}
+      request_findings:
+        description: '`field:kind,...` when the request held a secret (the agent did not run); publish validates each entry.'
+        value: ${{ jobs.implement.outputs.request_findings }}
+      patch_rejected:
+        value: ${{ jobs.implement.outputs.patch_rejected }}
+      base:
+        description: The target base the pin job read from GitHub (check and publish use it).
+        value: ${{ jobs.pin.outputs.base }}
+      branch:
+        description: The branch name for the issue, set by the pin job.
+        value: ${{ jobs.pin.outputs.branch }}
+
+permissions: {}
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      commit: ${{ steps.pin.outputs.commit }}
+      repository: ${{ steps.pin.outputs.repository }}
+      issue: ${{ steps.pin.outputs.issue }}
+      base: ${{ steps.pin.outputs.base }}
+      branch: ${{ steps.pin.outputs.branch }}
+    steps:
+      - name: Require a full engine commit
+        env:
+          ENGINE_COMMIT: ${{ inputs.engine-commit }}
+        run: |
+          [[ "$ENGINE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::engine-commit must be a full commit"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: menashsoffer/nx-ai-agents-workspace
+          ref: ${{ inputs.engine-commit }}
+          path: .engine
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: pin
+        env:
+          ENGINE_COMMIT: ${{ inputs.engine-commit }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node .engine/.github/scripts/engine.mjs pin --stage develop --workflow engine-develop.yml \
+            --engine-commit "$ENGINE_COMMIT" --engine-dir .engine --resolve-base
+
+  implement:
+    needs: pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: pipeline-engine-${{ needs.pin.outputs.repository }}-${{ needs.pin.outputs.issue }}-develop
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      result: ${{ steps.claude.outputs.structured_output }}
+      request_findings: ${{ steps.request.outputs.findings }}
+      patch_rejected: ${{ steps.guard.outputs.rejected }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: menashsoffer/nx-ai-agents-workspace
+          ref: ${{ needs.pin.outputs.commit }}
+          path: .engine
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            .github/prompts
+      - run: mv .engine "$RUNNER_TEMP/engine" && mkdir -p "$RUNNER_TEMP/pipeline" "$RUNNER_TEMP/out"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.pin.outputs.base }}
+          persist-credentials: false
+
+      # The target profile from the default branch, before the agent runs.
+      - id: profile
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" load-profile --target-dir . --out "$RUNNER_TEMP/pipeline/profile.json"
+
+      - if: ${{ hashFiles('.nvmrc') != '' }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Run the profile's setup commands
+        if: ${{ steps.profile.outputs.has_setup == 'true' }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" run-commands --kind setup --profile "$RUNNER_TEMP/pipeline/profile.json"
+
+      - name: Collect issue, spec and plan (untrusted data)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIPELINE_BOT_LOGIN: ${{ inputs.bot-login }}
+          N: ${{ needs.pin.outputs.issue }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" collect-issue "$N" "$RUNNER_TEMP/pipeline/issue.json"
+
+      - id: request
+        name: Stop if the request holds a secret
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-request --stage develop "$RUNNER_TEMP/pipeline/issue.json"
+
+      - name: Create working branch
+        if: ${{ steps.request.outputs.is_clean == 'true' }}
+        env:
+          BRANCH: ${{ needs.pin.outputs.branch }}
+        run: |
+          git switch -c "$BRANCH"
+          git config user.name "pipeline-agent"
+          git config user.email "pipeline-agent@users.noreply.github.com"
+
+      - id: prompt
+        if: ${{ steps.request.outputs.is_clean == 'true' }}
+        env:
+          BRANCH: ${{ needs.pin.outputs.branch }}
+          N: ${{ needs.pin.outputs.issue }}
+          REPOSITORY: ${{ needs.pin.outputs.repository }}
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" render-prompt \
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/engine-develop.md" \
+            --profile "$RUNNER_TEMP/pipeline/profile.json" \
+            --context "repository=$REPOSITORY" \
+            --context "issue=#$N" \
+            --context "branch=$BRANCH" \
+            --issue "$RUNNER_TEMP/pipeline/issue.json"
+
+      - id: claude
+        if: ${{ steps.request.outputs.is_clean == 'true' }}
+        uses: anthropics/claude-code-action@9171db3e57d6a3140a37ddc2ba92788584e0ead6 # v1.0.234
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          allowed_bots: ${{ inputs.bot-login }}
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --max-turns 150
+            --allowedTools "${{ steps.profile.outputs.allowed_tools }}"
+            --disallowedTools "WebFetch,WebSearch,Bash(git push:*),Bash(gh:*),Bash(curl:*),Bash(wget:*)"
+            --json-schema '{"type":"object","additionalProperties":false,"required":["status","pr_title","pr_body","blocked_reason","problem"],"properties":{"status":{"type":"string","enum":["done","blocked"]},"pr_title":{"type":"string","maxLength":100},"pr_body":{"type":"string"},"blocked_reason":{"type":"string"},"problem":{"type":"string","enum":["none","verify_failed","plan_gap","protected_surface","needs_secrets_ci_infra","agent_error"]}}}'
+
+      - name: Summarize agent failure
+        if: ${{ failure() && steps.claude.outcome == 'failure' }}
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/agent-failure-summary.mjs" "$EXECUTION_FILE"
+
+      - name: Package commits as a patch
+        if: ${{ fromJSON(steps.claude.outputs.structured_output || '{}').status == 'done' }}
+        env:
+          BASE: ${{ needs.pin.outputs.base }}
+        run: |
+          git checkout -- .claude 2>/dev/null || true
+          git clean -fdq -- .claude
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add -A
+            git commit -m "Add remaining agent changes"
+          fi
+          git -c core.quotePath=false format-patch "$BASE..HEAD" --stdout > "$RUNNER_TEMP/out/changes.patch"
+          test -s "$RUNNER_TEMP/out/changes.patch" || { echo "::error::The agent produced no commits"; exit 1; }
+
+      # Early answer only: the agent controls this runner. The check job and
+      # engine-publish.yml repeat it on fresh runners.
+      - id: guard
+        if: ${{ fromJSON(steps.claude.outputs.structured_output || '{}').status == 'done' }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-patch --profile "$RUNNER_TEMP/pipeline/profile.json" "$RUNNER_TEMP/out/changes.patch"
+
+      - if: ${{ fromJSON(steps.claude.outputs.structured_output || '{}').status == 'done' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: engine-develop-patch
+          path: ${{ runner.temp }}/out/changes.patch
+          retention-days: 7

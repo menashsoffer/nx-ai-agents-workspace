@@ -32,6 +32,7 @@ apps/
 libs/
   ui/              design system: React components + Tailwind tokens + Storybook (deployed at /storybook/)
   shared/utils/    framework-free TS helpers (@starter/shared-utils)
+connectors/        a target repository's pipeline-engine connector files (copied there by the owner)
 tools/
   vite-config/     defineAppConfig(): shared Vite/Vitest config for every app
   workspace-plugin/ local Nx generators (pnpm new:*)

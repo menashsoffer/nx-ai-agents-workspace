@@ -1,0 +1,281 @@
+name: Pipeline engine · Publish
+
+# Reusable publish stage (workflow_call). The connector calls it in the same
+# run as engine-develop.yml (needs: develop, if: always()) and passes the
+# develop outputs. Publishing is deterministic: no model runs here, and the
+# only writes are a branch push and a DRAFT pull request ("Closes #n") in
+# the target, or an outcome note. It never executes target code. Notes are
+# built from closed sets (engine-notes.mjs): nothing from the agent's
+# runner is posted as it is, and every note and PR text is scanned for
+# secrets before it is written.
+# pin: as in engine-plan.yml. publish: before it mints the App token, checks
+# the develop attestation against this target and engine commit, the base
+# the develop pin job read from GitHub (an older base fails), the hash of
+# the patch it downloads, and the patch against the target profile's policy;
+# checks that the base is on the default branch. After applying the patch
+# it requires the attested tree, then pushes and opens the draft PR.
+# See docs/pipeline-engine.md.
+on:
+  workflow_call:
+    inputs:
+      engine-commit:
+        description: The engine commit the connector pinned in `uses:` (40 hex characters).
+        type: string
+        required: true
+      bot-login:
+        description: The pipeline App's bot login in the target.
+        type: string
+        required: true
+      app-client-id:
+        description: The pipeline App's client id (its token pushes the branch and opens the PR).
+        type: string
+        required: true
+      develop-result:
+        description: needs.<develop job>.result in the connector (success, failure, cancelled).
+        type: string
+        required: true
+      result:
+        description: The develop outputs.result (the developer's JSON).
+        type: string
+        default: ''
+      request-findings:
+        description: The develop outputs.request_findings (`field:kind,...`, validated here).
+        type: string
+        default: ''
+      patch-rejected:
+        type: string
+        default: ''
+      base:
+        description: The develop outputs.base (read from GitHub by the develop pin job).
+        type: string
+        default: ''
+      attestation:
+        description: The develop outputs.attestation (built by the develop check job).
+        type: string
+        default: ''
+    secrets:
+      PIPELINE_APP_PRIVATE_KEY:
+        required: true
+
+permissions: {}
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      commit: ${{ steps.pin.outputs.commit }}
+      repository: ${{ steps.pin.outputs.repository }}
+      issue: ${{ steps.pin.outputs.issue }}
+    steps:
+      - name: Require a full engine commit
+        env:
+          ENGINE_COMMIT: ${{ inputs.engine-commit }}
+        run: |
+          [[ "$ENGINE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::engine-commit must be a full commit"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: menashsoffer/nx-ai-agents-workspace
+          ref: ${{ inputs.engine-commit }}
+          path: .engine
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - id: pin
+        env:
+          ENGINE_COMMIT: ${{ inputs.engine-commit }}
+        run: |
+          node .engine/.github/scripts/engine.mjs pin --stage publish --workflow engine-publish.yml \
+            --engine-commit "$ENGINE_COMMIT" --engine-dir .engine
+
+  publish:
+    needs: pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: pipeline-engine-${{ needs.pin.outputs.repository }}-${{ needs.pin.outputs.issue }}-develop-publish
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: menashsoffer/nx-ai-agents-workspace
+          ref: ${{ needs.pin.outputs.commit }}
+          path: .engine
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            .github/prompts
+      - run: mv .engine "$RUNNER_TEMP/engine"
+
+      # The prompt version from the pinned engine, never from the agent's job.
+      - id: version
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" prompt-version --prompt "$RUNNER_TEMP/engine/.github/prompts/engine-develop.md" --prompt-name engine-develop.md
+
+      - id: ready
+        name: Decide whether there is a checked patch to publish
+        env:
+          DEVELOP_RESULT: ${{ inputs.develop-result }}
+          RESULT: ${{ inputs.result }}
+          REQUEST_FINDINGS: ${{ inputs.request-findings }}
+          ATTESTATION: ${{ inputs.attestation }}
+          REJECTED: ${{ inputs.patch-rejected }}
+        run: |
+          status=$(printf '%s' "$RESULT" | jq -r 'try .status // ""' 2>/dev/null || true)
+          if [[ -z "$REQUEST_FINDINGS" && "$DEVELOP_RESULT" == "success" && "$status" == "done" && -n "$ATTESTATION" && "$REJECTED" != "true" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: ${{ steps.ready.outputs.publish == 'true' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: engine-develop-patch
+          path: ${{ runner.temp }}/in
+
+      # What the agent wrote becomes a branch, a PR or an outcome note: scan
+      # its JSON and its patch for secrets first.
+      - id: output
+        if: ${{ !cancelled() && inputs.request-findings == '' }}
+        env:
+          RESULT: ${{ inputs.result }}
+        run: |
+          printf '%s' "$RESULT" > "$RUNNER_TEMP/result.json"
+          patch=()
+          [[ -f "$RUNNER_TEMP/in/changes.patch" ]] && patch=(--patch "$RUNNER_TEMP/in/changes.patch")
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-output --stage develop \
+            --result "$RUNNER_TEMP/result.json" "${patch[@]}"
+
+      # Before any write token exists: the attestation, the pinned base, the
+      # patch hash and the protected paths.
+      - id: attestation
+        if: ${{ steps.ready.outputs.publish == 'true' }}
+        env:
+          ATTESTATION: ${{ inputs.attestation }}
+          BASE: ${{ inputs.base }}
+          ENGINE_COMMIT: ${{ needs.pin.outputs.commit }}
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-attestation --stage publish \
+            --engine-commit "$ENGINE_COMMIT" --base "$BASE" --patch "$RUNNER_TEMP/in/changes.patch"
+
+      # The target at the attested base. Only its profile is read here; no
+      # target code runs in this job.
+      - if: ${{ steps.ready.outputs.publish == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.attestation.outputs.base }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require the base on the default branch
+        if: ${{ steps.ready.outputs.publish == 'true' }}
+        env:
+          BASE: ${{ steps.attestation.outputs.base }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: git merge-base --is-ancestor "$BASE" "refs/remotes/origin/$DEFAULT_BRANCH"
+
+      - id: profile
+        if: ${{ steps.ready.outputs.publish == 'true' }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" load-profile --target-dir . --out "$RUNNER_TEMP/profile.json"
+
+      - id: guard
+        if: ${{ steps.ready.outputs.publish == 'true' }}
+        run: node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-patch --profile "$RUNNER_TEMP/profile.json" "$RUNNER_TEMP/in/changes.patch"
+
+      # Scoped to the calling repository (the target) only. No `workflows`
+      # permission, so it can never push a workflow change.
+      - id: app
+        if: ${{ !cancelled() }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ inputs.app-client-id }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+
+      - name: Push the branch and open a draft PR
+        id: push
+        if: ${{ steps.ready.outputs.publish == 'true' && steps.output.outputs.is_clean == 'true' && steps.guard.outcome == 'success' && steps.attestation.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          BRANCH: ${{ steps.attestation.outputs.branch }}
+          BASE: ${{ steps.attestation.outputs.base }}
+          ATTESTATION: ${{ inputs.attestation }}
+          RESULT: ${{ inputs.result }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          ENGINE_COMMIT: ${{ needs.pin.outputs.commit }}
+        run: |
+          if [[ -n "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[].number')" ]]; then
+            echo "::notice::An open PR already exists for $BRANCH; nothing to do."
+            exit 0
+          fi
+          jq -r '.pr_title' <<<"$RESULT" > "$RUNNER_TEMP/pr-title.txt"
+          { jq -r '.pr_body' <<<"$RESULT"; echo; echo "Closes #$N"; echo;
+            echo "<sub>Implemented by Claude with prompt $VERSION, pipeline engine ${ENGINE_COMMIT:0:12}. Draft until the review gates pass. Only a human can approve and merge.</sub>"; } > "$RUNNER_TEMP/pr-body.md"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-text --text "$RUNNER_TEMP/pr-title.txt" --text "$RUNNER_TEMP/pr-body.md"
+          git config user.name "pipeline-agent"
+          git config user.email "pipeline-agent@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git am --keep-cr "$RUNNER_TEMP/in/changes.patch"
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-tree
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" check-commits --base "$BASE" --fail=true
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          echo "::add-mask::$auth"
+          GIT_CONFIG_COUNT=1 \
+            GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+            GIT_CONFIG_VALUE_0="Authorization: basic $auth" \
+            git push --force "https://github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
+          url=$(gh pr create --repo "$GITHUB_REPOSITORY" --draft --base "$DEFAULT_BRANCH" \
+            --head "$BRANCH" --title "$(cat "$RUNNER_TEMP/pr-title.txt")" --body-file "$RUNNER_TEMP/pr-body.md")
+          pr=${url##*/}
+          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" set-stage "$pr" stage:building
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" safe-note --kind published --stage develop --pr "$pr" \
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/engine-develop.md" --prompt-name engine-develop.md --out "$RUNNER_TEMP/outcome.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" set-stage "$N" stage:building
+
+      - name: Report agent output that held a secret (stage:routing)
+        if: ${{ !cancelled() && steps.output.outputs.is_clean == 'false' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          FINDINGS: ${{ steps.output.outputs.findings }}
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" safe-note --kind output --stage develop --findings "$FINDINGS" \
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/engine-develop.md" --prompt-name engine-develop.md --out "$RUNNER_TEMP/outcome.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
+
+      - name: Report a request that held a secret (stage:routing)
+        if: ${{ !cancelled() && inputs.request-findings != '' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          FINDINGS: ${{ inputs.request-findings }}
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" safe-note --kind request --stage develop --findings "$FINDINGS" \
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/engine-develop.md" --prompt-name engine-develop.md --out "$RUNNER_TEMP/outcome.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"
+
+      - name: Report the problem (stage:routing)
+        if: ${{ !cancelled() && inputs.request-findings == '' && steps.output.outputs.is_clean == 'true' && steps.push.outcome != 'success' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ needs.pin.outputs.issue }}
+          RESULT: ${{ inputs.result }}
+          DEVELOP_RESULT: ${{ inputs.develop-result }}
+          PUSH: ${{ steps.push.outcome }}
+          REJECTED: ${{ inputs.patch-rejected == 'true' || steps.guard.outcome == 'failure' }}
+        run: |
+          node "$RUNNER_TEMP/engine/.github/scripts/engine.mjs" safe-note --kind develop --stage develop --job-result "$DEVELOP_RESULT" \
+            --publish-result "${PUSH:-skipped}" --result "$RUNNER_TEMP/result.json" --patch-rejected "$REJECTED" \
+            --prompt "$RUNNER_TEMP/engine/.github/prompts/engine-develop.md" --prompt-name engine-develop.md --out "$RUNNER_TEMP/outcome.json"
+          node "$RUNNER_TEMP/engine/.github/scripts/pipeline.mjs" outcome "$N" "$RUNNER_TEMP/outcome.json"

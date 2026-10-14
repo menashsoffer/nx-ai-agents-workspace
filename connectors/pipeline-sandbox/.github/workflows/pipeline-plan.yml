@@ -1,0 +1,29 @@
+name: Pipeline · Plan (engine)
+
+# Thin event adapter: on stage:qualified it calls the pipeline engine's plan
+# stage, pinned to one engine commit (the same commit twice: in `uses:` and
+# in `engine-commit`; the engine verifies both from GitHub's OIDC claims).
+# The engine takes this repository and the issue from the workflow context.
+# No steps run here. Source: menashsoffer/nx-ai-agents-workspace,
+# connectors/pipeline-sandbox (docs/pipeline-engine.md).
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  plan:
+    if: ${{ github.event.label.name == 'stage:qualified' && !github.event.issue.pull_request && github.event.issue.state == 'open' }}
+    uses: menashsoffer/nx-ai-agents-workspace/.github/workflows/engine-plan.yml@dd3421076573b2948a7774418ef08bd6cec8225c
+    permissions:
+      contents: read
+      issues: read
+      id-token: write
+    with:
+      engine-commit: dd3421076573b2948a7774418ef08bd6cec8225c
+      bot-login: ${{ vars.PIPELINE_BOT_LOGIN }}
+      app-client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      PIPELINE_APP_PRIVATE_KEY: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
