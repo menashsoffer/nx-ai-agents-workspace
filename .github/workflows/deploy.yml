@@ -54,7 +54,7 @@ jobs:
       - name: Build the static code-map/ folder
         run: node .github/scripts/code-map.mjs "$RUNNER_TEMP/graphify/graphify-out" code-map
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: code-map
           path: code-map
@@ -76,7 +76,7 @@ jobs:
       # No dependency cache in the deploy path (cache poisoning).
       - uses: ./.github/actions/setup
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: code-map
           path: apps/site/public/code-map
@@ -84,7 +84,7 @@ jobs:
       # Same script as the pages-e2e tests: what was tested is what ships.
       - run: pnpm pages:build
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pages
           path: dist/pages
@@ -102,7 +102,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: .github/scripts
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: pages
           path: pages
