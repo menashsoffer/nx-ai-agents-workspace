@@ -72,3 +72,4 @@ apps/site/public/code-map
 # concurrently with another task's graph build.
 **/.vitepress/.temp
 **/.vitepress/cache
+.vitest

@@ -3,6 +3,7 @@ import { copyFileSync, existsSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { nxReadySignal } from '@nx/vite/plugins/nx-ready-signal.plugin';
 import type { Plugin, UserConfig } from 'vite';
 
 export interface AppConfigOptions {
@@ -50,7 +51,7 @@ export function defineAppConfig(
     cacheDir: join(workspaceRoot, 'node_modules/.vite', projectPath),
     server: { port, host: 'localhost' },
     preview: { port: port + 100, host: 'localhost' },
-    plugins: [react(), tailwindcss(), spaFallback()],
+    plugins: [react(), tailwindcss(), spaFallback(), nxReadySignal()],
     build: {
       outDir: './dist',
       emptyOutDir: true,
