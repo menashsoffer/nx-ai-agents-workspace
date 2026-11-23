@@ -41,6 +41,7 @@ flowchart TD
   w_project_sync["project-sync.yml"]
   w_protected_approve["protected-approve.yml"]
   w_restart["restart.yml"]
+  w_review["review.yml"]
   w_router["router.yml"]
   w_template_smoke["template-smoke.yml"]
   h_src_inbox --> w_inbox
@@ -76,6 +77,7 @@ flowchart TD
   w_ci -->|"on success"| w_approval
   w_ci -->|"on failure"| w_ci_failed
   w_ci -->|"workflow_run"| w_protected_approve
+  w_ci -->|"on success"| w_review
   w_develop -->|"opens PR"| w_ci
   w_develop -->|"opens PR"| w_preview
   w_develop -->|"opens PR"| w_template_smoke
@@ -88,12 +90,17 @@ flowchart TD
   w_protected_approve -->|"opens PR"| w_preview
   w_protected_approve -->|"issue_comment"| w_restart
   w_protected_approve -->|"opens PR"| w_template_smoke
+  w_review -->|"issue_comment / review"| w_approval
+  w_review -->|"issue_comment"| w_disposition
+  w_review -->|"issue_comment"| w_protected_approve
+  w_review -->|"issue_comment"| w_restart
   w_approval -.-> s_stage_routing
   w_ci_failed -.-> s_stage_routing
   w_develop -.-> s_stage_routing
   w_done -.-> s_stage_routing
   w_plan -.-> s_stage_routing
   w_protected_approve -.-> s_stage_routing
+  w_review -.-> s_stage_routing
   w_router -.-> s_stage_needs_attention
   classDef stage fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
   classDef workflow fill:#f5f5f5,stroke:#616161,color:#212121
@@ -102,11 +109,11 @@ flowchart TD
   classDef human fill:#fff8e1,stroke:#ff8f00,color:#e65100
   classDef loop fill:#e0f2f1,stroke:#00897b,color:#004d40
   class s_stage_awaiting_approval,s_stage_building,s_stage_done,s_stage_human_approval,s_stage_inbox,s_stage_planned,s_stage_qualified stage
-  class w_approval,w_ci,w_ci_failed,w_develop,w_disposition,w_done,w_inbox,w_plan,w_preview,w_project_sync,w_protected_approve,w_restart,w_router,w_template_smoke workflow
+  class w_approval,w_ci,w_ci_failed,w_develop,w_disposition,w_done,w_inbox,w_plan,w_preview,w_project_sync,w_protected_approve,w_restart,w_review,w_router,w_template_smoke workflow
   class g_project_sync_stage_,g_restart_stage_ gate
   class s_stage_needs_attention,s_stage_routing problem
   class h_src_inbox,h_stage_awaiting_approval,h_stage_human_approval,h_stage_needs_attention human
-  linkStyle 45,46,47,48,49,50,51 stroke:#c62828,stroke-width:2px
+  linkStyle 50,51,52,53,54,55,56,57 stroke:#c62828,stroke-width:2px
   linkStyle 0,1,2,3,4 stroke:#ff8f00
 ```
 
@@ -127,6 +134,7 @@ flowchart TD
 | `project-sync.yml`      | `issues: labeled`, `pull_request: labeled`                                                                              | `stage:done`, any `stage:*` except `stage:inbox`                      | -                                                                         | -                                                   |
 | `protected-approve.yml` | `issue_comment: created`, `workflow_run: CI requested`                                                                  | -                                                                     | `stage:awaiting-approval`, `stage:building`, `stage:routing` (escalation) | `outcome`, `protectedApproval`, `protectedApproved` |
 | `restart.yml`           | `issue_comment: created`, `issues: labeled/unlabeled`, `pull_request: labeled/unlabeled`                                | `stage:needs-attention`, any `stage:*` except `stage:needs-attention` | `stage:planned`, `stage:qualified`                                        | `restartHint`, `route`, `state`                     |
+| `review.yml`            | `workflow_dispatch`, `workflow_run: CI completed`                                                                       | run `success`                                                         | `stage:routing` (escalation)                                              | `outcome`, `reviewFinding`                          |
 | `router.yml`            | `issues: labeled`, `pull_request: labeled`, `workflow_dispatch`                                                         | `stage:routing`                                                       | `stage:planned`, `stage:qualified`, `stage:needs-attention` (escalation)  | `route`                                             |
 | `template-smoke.yml`    | `pull_request`, `workflow_dispatch`                                                                                     | -                                                                     | -                                                                         | -                                                   |
 
@@ -134,21 +142,22 @@ flowchart TD
 
 Upserted: one comment per item, edited in place. Appended: a new comment, note or review each time (history).
 
-| Marker                                | Key                 | Upserted by (workflow, `pipeline.mjs` command)         | Appended by                                                                                                                                                                                                                      |
-| ------------------------------------- | ------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<!-- pipeline:disposition`           | `disposition`       | -                                                      | `disposition.yml` (`disposition`)                                                                                                                                                                                                |
-| `<!-- pipeline:disposition-reply -->` | `dispositionReply`  | -                                                      | `disposition.yml` (`disposition`)                                                                                                                                                                                                |
-| `<!-- pipeline:gates -->`             | `gates`             | `approval.yml` (`approval`)                            | -                                                                                                                                                                                                                                |
-| `<!-- pipeline:human-approval -->`    | `humanApproval`     | `approval.yml` (`approval`)                            | -                                                                                                                                                                                                                                |
-| `<!-- pipeline:outcome`               | `outcome`           | -                                                      | `approval.yml` (`approval`), `ci-failed.yml` (`ci-failed`), `develop.yml` (`outcome`, `protected-request`), `done.yml` (`pr-closed`), `plan.yml` (`outcome`), `protected-approve.yml` (`protected-decision`, `protected-status`) |
-| `<!-- pipeline:plan -->`              | `plan`              | `plan.yml` (`upsert-comment`)                          | -                                                                                                                                                                                                                                |
-| `<!-- pipeline:preview -->`           | `preview`           | `preview.yml` (`upsert-comment`)                       | -                                                                                                                                                                                                                                |
-| `<!-- pipeline:protected-approval`    | `protectedApproval` | -                                                      | `develop.yml` (`protected-request`), `protected-approve.yml` (`protected-status`)                                                                                                                                                |
-| `<!-- pipeline:protected-approved`    | `protectedApproved` | -                                                      | `protected-approve.yml` (`protected-decision`)                                                                                                                                                                                   |
-| `<!-- pipeline:restart-hint -->`      | `restartHint`       | -                                                      | `restart.yml` (`restart-hint`)                                                                                                                                                                                                   |
-| `<!-- pipeline:route`                 | `route`             | -                                                      | `restart.yml` (`restart`), `router.yml` (`route`)                                                                                                                                                                                |
-| `<!-- pipeline:spec -->`              | `spec`              | `plan.yml` (`upsert-comment`)                          | -                                                                                                                                                                                                                                |
-| `<!-- pipeline-state -->`             | `state`             | `approval.yml` (`approval`), `restart.yml` (`restart`) | -                                                                                                                                                                                                                                |
+| Marker                                | Key                 | Upserted by (workflow, `pipeline.mjs` command)         | Appended by                                                                                                                                                                                                                                                       |
+| ------------------------------------- | ------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<!-- pipeline:disposition`           | `disposition`       | -                                                      | `disposition.yml` (`disposition`)                                                                                                                                                                                                                                 |
+| `<!-- pipeline:disposition-reply -->` | `dispositionReply`  | -                                                      | `disposition.yml` (`disposition`)                                                                                                                                                                                                                                 |
+| `<!-- pipeline:gates -->`             | `gates`             | `approval.yml` (`approval`)                            | -                                                                                                                                                                                                                                                                 |
+| `<!-- pipeline:human-approval -->`    | `humanApproval`     | `approval.yml` (`approval`)                            | -                                                                                                                                                                                                                                                                 |
+| `<!-- pipeline:outcome`               | `outcome`           | -                                                      | `approval.yml` (`approval`), `ci-failed.yml` (`ci-failed`), `develop.yml` (`outcome`, `protected-request`), `done.yml` (`pr-closed`), `plan.yml` (`outcome`), `protected-approve.yml` (`protected-decision`, `protected-status`), `review.yml` (`review-publish`) |
+| `<!-- pipeline:plan -->`              | `plan`              | `plan.yml` (`upsert-comment`)                          | -                                                                                                                                                                                                                                                                 |
+| `<!-- pipeline:preview -->`           | `preview`           | `preview.yml` (`upsert-comment`)                       | -                                                                                                                                                                                                                                                                 |
+| `<!-- pipeline:protected-approval`    | `protectedApproval` | -                                                      | `develop.yml` (`protected-request`), `protected-approve.yml` (`protected-status`)                                                                                                                                                                                 |
+| `<!-- pipeline:protected-approved`    | `protectedApproved` | -                                                      | `protected-approve.yml` (`protected-decision`)                                                                                                                                                                                                                    |
+| `<!-- pipeline:restart-hint -->`      | `restartHint`       | -                                                      | `restart.yml` (`restart-hint`)                                                                                                                                                                                                                                    |
+| `<!-- pipeline:review-finding`        | `reviewFinding`     | -                                                      | `review.yml` (`review-publish`)                                                                                                                                                                                                                                   |
+| `<!-- pipeline:route`                 | `route`             | -                                                      | `restart.yml` (`restart`), `router.yml` (`route`)                                                                                                                                                                                                                 |
+| `<!-- pipeline:spec -->`              | `spec`              | `plan.yml` (`upsert-comment`)                          | -                                                                                                                                                                                                                                                                 |
+| `<!-- pipeline-state -->`             | `state`             | `approval.yml` (`approval`), `restart.yml` (`restart`) | -                                                                                                                                                                                                                                                                 |
 
 ## Stages with no label gate, by design
 
