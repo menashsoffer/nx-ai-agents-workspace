@@ -11,6 +11,7 @@ const GUIDE_LABELS: Record<string, string> = {
   architecture: 'ארכיטקטורה',
   conventions: 'קונבנציות',
   pipeline: 'ה-pipeline',
+  agents: 'סוכנים',
   'pipeline-map': 'מפת ה-pipeline',
   security: 'אבטחה',
 };

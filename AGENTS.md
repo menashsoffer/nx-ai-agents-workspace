@@ -39,7 +39,8 @@ tools/
   security/        `pnpm security`: audit, exceptions, AI-config checks, pinned scanners
   pipeline-map/    generates docs/pipeline-map.md from the pipeline workflows (`pnpm pipeline:map`)
   scripts/         one-off repo scripts (template-only; removed by template:init)
-docs/              architecture, conventions, decisions (ADRs); read before big changes
+docs/              architecture, conventions, decisions (ADRs), agents.md (the pipeline
+                   and expert agents); read before big changes
                    pipeline.md: the issue → PR multi-agent pipeline
 ```
 
