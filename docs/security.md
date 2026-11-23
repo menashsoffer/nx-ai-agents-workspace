@@ -43,17 +43,17 @@ Never treat `2` as passed; CI is authoritative.
 
 ## 2. GitHub Actions workflows
 
-| #   | Requirement                                                                                                                                                            | Enforced by                | Type   |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------ |
-| W1  | Top-level `permissions: contents: read` (or `{}`); broader scopes only per job; write scopes only on publish jobs (gh-pages, pipeline App tokens)                      | zizmor                     | Gate   |
-| W2  | Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment (local `./` workflows exempt)                                                                   | zizmor                     | Gate   |
-| W3  | `persist-credentials: false` on every checkout                                                                                                                         | zizmor                     | Gate   |
-| W4  | No `${{ }}` expressions inside `run:`; pass values through `env:`                                                                                                      | zizmor                     | Gate   |
-| W5  | No `pull_request_target` / artifact-consuming `workflow_run` (`ci-failed.yml`, `approval.yml` and `protected-approve.yml` are reviewed, artifact-free `workflow_run`s) | zizmor                     | Gate   |
-| W6  | `gh-pages` is written only by `deploy.yml` (main) and `preview.yml` (`pr-*/`); deploy `concurrency` never cancels                                                      | workflow + review          | Review |
-| W7  | Workflows are valid                                                                                                                                                    | actionlint                 | Gate   |
-| W8  | Every job has `timeout-minutes`                                                                                                                                        | actionlint/zizmor + review | Gate   |
-| W9  | No workflow runs on a push of an `issue-<n>-<slug>` branch (every `on: push` has a branch filter that leaves it out; no `on: create`)                                  | `pnpm test:pipeline`       | Gate   |
+| #   | Requirement                                                                                                                                                                          | Enforced by                | Type   |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | ------ |
+| W1  | Top-level `permissions: contents: read` (or `{}`); broader scopes only per job; write scopes only on publish jobs (gh-pages, pipeline App tokens)                                    | zizmor                     | Gate   |
+| W2  | Every `uses:` is pinned to a full commit SHA with a `# vX.Y.Z` comment (local `./` workflows exempt)                                                                                 | zizmor                     | Gate   |
+| W3  | `persist-credentials: false` on every checkout                                                                                                                                       | zizmor                     | Gate   |
+| W4  | No `${{ }}` expressions inside `run:`; pass values through `env:`                                                                                                                    | zizmor                     | Gate   |
+| W5  | No `pull_request_target` / artifact-consuming `workflow_run` (`ci-failed.yml`, `approval.yml`, `protected-approve.yml` and `review.yml` are reviewed, artifact-free `workflow_run`s) | zizmor                     | Gate   |
+| W6  | `gh-pages` is written only by `deploy.yml` (main) and `preview.yml` (`pr-*/`); deploy `concurrency` never cancels                                                                    | workflow + review          | Review |
+| W7  | Workflows are valid                                                                                                                                                                  | actionlint                 | Gate   |
+| W8  | Every job has `timeout-minutes`                                                                                                                                                      | actionlint/zizmor + review | Gate   |
+| W9  | No workflow runs on a push of an `issue-<n>-<slug>` branch (every `on: push` has a branch filter that leaves it out; no `on: create`)                                                | `pnpm test:pipeline`       | Gate   |
 
 zizmor runs **online in CI** (it can then detect impostor commits behind
 pinned SHAs) and **offline locally**. `.github/zizmor.yml` disables exactly one

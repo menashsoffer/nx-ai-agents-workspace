@@ -1,0 +1,192 @@
+name: Pipeline · Review
+
+# The independent Claude review of a pipeline PR (issue #154). After CI
+# passes on a pipeline PR's head, a Claude run that did not write the code
+# compares the diff with the issue's pipeline:spec and pipeline:plan
+# comments: requirements not implemented, missing tests for edge cases the
+# plan lists, correctness and security. Never style.
+# - once per head: the head's `pipeline/review` status records the run;
+# - the agent job has read-only permissions and read-only tools, and never
+#   sees a write token. The publish job (App token) checks its JSON and
+#   posts at most 5 findings as review threads, so `pipeline/gates`
+#   (approval.yml) waits until each is fixed or dispositioned;
+# - no findings: no threads, an outcome note `review: clean`;
+# - a failed run: `pipeline/review` failure, an outcome note (stage
+#   `review`) and stage:routing. The router hands it to a human; there is
+#   no retry loop and no automatic fixing.
+# Manual and Dependabot PRs are skipped. Re-run by hand with
+# workflow_dispatch (a head with a successful review is not reviewed again).
+# W5 (docs/security.md): consumes no artifacts, same-repo PRs only, never
+# executes PR code, loads the prompt and scripts from the default branch.
+# docs/pipeline-review.md, "Claude review".
+on: # zizmor: ignore[dangerous-triggers]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: number
+
+permissions: {}
+
+# One review at a time per PR: a second CI run for the same head waits and
+# then finds the head reviewed.
+concurrency:
+  group: pipeline-pr-${{ github.event.workflow_run.pull_requests[0].number || inputs.pr }}-review
+  cancel-in-progress: false
+
+jobs:
+  decide:
+    # Skips until the pipeline App is configured (docs/pipeline.md).
+    if: >-
+      vars.PIPELINE_APP_CLIENT_ID != '' && vars.PIPELINE_BOT_LOGIN != '' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.pull_requests[0].number))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+      head: ${{ steps.decide.outputs.head }}
+      issue: ${{ steps.decide.outputs.issue }}
+      pr: ${{ github.event.workflow_run.pull_requests[0].number || inputs.pr }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      # Pipeline PR, open, current head, not reviewed yet (review-lib decideReviewRun).
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+          N: ${{ github.event.workflow_run.pull_requests[0].number || inputs.pr }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node .github/scripts/pipeline.mjs review-decide "$N" "$SHA"
+
+  review:
+    needs: decide
+    if: ${{ needs.decide.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Read-only on purpose; a guard test (review-lib.test.mjs) keeps it so.
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      result: ${{ steps.claude.outputs.structured_output }}
+      prompt_version: ${{ steps.prompt.outputs.version }}
+    steps:
+      # The code is read by the agent as data only; nothing from it runs here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.decide.outputs.head }}
+          persist-credentials: false
+
+      # Agent settings, hooks and MCP servers in the PR would run with the
+      # OAuth token; the reviewer uses none of them.
+      - name: Drop agent configuration from the PR checkout
+        run: rm -rf .claude .codex .mcp.json .pipeline
+
+      # The prompt and scripts always come from the default branch, never the PR.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: .pipeline/trusted
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            .github/prompts
+
+      - name: Collect PR, diff, spec, plan and earlier findings (untrusted data)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          N: ${{ needs.decide.outputs.pr }}
+          ISSUE: ${{ needs.decide.outputs.issue }}
+        run: |
+          gh pr view "$N" --repo "$GITHUB_REPOSITORY" --json number,title,body,headRefName,baseRefName,files > .pipeline/pr.json
+          gh pr diff "$N" --repo "$GITHUB_REPOSITORY" > .pipeline/pr.diff
+          node .pipeline/trusted/.github/scripts/pipeline.mjs review-collect "$N" "$ISSUE" .pipeline/issue.json .pipeline/findings.json
+
+      - id: prompt
+        env:
+          N: ${{ needs.decide.outputs.pr }}
+          SHA: ${{ needs.decide.outputs.head }}
+        run: |
+          node .pipeline/trusted/.github/scripts/pipeline.mjs render-prompt \
+            --prompt .pipeline/trusted/.github/prompts/review.md --output prompt \
+            --context "repository=$GITHUB_REPOSITORY" \
+            --context "pull request=#$N" \
+            --context "head commit=$SHA" \
+            --data issue=.pipeline/issue.json \
+            --data pr=.pipeline/pr.json \
+            --data earlier-findings=.pipeline/findings.json \
+            --data diff=.pipeline/pr.diff
+
+      - id: claude
+        uses: anthropics/claude-code-action@9171db3e57d6a3140a37ddc2ba92788584e0ead6 # v1.0.234
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          allowed_bots: ${{ vars.PIPELINE_BOT_LOGIN }}
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          claude_args: >-
+            --max-turns 60
+            --allowedTools "Read,Glob,Grep"
+            --disallowedTools "Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch"
+            --json-schema '{"type":"object","additionalProperties":false,"required":["status","summary","findings"],"properties":{"status":{"type":"string","enum":["clean","findings"]},"summary":{"type":"string"},"findings":{"type":"array","maxItems":5,"items":{"type":"object","additionalProperties":false,"required":["path","line","category","title","scenario"],"properties":{"path":{"type":"string"},"line":{"type":"integer","minimum":1},"category":{"type":"string","enum":["requirement","test","correctness","security"]},"title":{"type":"string"},"scenario":{"type":"string"}}}}}}'
+
+  publish:
+    needs: [decide, review]
+    if: ${{ always() && needs.decide.outputs.run == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      # App token: the review and the outcome note must trigger approval.yml.
+      - id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PIPELINE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PIPELINE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
+          permission-issues: write
+          permission-statuses: write
+
+      - name: Post findings, status and outcome note
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+          N: ${{ needs.decide.outputs.pr }}
+          SHA: ${{ needs.decide.outputs.head }}
+          RESULT: ${{ needs.review.outputs.result }}
+          JOB_RESULT: ${{ needs.review.result }}
+          VERSION: ${{ needs.review.outputs.prompt_version }}
+        run: |
+          printf '%s' "$RESULT" > result.json
+          gh pr diff "$N" --repo "$GITHUB_REPOSITORY" > pr.diff
+          node .github/scripts/pipeline.mjs review-publish "$N" "$SHA" \
+            --result result.json --diff pr.diff --job-result "$JOB_RESULT" \
+            --prompt-version "review.md@${VERSION:-unknown}"

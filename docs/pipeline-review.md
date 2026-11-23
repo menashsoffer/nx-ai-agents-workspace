@@ -2,7 +2,8 @@
 
 ## Review gates and dispositions
 
-CI, the review threads and the Copilot review (when
+CI, the [Claude review](#claude-review) (pipeline PRs), the review threads
+and the Copilot review (when
 [`REQUIRE_COPILOT`](#copilot-review-is-optional) is on) are **required gates on the
 PR's head commit**. Every review thread is either resolved or explicitly
 dispositioned by the repo owner, and one commit status, **`pipeline/gates`**,
@@ -16,11 +17,15 @@ command; pure logic in `evaluateGates`). For the current head all of these
 must hold, checked in this order:
 
 1. **CI**: the `ci` check run succeeded (and the `security` CI job, if it ran).
-2. **Review threads**: no unresolved thread.
-3. **Copilot**: it reviewed this head. Only when `REQUIRE_COPILOT` is `true`;
+2. **Claude review**: a pipeline PR's head has `pipeline/review` = `success`
+   (`review.yml` ran on it, clean or with findings). `failure` (the review run
+   failed) fails this gate. Manual and Dependabot PRs get `success` ("not a
+   pipeline PR"). See [Claude review](#claude-review).
+3. **Review threads**: no unresolved thread.
+4. **Copilot**: it reviewed this head. Only when `REQUIRE_COPILOT` is `true`;
    otherwise this gate is `success` with the detail "not required
    (REQUIRE_COPILOT off)".
-4. **`pipeline/protected-approval`**: a pipeline PR that touches protected
+5. **`pipeline/protected-approval`**: a pipeline PR that touches protected
    paths needs the owner's approval of this exact head (status `success`,
    recomputed by the `approval` command, not just read back). A PR with no
    protected paths, and any PR the pipeline did not open, gets `success`
@@ -34,6 +39,43 @@ as CI is requested so the PR says why it waits. When the gates hold, the
 existing hand-off happens: `stage:human-approval`, PR marked ready (only a PR the
 pipeline opened as a draft; a person's own draft stays a draft), code
 owners requested. Merging stays with a human.
+
+### Claude review
+
+An independent reviewer: a Claude run that did not write the code
+(`review.yml`, prompt `.github/prompts/review.md`, pure logic in
+`review-lib.mjs`). It replaces the automated review that left with the
+Gemini stages ([ADR](decisions/2026-11-23-claude-review-stage.md)).
+
+- **When:** once per head commit of a pipeline PR, after `ci` succeeds and
+  before `approval.yml` hands off. The head's `pipeline/review` status is the
+  record: a head that has one is not reviewed again. Manual and Dependabot
+  PRs are skipped.
+- **What:** it compares the diff with the issue's `pipeline:spec` and
+  `pipeline:plan` comments: requirements not implemented, missing tests for
+  edge cases the plan lists, correctness and security. **No style.** Earlier
+  findings on the PR are passed in, so a resolved one is not raised again.
+- **Read-only agent:** its job has read permissions only, tools `Read`,
+  `Glob`, `Grep`, and the PR's `.claude/`, `.codex/` and `.mcp.json` are
+  deleted from the checkout first. It does not run `pnpm verify`: CI already
+  ran it on the same commit, and running PR code next to the OAuth token
+  would break W5 ([security.md](security.md)). A guard test
+  (`review-workflow.test.mjs`) keeps it so.
+- **Findings:** at most 5, each with a file, a line and a concrete failure
+  scenario. The `publish` job (App token) checks the JSON and posts them as
+  one PR review: a thread per finding on its diff line, or on the file when
+  the line is outside the diff. Findings on files the PR does not change are
+  dropped and listed in the outcome note. Each thread blocks the **Review
+  threads** gate until it is fixed and resolved or
+  [dispositioned](#disposition-owner-only) (id `R-<n>`).
+- **Clean:** no threads, `pipeline/review` = `success` and an outcome note
+  `review: clean at <sha>`. That note re-runs `approval.yml`, so the hand-off
+  waits only for the run itself.
+- **Failed run:** `pipeline/review` = `failure`, an outcome note (stage
+  `review`, `agent_error` or `invalid_output`) and `stage:routing`; the router
+  hands it to a human. There is no retry loop and no automatic fixing. Re-run
+  **Pipeline · Review** by hand (Actions → run workflow, PR number): it
+  reviews the current head again unless that head already passed.
 
 ### Copilot review is optional
 
@@ -63,13 +105,14 @@ no workflow trigger for resolving a thread by hand: resolve through
 number) after resolving one manually.
 
 The bot keeps one **Review gates** comment per PR (`<!-- pipeline:gates -->`,
-edited in place): each gate, the open Copilot threads with their ids, and the
-dispositions on record.
+edited in place): each gate, the open finding threads (Copilot and Claude
+review) with their ids, and the dispositions on record.
 
 ### Thread ids
 
-Copilot threads: `C-<n>`, `n` = database id of the thread's top comment,
-listed in the Review gates comment.
+Copilot threads: `C-<n>`; Claude review threads: `R-<n>`. `n` is the
+database id of the thread's top comment; both are listed in the Review gates
+comment.
 
 ### `/disposition` (owner only)
 
@@ -85,7 +128,8 @@ Three ways to post it, all the owner's **new** comments (never an edit):
    lines) first. A quote block at the top of the body, and blank lines, are
    ignored; the command follows it. A quote in the middle or at the end is
    not.
-3. **A reply inside the finding's own review thread** (a Copilot thread).
+3. **A reply inside the finding's own review thread** (a Copilot or Claude
+   review thread).
    The short form leaves the id
    out, because the thread names it: `/disposition <kind> <reason>`. The long
    form works too, but its id must be the thread's. One command per reply. In a
@@ -105,7 +149,7 @@ The only comment that does not count is an edit of an existing one.
 - Accepted only from `vars.PIPELINE_OWNER_LOGIN` and only from a `User`
   account. Not `author_association`, not the PR author. Unset variable: nobody.
   Others' comments are ignored without a reply. Same-repo branches only.
-- The id must be an open Copilot thread on the PR.
+- The id must be an open finding thread on the PR (Copilot or Claude review).
 - On acceptance the bot resolves the finding's review thread (so the
   ruleset's thread-resolution requirement is met), then appends one record
   note per finding: `<!-- pipeline:disposition id=… kind=… head=<sha> by=<login> comment=<id> -->`
@@ -113,7 +157,7 @@ The only comment that does not count is an edit of an existing one.
 
 ### What a disposition records
 
-A record names the head the owner saw and the thread id (`C-<n>`). Accepting
+A record names the head the owner saw and the thread id (`C-<n>` or `R-<n>`). Accepting
 it resolves that thread, so the gates stop counting it; the record stays on
 the PR and the Review gates comment lists it with the owner's reason. Only
 records made by the owner count, and only the bot's own notes are read.

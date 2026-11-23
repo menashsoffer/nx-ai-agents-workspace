@@ -67,6 +67,15 @@ import {
 } from './pipeline-lib.mjs';
 import { decideExternal } from './router-external.mjs';
 import {
+  REVIEW_CONTEXT,
+  checkReview,
+  decideReviewRun,
+  earlierFindings,
+  renderFindingComment,
+  renderReviewBody,
+  reviewOutcome,
+} from './review-lib.mjs';
+import {
   NAME,
   OWNER,
   api,
@@ -183,6 +192,10 @@ function setStatus(context, sha, { state, description }, statuses) {
 
 const setGatesStatus = (sha, gates, statuses) =>
   setStatus(GATES_CONTEXT, sha, gates, statuses);
+
+/** The head's latest `pipeline/review` state (review.yml), or null. */
+const reviewStateOf = (statuses) =>
+  statuses.find((s) => s.context === REVIEW_CONTEXT)?.state ?? null;
 
 // ------------------------------------------------------------ protected approval
 
@@ -443,12 +456,16 @@ const commands = {
     setStatus(PROTECTED_CONTEXT, head, protectedEval, statuses);
     const records = parseDispositionNotes(comments, bot);
     const kinds = dispositionKinds({ records, ownerLogin: ownerLogin() });
+    // review.yml's `pipeline/review` on this head; only pipeline PRs need it.
+    const reviewState = reviewStateOf(statuses);
     const decision = evaluateApproval({
       prState: p.state,
       labels,
       headSha: head,
       ciConclusion: conclusionOf('ci') ?? null,
       securityJobConclusion: conclusionOf('security'),
+      reviewRequired: protectedEval.pipelinePr,
+      reviewState,
       unresolvedThreads: threads.filter((t) => !t.isResolved).length,
       copilotReviewedHead,
       requireCopilot: requireCopilot(),
@@ -465,11 +482,11 @@ const commands = {
         `gates: ${decision.gates.state} (${decision.gates.description})`,
       );
       setGatesStatus(head, decision.gates, statuses);
-      const open = classifyThreads(threads)
-        .filter((t) => t.source === 'copilot' && !t.thread.isResolved)
+      const open = classifyThreads(threads, { botLogin: bot })
+        .filter((t) => t.id && !t.thread.isResolved)
         .map((t) => ({
           id: t.id,
-          source: 'Copilot',
+          source: t.source === 'review' ? 'Claude review' : 'Copilot',
           text: `${t.thread.path ?? ''}${t.thread.line ? `:${t.thread.line}` : ''} ${t.thread.first?.body ?? ''}`,
         }));
       const body = renderGatesComment({
@@ -554,7 +571,7 @@ const commands = {
         MARKERS.humanApproval,
         [
           `### Ready for human approval`,
-          `CI is green, ${requireCopilot() ? `Copilot has reviewed \`${head.slice(0, 7)}\`, ` : ''}all threads are resolved and \`${GATES_CONTEXT}\` is green.`,
+          `CI is green, ${protectedEval.pipelinePr ? `Claude has reviewed \`${head.slice(0, 7)}\`, ` : ''}${requireCopilot() ? `Copilot has reviewed \`${head.slice(0, 7)}\`, ` : ''}all threads are resolved and \`${GATES_CONTEXT}\` is green.`,
           `**Preview:** ${url}`,
           `Code owners have been requested for review. Merging is a human decision; no agent can merge.`,
           stillDraft
@@ -566,6 +583,144 @@ const commands = {
       );
       writeState(n, { ...state, humanApprovalFor: head });
     }
+  },
+
+  // review.yml: whether to review this PR now (review-lib decideReviewRun).
+  // Outputs `run` (true/false), `head` and `issue` (0 when the branch names
+  // none). MANUAL=true for workflow_dispatch.
+  'review-decide'([pr, runHeadSha]) {
+    const n = num(pr);
+    const p = api(`pulls/${n}`);
+    const repo = `${OWNER}/${NAME}`;
+    const decision = decideReviewRun({
+      pr: p,
+      runHeadSha: runHeadSha || null,
+      isManual: process.env.MANUAL === 'true',
+      reviewState: p.head?.sha
+        ? reviewStateOf(api(`commits/${p.head.sha}/statuses?per_page=100`))
+        : null,
+      botLogin: botLogin(),
+      repo,
+    });
+    console.log(
+      `review-decide: ${decision.action}${decision.reason ? ` (${decision.reason})` : ''}`,
+    );
+    const issue = issueFromBranch({
+      headRef: p.head?.ref,
+      headRepo: p.head?.repo?.full_name,
+      repo,
+    });
+    setOutput('run', String(decision.action === 'review'));
+    setOutput('head', decision.head ?? '');
+    setOutput('issue', String(issue ?? 0));
+  },
+
+  // review.yml: the reviewer's untrusted data besides the PR and diff: the
+  // issue with the bot's spec and plan, and the bot's earlier findings.
+  'review-collect'([pr, issue, issueFile, findingsFile]) {
+    const n = num(pr);
+    const issueNumber = Number(issue);
+    const data =
+      Number.isInteger(issueNumber) && issueNumber > 0
+        ? issueForAgents({
+            issue: api(`issues/${issueNumber}`),
+            comments: list(`issues/${issueNumber}/comments`),
+            botLogin: botLogin(),
+          })
+        : { spec: null, plan: null, note: 'the branch names no issue' };
+    writeFileSync(issueFile, JSON.stringify(data, null, 2));
+    writeFileSync(
+      findingsFile,
+      JSON.stringify(earlierFindings(reviewThreads(n), botLogin()), null, 2),
+    );
+  },
+
+  // review.yml publish job: posts the findings as review threads, sets
+  // `pipeline/review` on the head and appends the outcome note, which
+  // re-runs approval.yml. A failed run is a problem: stage:routing.
+  'review-publish'([pr, head, ...rest]) {
+    const n = num(pr);
+    const f = parseFlags(rest);
+    const p = api(`pulls/${n}`);
+    if (p.state !== 'open' || p.head.sha !== head) {
+      console.log(
+        `review-publish: skipped (PR #${n} is closed or moved past ${String(head).slice(0, 7)})`,
+      );
+      return;
+    }
+    let check = checkReview({
+      jobResult: f['job-result'],
+      raw: readIf(f.result),
+      diff: readFileSync(f.diff, 'utf8'),
+    });
+    let postError = null;
+    if (check.verdict === 'findings') {
+      try {
+        const threadComment = (finding) =>
+          renderFindingComment({ finding, head });
+        api(`pulls/${n}/reviews`, {
+          method: 'POST',
+          body: {
+            commit_id: head,
+            event: 'COMMENT',
+            body: renderReviewBody({ head, check }),
+            comments: check.findings
+              .filter((finding) => finding.anchor === 'line')
+              .map((finding) => ({
+                path: finding.path,
+                line: finding.line,
+                side: 'RIGHT',
+                body: threadComment(finding),
+              })),
+          },
+        });
+        for (const finding of check.findings.filter((x) => x.anchor === 'file'))
+          api(`pulls/${n}/comments`, {
+            method: 'POST',
+            body: {
+              commit_id: head,
+              path: finding.path,
+              subject_type: 'file',
+              body: threadComment(finding),
+            },
+          });
+      } catch (e) {
+        postError = e;
+        check = {
+          ...check,
+          verdict: 'failed',
+          problem: 'agent_error',
+          details: [
+            ...check.details,
+            'Posting the findings failed; some review threads may be missing.',
+          ],
+        };
+      }
+    }
+    const isFailed = check.verdict === 'failed';
+    api(`statuses/${head}`, {
+      method: 'POST',
+      body: {
+        context: REVIEW_CONTEXT,
+        state: isFailed ? 'failure' : 'success',
+        description: isFailed
+          ? 'The Claude review failed; re-run Pipeline · Review'
+          : check.verdict === 'clean'
+            ? 'Clean: no findings'
+            : `${check.findings.length} finding(s) posted as review threads`,
+        target_url: runUrl() || undefined,
+      },
+    });
+    const outcome = reviewOutcome({
+      check,
+      head,
+      promptVersion: f['prompt-version'] ?? '',
+    });
+    postComment(n, renderOutcome({ ...outcome, run_url: runUrl(), item: n }));
+    if (outcome.result === 'problem') setStage(n, 'stage:routing');
+    setOutput('result', outcome.result);
+    console.log(`review-publish: ${check.verdict} at ${head.slice(0, 7)}`);
+    if (postError) throw postError;
   },
 
   // A new head has no `pipeline/gates` status, which blocks the merge. This
@@ -631,7 +786,7 @@ const commands = {
     // Where the answer goes: the thread for a thread reply, else the PR.
     let replyTo = null;
     if (inThread) {
-      threads = classifyThreads(reviewThreads(n));
+      threads = classifyThreads(reviewThreads(n), { botLogin: botLogin() });
       const c = api(`pulls/comments/${cid}`);
       const entry = threadOfComment(threads, {
         commentId: cid,
@@ -663,13 +818,11 @@ const commands = {
     if (p.state !== 'open' || p.head.repo?.full_name !== `${OWNER}/${NAME}`)
       return reject('the pull request is closed or from a fork');
     const head = p.head.sha;
-    threads ??= classifyThreads(reviewThreads(n));
+    threads ??= classifyThreads(reviewThreads(n), { botLogin: botLogin() });
     const checked = validateDispositions({
       commands: parsed.commands,
-      copilotIds: new Set(
-        threads
-          .filter((t) => t.source === 'copilot' && !t.thread.isResolved)
-          .map((t) => t.id),
+      findingIds: new Set(
+        threads.filter((t) => t.id && !t.thread.isResolved).map((t) => t.id),
       ),
     });
     if (!checked.ok) return reject(checked.error);
