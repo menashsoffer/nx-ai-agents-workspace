@@ -1604,7 +1604,11 @@ function scanCommandEffects(src, libSrc) {
       /api\(\s*`pulls\/\$\{\w+\}\/reviews`,\s*\{\s*method:\s*'POST'/.test(body)
     )
       fx.emits.push('pull_request_review');
-    if (/\brender(?:Disposition|ProtectedApproved)Note\(/.test(body))
+    if (
+      /\brender(?:Disposition|ProtectedApproved)Note\(|\breviewOutcome\(/.test(
+        body,
+      )
+    )
       fx.emits.push('issue_comment');
     // Opening a PR through the API (an approved branch).
     if (/api\(\s*'pulls',\s*\{\s*method:\s*'POST'/.test(body))
@@ -1633,7 +1637,7 @@ test('COMMAND_EFFECTS matches what each pipeline.mjs command does', () => {
   const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
   const scanned = scanCommandEffects(
     read('./pipeline.mjs'),
-    read('./pipeline-lib.mjs'),
+    read('./pipeline-lib.mjs') + read('./review-lib.mjs'),
   );
   assert.ok(Object.keys(scanned).length >= 15, 'scanner found the commands');
   const hasEffect = (fx) =>
@@ -2103,24 +2107,25 @@ test('checkDispositionAuthor: the configured owner as a user, nobody else, close
   );
 });
 
-test('validateDispositions: ids must be an open Copilot thread', () => {
-  const copilotIds = new Set(['C-42']);
+test('validateDispositions: ids must be an open finding thread', () => {
+  const findingIds = new Set(['C-42', 'R-7']);
   const cmd = (id) => ({
     id,
     kind: 'accepted-risk',
     reason: 'a long enough reason',
   });
   assert.equal(
-    validateDispositions({ commands: [cmd('C-42')], copilotIds }).ok,
+    validateDispositions({ commands: [cmd('C-42'), cmd('R-7')], findingIds })
+      .ok,
     true,
   );
   // One unknown id rejects all.
   const unknown = validateDispositions({
     commands: [cmd('C-42'), cmd('C-43')],
-    copilotIds,
+    findingIds,
   });
   assert.equal(unknown.ok, false);
-  assert.match(unknown.error, /C-43 is not an open Copilot review thread/);
+  assert.match(unknown.error, /C-43 is not an open review finding thread/);
   // No open Copilot thread at all.
   assert.equal(validateDispositions({ commands: [cmd('C-42')] }).ok, false);
 });
@@ -2217,7 +2222,7 @@ test('evaluateGates truth table', () => {
   assert.equal(ok.blockedBy, null);
   assert.deepEqual(
     ok.checks.map((c) => c.key),
-    ['ci', 'threads', 'copilot', 'protected-approval'],
+    ['ci', 'review', 'threads', 'copilot', 'protected-approval'],
   );
   assert.equal(
     g({ ...passing, securityJobConclusion: 'success' }).state,

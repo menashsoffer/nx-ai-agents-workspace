@@ -58,6 +58,9 @@ export const MARKERS = {
   protectedApproved: '<!-- pipeline:protected-approved',
   // One upserted comment per PR: the review gates and their open findings.
   gates: '<!-- pipeline:gates -->',
+  // Prefix with attributes: the top comment of a review thread the pipeline
+  // bot opened for one finding of the Claude review (review.yml).
+  reviewFinding: '<!-- pipeline:review-finding',
   // The one-time pointer to /restart after a person moved an item out of
   // stage:needs-attention by hand (see decideRestartHint).
   restartHint: '<!-- pipeline:restart-hint -->',
@@ -218,6 +221,8 @@ function escapeUntrusted(text) {
 const CONTEXT_FORMATS = {
   repository: /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/,
   issue: /^#[1-9]\d*$/,
+  'pull request': /^#[1-9]\d*$/,
+  'head commit': /^[0-9a-f]{40}$/,
   branch: PIPELINE_BRANCH,
   'prompt version': /^[\w./-]+\.md@[\w.-]+$/,
   'pipeline bot login': /^[A-Za-z0-9-]+(?:\[bot\])?$/,
@@ -762,11 +767,15 @@ const DISPOSITION_MIN_REASON = 10;
 const DISPOSITION_MAX_REASON = 500;
 const DISPOSITION_MAX_LINES = 20;
 
-// `C-<n>` is the Copilot review thread whose top comment has database id n.
-const FINDING_ID = /^C-\d{1,15}$/;
+// `C-<n>` is the Copilot review thread whose top comment has database id n;
+// `R-<n>` is a Claude review finding thread (review.yml), likewise.
+const FINDING_ID = /^[CR]-\d{1,15}$/;
 
 /** Id of a Copilot review thread: `C-` + its top comment's database id. */
 export const copilotThreadId = (topCommentId) => `C-${topCommentId}`;
+
+/** Id of a Claude review finding thread: `R-` + its top comment's database id. */
+const reviewThreadId = (topCommentId) => `R-${topCommentId}`;
 
 const QUOTE_LINE = /^ {0,3}>/;
 const COMMAND_LINE = /^[ \t]{0,3}\/disposition(?:\s|$)/m;
@@ -850,7 +859,7 @@ export function parseDispositionComment(body, { thread } = {}) {
       );
     const [, id, kind, reason] = m;
     if (!FINDING_ID.test(id))
-      return fail(i, 'the finding id must look like C-123456');
+      return fail(i, 'the finding id must look like C-123456 or R-123456');
     if (thread && id !== thread.id)
       return fail(i, `this thread is ${thread.id}; the command names ${id}`);
     if (!DISPOSITION_KINDS.includes(kind))
@@ -903,12 +912,13 @@ export function checkDispositionAuthor({ login, type, ownerLogin }) {
 
 /**
  * Checks parsed commands against what can be dispositioned right now: open
- * Copilot threads (`copilotIds`). One unknown id rejects all.
+ * Copilot and Claude review finding threads (`findingIds`). One unknown id
+ * rejects all.
  */
-export function validateDispositions({ commands, copilotIds = new Set() }) {
+export function validateDispositions({ commands, findingIds = new Set() }) {
   for (const { id } of commands) {
-    if (!copilotIds.has(id))
-      return { ok: false, error: `${id} is not an open Copilot review thread` };
+    if (!findingIds.has(id))
+      return { ok: false, error: `${id} is not an open review finding thread` };
   }
   return { ok: true };
 }
@@ -948,7 +958,7 @@ export function renderDispositionNote({
 }
 
 const DISPOSITION_HEADER =
-  /^<!-- pipeline:disposition id=(C-\d{1,15}) kind=(accepted-risk|false-positive|out-of-scope) head=([0-9a-f]{7,40}) by=([\w.[\]-]+) comment=(\d+) -->\n/;
+  /^<!-- pipeline:disposition id=([CR]-\d{1,15}) kind=(accepted-risk|false-positive|out-of-scope) head=([0-9a-f]{7,40}) by=([\w.[\]-]+) comment=(\d+) -->\n/;
 
 /**
  * The disposition records written by the pipeline bot. Anyone can paste a
@@ -989,14 +999,20 @@ export function dispositionKinds({ records, ownerLogin }) {
 /**
  * Sorts review threads into the ones the owner can disposition. `threads`
  * come from github.mjs reviewThreads (with `first` = the top comment).
- * Copilot threads start with a Copilot comment and have an id a disposition
- * can name; other threads (people) are only counted.
+ * Copilot threads start with a Copilot comment; Claude review threads start
+ * with a finding comment by the pipeline bot (`botLogin`). Both have an id a
+ * disposition can name; other threads (people) are only counted.
  */
-export function classifyThreads(threads) {
+export function classifyThreads(threads, { botLogin } = {}) {
   return threads.map((t) => {
     const first = t.first ?? {};
     if (COPILOT_LOGINS.some((l) => sameLogin(l, first.author)))
       return { source: 'copilot', id: copilotThreadId(first.id), thread: t };
+    if (
+      sameLogin(first.author, botLogin) &&
+      String(first.body ?? '').startsWith(MARKERS.reviewFinding)
+    )
+      return { source: 'review', id: reviewThreadId(first.id), thread: t };
     return { source: 'other', id: null, thread: t };
   });
 }
@@ -1475,8 +1491,9 @@ export const GATES_CONTEXT = 'pipeline/gates';
 const CI_FAILED = ['failure', 'timed_out'];
 
 /**
- * The review gates for one head commit, in order: ci, review threads,
- * Copilot review (only when `requireCopilot`), protected-file approval.
+ * The review gates for one head commit, in order: ci, Claude review (only
+ * when `reviewRequired`), review threads, Copilot review (only when
+ * `requireCopilot`), protected-file approval.
  * Returns the checks and the value for the `pipeline/gates` commit status:
  * - `success`: every check holds;
  * - `failure`: a real blocker (ci failed, a required approval was refused);
@@ -1484,6 +1501,9 @@ const CI_FAILED = ['failure', 'timed_out'];
  *
  * `securityJobConclusion` is the `security` CI job's check run (undefined:
  * no such run);
+ * `reviewRequired` is true for pipeline PRs; `reviewState` is the head's
+ * `pipeline/review` status (review.yml): success once the review ran (clean
+ * or with findings, which are review threads), failure when it failed;
  * `protectedRequired` / `protectedApprovalState` come from
  * evaluateProtectedApproval (`required`, `state`). `requireCopilot`
  * (parseRequireCopilot, the REQUIRE_COPILOT variable) turns the Copilot
@@ -1492,6 +1512,8 @@ const CI_FAILED = ['failure', 'timed_out'];
 export function evaluateGates({
   ciConclusion,
   securityJobConclusion,
+  reviewRequired = false,
+  reviewState = null,
   unresolvedThreads = 0,
   copilotReviewedHead = false,
   requireCopilot = false,
@@ -1531,6 +1553,19 @@ export function evaluateGates({
       `the security job is ${securityJobConclusion ?? 'running'}`,
     );
   })();
+
+  const reviewLabel = 'Claude review';
+  const review = !reviewRequired
+    ? ok('review', reviewLabel, 'not a pipeline PR')
+    : reviewState === 'success'
+      ? ok('review', reviewLabel, 'reviewed this commit')
+      : reviewState === 'failure' || reviewState === 'error'
+        ? fail(
+            'review',
+            reviewLabel,
+            'the review run failed; re-run Pipeline · Review',
+          )
+        : wait('review', reviewLabel, 'not reviewed this commit yet');
 
   const threads =
     unresolvedThreads > 0
@@ -1573,7 +1608,7 @@ export function evaluateGates({
               : 'the approval status is not set yet',
           );
 
-  const checks = [ci, threads, copilot, protectedApproval];
+  const checks = [ci, review, threads, copilot, protectedApproval];
   const failed = checks.find((c) => c.state === 'failure');
   const missing = checks.find((c) => c.state !== 'success');
   const blocker = failed ?? missing;
@@ -1581,7 +1616,12 @@ export function evaluateGates({
     state: failed ? 'failure' : missing ? 'pending' : 'success',
     description: blocker
       ? `${blocker.label}: ${blocker.detail}`
-      : `${['CI', ...(requireCopilot ? ['Copilot review'] : []), 'threads']
+      : `${[
+          'CI',
+          ...(reviewRequired ? [reviewLabel] : []),
+          ...(requireCopilot ? ['Copilot review'] : []),
+          'threads',
+        ]
           .join(', ')
           .replace(/, ([^,]*)$/, ' and $1')} all satisfied`,
     blockedBy: blocker?.key ?? null,
@@ -1699,6 +1739,8 @@ export function evaluateApproval({
   headSha,
   ciConclusion,
   securityJobConclusion,
+  reviewRequired = false,
+  reviewState = null,
   unresolvedThreads,
   copilotReviewedHead,
   requireCopilot = false,
@@ -1711,6 +1753,8 @@ export function evaluateApproval({
   const gates = evaluateGates({
     ciConclusion,
     securityJobConclusion,
+    reviewRequired,
+    reviewState,
     unresolvedThreads,
     copilotReviewedHead,
     requireCopilot,
@@ -1721,7 +1765,7 @@ export function evaluateApproval({
   if (parked) return { action: 'noop', reason: `PR is in ${parked}`, gates };
   // Copilot is asked to review only once everything before it holds.
   const before = gates.checks
-    .filter((c) => ['ci', 'threads'].includes(c.key))
+    .filter((c) => ['ci', 'review', 'threads'].includes(c.key))
     .find((c) => c.state !== 'success');
   if (before) return { action: 'wait', reason: before.detail, gates };
   if (requireCopilot && !copilotReviewedHead) {
@@ -1870,6 +1914,8 @@ export const OUTCOME_STAGES = [
   'develop',
   'approval',
   'ci',
+  // The independent Claude review of a pipeline PR's head (review.yml).
+  'review',
   // The PR itself: closed without merging (done.yml). Noted on the issue.
   'pr',
 ];
@@ -1974,6 +2020,7 @@ const STAGE_TITLE = {
   develop: 'Development',
   approval: 'Approval',
   ci: 'CI',
+  review: 'Review',
   pr: 'Pull request',
 };
 
@@ -2167,6 +2214,15 @@ const RULES = [
     problems: ['ci_failed'],
     target: 'human',
     reason: 'CI failed on the agent PR, see run',
+  },
+  // No retry loop (issue #154): a person reads the run and re-runs
+  // Pipeline · Review, or takes the PR over.
+  {
+    stage: 'review',
+    problems: ['agent_error', 'invalid_output'],
+    target: 'human',
+    reason:
+      'the Claude review failed or returned invalid output; re-run Pipeline · Review for the PR, see run',
   },
   // The owner said no to the protected changes; the branch is kept and the
   // owner decides what happens to it.
@@ -3258,6 +3314,16 @@ export const COMMAND_EFFECTS = {
     markers: [],
     appends: ['restartHint'],
     emits: [],
+  },
+  // review.yml: the findings as review threads (a PR review, which re-runs
+  // approval.yml) and the outcome note (an issue_comment, likewise). A failed
+  // review is a problem for the router.
+  'review-publish': {
+    stages: ['stage:routing'],
+    problems: ['stage:routing'],
+    markers: [],
+    appends: ['outcome', 'reviewFinding'],
+    emits: ['issue_comment', 'pull_request_review'],
   },
   // A new head with protected changes: a new approval request on the issue.
   'protected-status': {
