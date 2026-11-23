@@ -25,6 +25,10 @@ minimumReleaseAge: 4320
 overrides:
   # GHSA-7w5x-hrqm-74c2 (high, DoS). Remove once nx depends on smol-toml >=1.7.1.
   smol-toml: '>=1.7.1'
+  # GHSA-q3jh-wrc6-jgq8, GHSA-8r9p-f939-6h3c, GHSA-mrwp-f3q8-3g9p (high, credential
+  # exposure on redirects), all fixed in 1.16.2. The lockfile held 1.16.0 through
+  # nx > axios. Remove once nx's axios resolves follow-redirects >=1.16.2 on its own.
+  follow-redirects: '^1.16.2'
   # GHSA-c29m-xwm3-cm6r (high, ReDoS) and 11 more, all fixed in 1.20.0. nx pins
   # axios 1.18.1. Remove once nx depends on axios >=1.20.0.
   axios: '^1.20.0'
