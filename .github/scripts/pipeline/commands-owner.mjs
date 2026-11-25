@@ -1,4 +1,4 @@
-// commands-owner: split from pipeline-pre.mjs (pure move).
+// pipeline/commands-owner: part of the pipeline CLI (see ../pipeline.mjs).
 import {
   checkDispositionAuthor,
   parseDispositionComment,
