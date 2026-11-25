@@ -89,4 +89,4 @@ export function renderState(state, labels = [], { requireCopilot } = {}) {
   ].join('\n');
 }
 
-export const short = (sha) => (sha ? `\`${sha.slice(0, 7)}\`` : '-');
+const short = (sha) => (sha ? `\`${sha.slice(0, 7)}\`` : '-');
