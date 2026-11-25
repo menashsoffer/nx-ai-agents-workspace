@@ -77,10 +77,11 @@ Project names are short: `site`, `site-e2e`, `pages-e2e`, `docs`, `sandbox`, `ui
 ## Definition of done
 
 1. `pnpm verify` passes (sync, format check, dead-code and dependency check
-   (knip), lint, typecheck, test, build on all projects).
+   (knip), lint, typecheck, test, build on all projects, and the `site` e2e
+   suite).
 2. New behavior has a test next to the code (`*.spec.ts(x)`); UI components also have a story.
    New and changed identifiers and files follow "Naming" in `docs/conventions.md`.
-3. If you changed routes or user-visible flows in `site`, `pnpm e2e` passes; if
+3. `pnpm e2e` (the `site` suite) already runs inside `pnpm verify`; if
    you changed routing, assets, the base path or Storybook, `pnpm e2e:pages` too.
 4. If you changed dependencies, workflows, or anything in `.claude/`,
    `.codex/` or `tools/security/`, `pnpm security` passes.

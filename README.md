@@ -69,7 +69,7 @@ are instructed to ask rather than guess.
 pnpm dev                    # site on http://localhost:4200
 pnpm storybook              # components on http://localhost:6006 (RTL/LTR toggle)
 pnpm nx dev sandbox         # experiments on http://localhost:4201
-pnpm verify                 # everything: sync, format, lint, typecheck, test, build
+pnpm verify                 # everything: sync, format, lint, typecheck, test, build, site e2e
 pnpm e2e                    # Playwright against the production build
 pnpm e2e:pages              # Playwright against the assembled Pages artifact
 pnpm security               # security gates (docs/security.md)
