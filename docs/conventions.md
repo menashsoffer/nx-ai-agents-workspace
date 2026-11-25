@@ -258,6 +258,7 @@ Rules: nothing imports from the sandbox (module boundaries enforce it), and
 the sandbox is never deployed.
 
 Projects that don't want a sandbox remove it with
+`pnpm nx g @nx/workspace:remove sandbox-e2e` and then
 `pnpm nx g @nx/workspace:remove sandbox`. `pnpm new:spike` then fails with a
 clear "No sandbox app" message.
 
