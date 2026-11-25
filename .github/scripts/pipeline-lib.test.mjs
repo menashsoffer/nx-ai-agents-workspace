@@ -1637,7 +1637,10 @@ test('COMMAND_EFFECTS matches what each pipeline.mjs command does', () => {
   const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
   const scanned = scanCommandEffects(
     read('./pipeline.mjs'),
-    read('./pipeline-lib.mjs') + read('./review-lib.mjs'),
+    readdirSync(new URL('./pipeline-lib/', import.meta.url))
+      .filter((f) => f.endsWith('.mjs'))
+      .map((f) => read(`./pipeline-lib/${f}`))
+      .join('\n') + read('./review-lib.mjs'),
   );
   assert.ok(Object.keys(scanned).length >= 15, 'scanner found the commands');
   const hasEffect = (fx) =>
