@@ -1,4 +1,4 @@
-// push-guard: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/push-guard: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 
 // ---------------------------------------------------------------- push guard
 

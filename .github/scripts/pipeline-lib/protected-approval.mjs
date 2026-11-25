@@ -1,4 +1,4 @@
-// protected-approval: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/protected-approval: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import {
   classifyProtectedPaths,
   comparePaths,

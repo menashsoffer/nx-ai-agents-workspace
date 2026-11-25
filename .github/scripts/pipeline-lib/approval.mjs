@@ -1,4 +1,4 @@
-// approval: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/approval: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import { evaluateGates } from './gates.mjs';
 import { parkedIn } from './naming.mjs';
 
