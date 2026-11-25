@@ -29,6 +29,13 @@ git remote set-url origin https://github.com/Smoke-Owner/smoke-repo.git
 step "Install (frozen lockfile)"
 pnpm install --frozen-lockfile
 
+# `pnpm verify` runs the site e2e suite, which needs a browser. Locally the
+# developer's Playwright install is reused; CI runners start without one.
+if [ -n "${CI:-}" ]; then
+  step "Install Playwright Chromium (CI)"
+  pnpm exec playwright install --with-deps chromium
+fi
+
 step "template:init"
 pnpm template:init --scope smoke --what "Smoke test project"
 
