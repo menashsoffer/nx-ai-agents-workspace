@@ -17,6 +17,8 @@ import {
 import type { AppGeneratorSchema } from './schema';
 
 const FIRST_PORT = 4200;
+/** `defineAppConfig` serves the production preview on app port + 100. */
+const PREVIEW_PORT_OFFSET = 100;
 
 /** Next free dev port, based on the ports in existing apps' vite configs. */
 function nextPort(tree: Tree): number {
@@ -63,6 +65,15 @@ export async function appGenerator(tree: Tree, options: AppGeneratorSchema) {
   generateFiles(tree, join(__dirname, 'files'), projectRoot, {
     scope,
     port,
+    title: className,
+  });
+
+  // Playwright project for the app, previewing the production build.
+  generateFiles(tree, join(__dirname, 'files-e2e'), `${projectRoot}-e2e`, {
+    scope,
+    name,
+    appScope: options.scope ?? 'dev',
+    previewPort: port + PREVIEW_PORT_OFFSET,
     title: className,
   });
 

@@ -3,12 +3,12 @@
 Local Nx generators that encode this workspace's conventions. Use them (or the
 root `pnpm new:*` scripts) instead of the stock `@nx/react` generators.
 
-| Command                                        | Creates                                                                                   |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `pnpm new:app <name> [--scope=dev\|product]`   | `apps/<name>`: Vite + React Router + Tailwind via `ui` styles, RTL shell, next free port  |
-| `pnpm new:lib <name> --type=util\|ui\|feature` | `libs/<name>` (or `libs/shared/<name>` for shared utils), tagged for module boundaries    |
-| `pnpm new:component <name> [--project=ui]`     | `src/lib/<name>/<Name>.tsx` + `.spec.tsx` (+ `.stories.tsx` if the project has Storybook) |
-| `pnpm new:spike <name>`                        | `apps/sandbox/src/spikes/<yyyy-mm>-<name>/index.tsx`, auto-listed in the sandbox          |
+| Command                                        | Creates                                                                                                      |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `pnpm new:app <name> [--scope=dev\|product]`   | `apps/<name>` (Vite + React Router + Tailwind, RTL shell, next free port) and `apps/<name>-e2e` (Playwright) |
+| `pnpm new:lib <name> --type=util\|ui\|feature` | `libs/<name>` (or `libs/shared/<name>` for shared utils), tagged for module boundaries                       |
+| `pnpm new:component <name> [--project=ui]`     | `src/lib/<name>/<Name>.tsx` + `.spec.tsx` (+ `.stories.tsx` if the project has Storybook)                    |
+| `pnpm new:spike <name>`                        | `apps/sandbox/src/spikes/<yyyy-mm>-<name>/index.tsx`, auto-listed in the sandbox                             |
 
 Add `--dry-run` to any command to preview the files.
 
