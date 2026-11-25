@@ -1,4 +1,4 @@
-// command-effects: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/command-effects: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import { TARGET_STAGE } from './router-rules.mjs';
 import { RESTART_STAGES } from './restart.mjs';
 

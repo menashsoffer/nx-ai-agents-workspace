@@ -1,4 +1,4 @@
-// plan-approval: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/plan-approval: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import { classifyProtectedPaths, normalizePath } from './patches.mjs';
 import { clean } from './outcomes.mjs';
 

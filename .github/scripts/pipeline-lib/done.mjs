@@ -1,4 +1,4 @@
-// done: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/done: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import { sameLogin } from './naming.mjs';
 import { STAGES } from './constants.mjs';
 

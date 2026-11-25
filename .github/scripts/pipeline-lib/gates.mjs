@@ -1,4 +1,4 @@
-// gates: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/gates: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import { MARKERS } from './constants.mjs';
 import { isPipelinePr } from './naming.mjs';
 

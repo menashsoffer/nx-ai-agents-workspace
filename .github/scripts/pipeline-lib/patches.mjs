@@ -1,4 +1,4 @@
-// patches: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/patches: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import { createHash } from 'node:crypto';
 import {
   APPROVABLE_PATH_PATTERNS,
