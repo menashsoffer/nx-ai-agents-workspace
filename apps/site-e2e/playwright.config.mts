@@ -30,7 +30,10 @@ export default defineConfig({
   webServer: {
     command: 'pnpm exec nx run site:preview',
     url: baseURL,
-    reuseExistingServer: !isCI,
+    // Always reuse: `pnpm verify` runs this suite repeatedly in one job (e.g.
+    // the template smoke test), and a preview server left over from the
+    // previous run serves the same production build.
+    reuseExistingServer: true,
     cwd: workspaceRoot,
   },
   projects: [
