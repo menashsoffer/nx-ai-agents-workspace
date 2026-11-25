@@ -1,4 +1,4 @@
-// commands-approval: split from pipeline-pre.mjs (pure move).
+// pipeline/commands-approval: part of the pipeline CLI (see ../pipeline.mjs).
 import {
   api,
   labelsOf,

@@ -1,5 +1,4 @@
-// dispositions: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
-import { short } from './state.mjs';
+// pipeline-lib/dispositions: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import { sameLogin } from './naming.mjs';
 import { neutraliseMarkers } from './comments.mjs';
 import { COPILOT_LOGINS, MARKERS } from './constants.mjs';

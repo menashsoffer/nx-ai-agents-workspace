@@ -1,4 +1,4 @@
-// helpers: split from pipeline-pre.mjs (pure move).
+// pipeline/helpers: part of the pipeline CLI (see ../pipeline.mjs).
 import {
   findComment,
   upsertComment,

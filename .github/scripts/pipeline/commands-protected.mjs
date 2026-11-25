@@ -1,4 +1,4 @@
-// commands-protected: split from pipeline-pre.mjs (pure move).
+// pipeline/commands-protected: part of the pipeline CLI (see ../pipeline.mjs).
 import {
   parseFlags,
   isPipelineBranch,

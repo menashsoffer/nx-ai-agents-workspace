@@ -1,4 +1,4 @@
-// commands-lifecycle: split from pipeline-pre.mjs (pure move).
+// pipeline/commands-lifecycle: part of the pipeline CLI (see ../pipeline.mjs).
 import {
   decideCiFailed,
   issueFromBranch,

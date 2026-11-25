@@ -1,4 +1,4 @@
-// plan-comments: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/plan-comments: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import {
   PLAN_AGENT_PROBLEMS,
   evaluatePlanApproval,

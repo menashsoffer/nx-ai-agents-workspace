@@ -1,4 +1,4 @@
-// protected-render: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/protected-render: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import {
   APPROVE_COMMAND,
   COMMENT_LIMIT,

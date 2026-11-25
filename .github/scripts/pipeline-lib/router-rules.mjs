@@ -1,4 +1,4 @@
-// router-rules: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/router-rules: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import { HARD_GATES, PROBLEM_TEXT } from './outcomes.mjs';
 
 // ---------------------------------------------------------------- router

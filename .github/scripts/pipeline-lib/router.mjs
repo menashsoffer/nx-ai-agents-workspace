@@ -1,4 +1,4 @@
-// router: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/router: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import {
   EXTERNAL_MIN_CONFIDENCE,
   LEGACY_ROUTE_TARGETS,

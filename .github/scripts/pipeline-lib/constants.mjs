@@ -1,4 +1,4 @@
-// constants: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/constants: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 
 export const STAGES = [
   'stage:inbox',

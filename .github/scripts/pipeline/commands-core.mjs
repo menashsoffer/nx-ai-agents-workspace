@@ -1,4 +1,4 @@
-// commands-core: split from pipeline-pre.mjs (pure move).
+// pipeline/commands-core: part of the pipeline CLI (see ../pipeline.mjs).
 import {
   classifyPlan,
   classifyDevelop,

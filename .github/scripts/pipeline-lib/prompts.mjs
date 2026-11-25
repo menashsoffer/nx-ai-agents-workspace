@@ -1,4 +1,4 @@
-// prompts: split from ../../../../../home/user/nx-ai-agents-workspace/.github/scripts/pipeline-lib.mjs (pure move).
+// pipeline-lib/prompts: one concern of the pipeline decision logic (see ../pipeline-lib.mjs).
 import { PIPELINE_BRANCH } from './naming.mjs';
 
 function escapeUntrusted(text) {
