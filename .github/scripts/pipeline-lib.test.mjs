@@ -1492,11 +1492,12 @@ test('classify: develop', () => {
 // ---------------------------------------------------------------- effects
 
 /**
- * Derives each command's effects from the source of pipeline.mjs (and the
- * render/build helpers it calls in pipeline-lib.mjs), so COMMAND_EFFECTS
+ * Derives each command's effects from the source of the commands in
+ * pipeline/commands-*.mjs (and the render/build helpers they call in
+ * pipeline-lib/), so COMMAND_EFFECTS
  * (read by tools/pipeline-map) cannot drift from the code.
  */
-function scanCommandEffects(src, libSrc) {
+function scanCommandEffects(helperSrc, commandSources, libSrc) {
   const fnBodies = (text) =>
     Object.fromEntries(
       [
@@ -1547,15 +1548,17 @@ function scanCommandEffects(src, libSrc) {
     return fx;
   };
 
-  const helpers = fnBodies(src.slice(0, src.indexOf('const commands = {')));
+  const helpers = fnBodies(helperSrc);
   const helperFx = Object.fromEntries(
     Object.entries(helpers).map(([n, body]) => [n, effectsOf(body)]),
   );
 
-  const block = src.slice(
-    src.indexOf('const commands = {'),
-    src.indexOf('\n};\n', src.indexOf('const commands = {')),
-  );
+  const block = commandSources
+    .map((src) => {
+      const start = src.indexOf('Commands = {');
+      return src.slice(start, src.indexOf('\n};\n', start));
+    })
+    .join('\n');
   const heads = [
     ...block.matchAll(
       /^ {2}(?:async )?(?:'([a-z-]+)'|([a-z][a-zA-Z]*))\(([^)]*)\) \{$/gm,
@@ -1636,7 +1639,10 @@ function normaliseEffects(fx) {
 test('COMMAND_EFFECTS matches what each pipeline.mjs command does', () => {
   const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
   const scanned = scanCommandEffects(
-    read('./pipeline.mjs'),
+    read('./pipeline/helpers.mjs'),
+    readdirSync(new URL('./pipeline/', import.meta.url))
+      .filter((f) => /^commands-.*\.mjs$/.test(f))
+      .map((f) => read(`./pipeline/${f}`)),
     readdirSync(new URL('./pipeline-lib/', import.meta.url))
       .filter((f) => f.endsWith('.mjs'))
       .map((f) => read(`./pipeline-lib/${f}`))
@@ -2613,7 +2619,11 @@ test('workflows: /disposition counts only new comments from the owner account', 
 test('workflows: every job that resolves review threads mints its App token with contents: write', () => {
   // resolveReviewThread needs contents: write on an App installation token;
   // pull-requests: write alone crashes with "Resource not accessible".
-  const src = readFileSync(new URL('./pipeline.mjs', import.meta.url), 'utf8');
+  const commandsDir = new URL('./pipeline/', import.meta.url);
+  const src = readdirSync(commandsDir)
+    .filter((f) => /^commands-.*\.mjs$/.test(f))
+    .map((f) => readFileSync(new URL(f, commandsDir), 'utf8'))
+    .join('\n');
   const commandsThatResolve = [
     ...src.matchAll(
       /^ {2}'?([\w-]+)'?\(\[[^\]]*\]\) \{\n([\s\S]*?)^ {2}\},?$/gm,
