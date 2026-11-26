@@ -1,5 +1,6 @@
 packages:
   - 'apps/*'
+  - '!apps/jerusalem'
   - 'libs/*'
   - 'libs/*/*'
   - 'tools/*'
