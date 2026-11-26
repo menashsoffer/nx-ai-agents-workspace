@@ -92,6 +92,9 @@ Project names are short: `site`, `site-e2e`, `pages-e2e`, `docs`, `sandbox`, `ui
 
 Never finish with a failing `verify`, and never "fix" it by disabling a lint
 rule, skipping a test, or loosening a tsconfig.
+Run the change before committing (`.claude/skills/verify/SKILL.md`). After three
+failed fix rounds, stop and tell a human. Flaky tests: never skip, sleep or
+retry; find the root cause, or delete the test and say why.
 
 ## Rules
 
