@@ -33,3 +33,7 @@ prove the feature works. Do both.
   root cause. If you cannot, delete the test and write down why in the PR.
 - **Never weaken the check** (lint rule, tsconfig, test) to get green.
 - Exit code 2 from `pnpm security` means the checks did not run; say so.
+- **Verification stamp.** A passing Stop-hook run stamps the exact working
+  tree (`.claude/hooks/verify-stamp.sh`). `git commit` / `git push` of a tree
+  without a stamp warns (`CLAUDE_VERIFY_STAMP=observe`, the default) or is
+  blocked (`enforce`). Edit after verifying and you need to verify again.

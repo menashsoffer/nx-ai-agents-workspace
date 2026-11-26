@@ -22,6 +22,7 @@ fi
 output="$(pnpm verify:affected 2>&1)"
 if [ $? -eq 0 ]; then
   rm -f "$counter_file"
+  "$(dirname "$0")/verify-stamp.sh" write
   exit 0
 fi
 
