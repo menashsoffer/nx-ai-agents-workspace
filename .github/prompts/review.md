@@ -37,6 +37,10 @@ of the issue data; `null` means the pipeline bot posted none: review against
 the issue and the PR alone). Read the changed files in full, not only the
 diff, and whatever they call.
 
+Then read `.pipeline/trusted/.github/prompts/review-rules.md` (it comes from
+the default branch, never from the PR) and apply the rules whose trigger
+matches the diff.
+
 Report only these, in this order of importance:
 
 1. `requirement`: an acceptance criterion of the spec, or a change of the
