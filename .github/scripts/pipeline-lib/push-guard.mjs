@@ -42,7 +42,7 @@ function branchPasses(filter, branch) {
  * out; a `tags`-only filter is not fired by a branch push) and `create`. The
  * approval flow pushes `issue-<n>-<slug>` before any PR exists, so a
  * workflow that fires here would run protected content with repo secrets
- * before the owner approved it. Test: pipeline-lib.test.mjs ("push guard").
+ * before the owner approved it. Test: pipeline-lib-protected-status.test.mjs ("push guard").
  */
 export function branchPushTriggers(on, branch) {
   let events = {};

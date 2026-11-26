@@ -1,13 +1,5 @@
 [
   {
-    "path": ".github/scripts/pipeline-lib.test.mjs",
-    "issue": 99,
-    "reason": "Tests of the pipeline library, split together with it in a local session.",
-    "owner": "@menashsoffer",
-    "created": "2026-10-04",
-    "expires": "2026-12-31"
-  },
-  {
     "path": "docs/pipeline.md",
     "issue": 98,
     "reason": "Pipeline guide that predates the policy; split into pages by topic.",
