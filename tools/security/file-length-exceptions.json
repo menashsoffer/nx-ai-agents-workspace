@@ -1,13 +1,5 @@
 [
   {
-    "path": ".github/scripts/pipeline-lib.mjs",
-    "issue": 99,
-    "reason": "Pipeline library in a protected path; the owner splits it in a local session.",
-    "owner": "@menashsoffer",
-    "created": "2026-10-04",
-    "expires": "2026-12-31"
-  },
-  {
     "path": ".github/scripts/pipeline-lib.test.mjs",
     "issue": 99,
     "reason": "Tests of the pipeline library, split together with it in a local session.",
