@@ -257,8 +257,8 @@ A spike answers **one question** quickly and then goes away.
 Rules: nothing imports from the sandbox (module boundaries enforce it), and
 the sandbox is never deployed.
 
-Projects that don't want a sandbox remove it with
-`pnpm nx g @nx/workspace:remove sandbox`. `pnpm new:spike` then fails with a
+Projects that don't want a sandbox remove `sandbox-e2e`, then `sandbox`, with
+`pnpm nx g @nx/workspace:remove <project>`. `pnpm new:spike` then fails with a
 clear "No sandbox app" message.
 
 ## RTL

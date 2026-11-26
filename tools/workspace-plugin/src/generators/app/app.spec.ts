@@ -50,6 +50,27 @@ describe('app generator', () => {
     expect(rootPkg.devDependencies?.['react-router-dom']).toBeUndefined();
   });
 
+  it('creates a Playwright project that previews the app build', async () => {
+    await runWithGraphErrorDetails(() =>
+      appGenerator(tree, { name: 'admin-panel', scope: 'product' }),
+    );
+
+    const config = readProjectConfiguration(tree, 'admin-panel-e2e');
+    expect(config.root).toBe('apps/admin-panel-e2e');
+    expect(config.tags).toEqual(['type:e2e', 'scope:product']);
+    expect(config.implicitDependencies).toEqual(['admin-panel']);
+
+    const playwrightConfig = tree.read(
+      'apps/admin-panel-e2e/playwright.config.mts',
+      'utf-8',
+    );
+    expect(playwrightConfig).toContain('http://localhost:4301');
+    expect(playwrightConfig).toContain('nx run admin-panel:preview');
+    expect(tree.exists('apps/admin-panel-e2e/src/app.spec.ts')).toBe(true);
+    expect(tree.exists('apps/admin-panel-e2e/eslint.config.mjs')).toBe(true);
+    expect(tree.exists('apps/admin-panel-e2e/tsconfig.json')).toBe(true);
+  });
+
   it('supports product scope', async () => {
     await runWithGraphErrorDetails(() =>
       appGenerator(tree, { name: 'shop', scope: 'product' }),

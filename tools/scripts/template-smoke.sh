@@ -63,6 +63,8 @@ expect_grep '"scope:dev"' apps/tools-admin/package.json
 expect_no_file apps/tools-admin/project.json
 expect_grep 'port: 4202' apps/tools-admin/vite.config.mts
 expect_grep 'dir="rtl"' apps/tools-admin/index.html
+expect_file apps/tools-admin-e2e/playwright.config.mts
+expect_grep 'localhost:4302' apps/tools-admin-e2e/playwright.config.mts
 
 pnpm new:app shop --scope=product --no-interactive
 expect_grep '"scope:product"' apps/shop/package.json
@@ -97,6 +99,7 @@ rm -rf apps/sandbox/src/spikes/*/
 pnpm verify
 
 step "Remove the sandbox app, then verify"
+pnpm nx g @nx/workspace:remove sandbox-e2e --no-interactive
 pnpm nx g @nx/workspace:remove sandbox --no-interactive
 expect_no_file apps/sandbox
 if out="$(pnpm new:spike after-removal --no-interactive 2>&1)"; then

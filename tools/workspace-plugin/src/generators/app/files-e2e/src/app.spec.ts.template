@@ -1,0 +1,24 @@
+import { expect, test } from '@playwright/test';
+
+test('home page renders in Hebrew RTL', async ({ page }) => {
+  await page.goto('/');
+
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'he');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(
+    '<%= title %>',
+  );
+});
+
+test('home page loads without console or page errors', async ({ page }) => {
+  const problems: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') problems.push(message.text());
+  });
+  page.on('pageerror', (error) => problems.push(error.message));
+
+  await page.goto('/');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+  expect(problems).toEqual([]);
+});

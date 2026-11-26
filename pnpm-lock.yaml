@@ -208,6 +208,8 @@ importers:
         specifier: workspace:*
         version: link:../../tools/vite-config
 
+  apps/sandbox-e2e: {}
+
   apps/site:
     dependencies:
       '@starter/shared-utils':

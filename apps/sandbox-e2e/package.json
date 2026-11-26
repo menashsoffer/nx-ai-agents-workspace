@@ -1,0 +1,15 @@
+{
+  "name": "@starter/sandbox-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "nx": {
+    "name": "sandbox-e2e",
+    "tags": [
+      "type:e2e",
+      "scope:dev"
+    ],
+    "implicitDependencies": [
+      "sandbox"
+    ]
+  }
+}
