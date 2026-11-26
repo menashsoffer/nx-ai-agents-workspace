@@ -12,7 +12,7 @@ the reviewer reads from the default branch, never from the PR.
    reader can see its trigger in a diff.
 3. Propose the rule in a PR that changes `review-rules.md`. The owner reviews
    and approves it. One check per rule; a vague rule is dropped.
-4. Prune on a routine (monthly): delete rules that never matched, merge
+4. Prune on a routine (monthly, `.claude/skills/prune/SKILL.md`): delete rules that never matched, merge
    duplicates, and remove misses a rule now covers.
 
 Flaky tests get the same treatment: no skip, sleep or retry. Find the root
