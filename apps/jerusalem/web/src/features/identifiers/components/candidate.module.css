@@ -1,0 +1,106 @@
+@layer features {
+  /* Supplier ID candidates (screens-spec 7): compact lines that open in place. */
+  .page {
+    display: grid;
+    gap: var(--space-lg);
+  }
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    align-items: end;
+    & > div {
+      flex: 1 1 14rem;
+      margin-block: 0;
+    }
+  }
+  .list {
+    display: grid;
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    overflow: hidden;
+  }
+  .row {
+    border-block-end: var(--border-width) solid var(--color-border);
+    &:last-child {
+      border-block-end: 0;
+    }
+    & > summary {
+      display: grid;
+      gap: var(--space-xs);
+      padding: var(--space-md) var(--space-lg);
+      cursor: pointer;
+      min-block-size: var(--control-min-size);
+    }
+    &[open] > summary {
+      background: var(--color-brand-soft);
+    }
+    & > :not(summary) {
+      margin-inline: var(--space-lg);
+    }
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-xs) var(--space-md);
+  }
+  .tag {
+    padding: 0 var(--space-sm);
+    border-radius: 999px;
+    border: var(--border-width) solid;
+    font-size: var(--font-small);
+  }
+  .same {
+    color: var(--color-badge-success-text);
+    background: var(--color-badge-success-surface);
+    border-color: var(--color-badge-success-border);
+  }
+  .similar {
+    color: var(--color-badge-warning-text);
+    background: var(--color-badge-warning-surface);
+    border-color: var(--color-badge-warning-border);
+  }
+  .different {
+    color: var(--color-badge-danger-text);
+    background: var(--color-badge-danger-surface);
+    border-color: var(--color-badge-danger-border);
+  }
+  .source {
+    color: var(--color-muted);
+    font-size: var(--font-small);
+  }
+  .names {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-xs) var(--space-lg);
+    margin-block: var(--space-md);
+    & dt {
+      color: var(--color-muted);
+    }
+    & dd {
+      margin: 0;
+      font-weight: var(--font-weight-strong);
+    }
+    & mark {
+      background: var(--color-badge-warning-surface);
+      color: inherit;
+      border-radius: 0.2em;
+    }
+  }
+  .hint {
+    color: var(--color-muted);
+    font-size: var(--font-small);
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    align-items: center;
+    margin-block: var(--space-md) var(--space-lg);
+  }
+  .more {
+    justify-self: center;
+  }
+}

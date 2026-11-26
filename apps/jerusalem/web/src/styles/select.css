@@ -1,0 +1,55 @@
+/* Shared look of every list (SelectField). Global rather than in control.module.css, so the
+   class-name map that every page downloads stays the same size. Same layer as the controls. */
+@layer ui {
+  /* Lists (DESIGN.md 6.3): where the browser allows it, the closed list and its menu take the
+     site's look, with a purple arrow that keeps its distance from the edge. Phones keep the
+     system's own picker, and other browsers keep their native list. */
+  select {
+    cursor: pointer;
+  }
+  @supports (appearance: base-select) {
+    @media (width >= 40rem) {
+      select,
+      select::picker(select) {
+        appearance: base-select;
+      }
+      select {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        &::picker-icon {
+          margin-inline-start: auto;
+          color: var(--color-brand);
+        }
+        &:disabled {
+          cursor: not-allowed;
+          color: var(--color-muted);
+          background: var(--color-subtle);
+        }
+        &::picker(select) {
+          margin-block: var(--space-xs);
+          padding: var(--space-xs);
+          border: var(--border-width) solid var(--color-border);
+          border-radius: var(--radius-control);
+          background: var(--color-surface);
+          box-shadow: var(--shadow-overlay);
+        }
+        & option {
+          padding: var(--space-sm) var(--space-md);
+          border-radius: var(--radius-tag);
+        }
+        & option:hover,
+        & option:focus-visible {
+          background: var(--color-brand-soft);
+        }
+        & option:checked {
+          color: var(--color-brand);
+          font-weight: var(--font-weight-label);
+        }
+        & option::checkmark {
+          color: var(--color-brand);
+        }
+      }
+    }
+  }
+}

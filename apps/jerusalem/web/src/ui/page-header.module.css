@@ -1,0 +1,49 @@
+@layer ui {
+  .header {
+    display: grid;
+    gap: var(--space-sm);
+    margin-block-end: var(--space-xl);
+    & h1 {
+      margin: 0;
+    }
+  }
+  .back {
+    display: inline-flex;
+    gap: var(--space-sm);
+    align-items: center;
+    justify-self: start;
+    min-block-size: var(--control-min-size);
+    min-inline-size: var(--control-min-size);
+    color: var(--color-brand);
+    font-weight: var(--font-weight-strong);
+    text-decoration: none;
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+  .titleRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md) var(--space-xl);
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .lead {
+    margin: var(--space-xs) 0 0;
+    color: var(--color-muted);
+  }
+  /* On a phone the back row is an icon (its name stays in aria-label) and the action fills the
+     width under the title. */
+  @media (width < 40rem) {
+    .backLabel {
+      display: none;
+    }
+    .back {
+      justify-content: center;
+    }
+    .action {
+      flex-basis: 100%;
+      display: grid;
+    }
+  }
+}

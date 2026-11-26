@@ -1,0 +1,14 @@
+# Generated or third-party
+data/pool-file/
+node_modules/
+dist/
+/coverage/
+package-lock.json
+# Prose is reviewed by hand; Prettier reflows Hebrew tables badly
+*.md
+
+# Generated database types
+web/src/database.types.ts
+/e2e-dist/
+/test-results/
+/playwright-report/

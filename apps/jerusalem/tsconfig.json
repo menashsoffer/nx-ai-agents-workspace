@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": [
+    "supabase/functions/**/*.ts",
+    "supabase/tests/**/*.ts",
+    "scripts/thresholds/**/*.ts",
+    "scripts/schema/**/*.ts",
+    "scripts/bundle/**/*.ts",
+    "scripts/coverage/**/*.ts",
+    "scripts/lint/**/*.ts",
+    "e2e/**/*.ts",
+    "playwright.config.ts",
+    "playwright.smoke.config.ts"
+  ]
+}

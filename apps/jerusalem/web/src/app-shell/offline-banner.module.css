@@ -1,0 +1,15 @@
+@layer ui {
+  .banner {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: center;
+    margin: 0;
+    padding: var(--space-sm) var(--space-lg);
+    color: var(--color-surface);
+    background: var(--color-text);
+    font-weight: 600;
+  }
+  .icon {
+    flex: none;
+  }
+}

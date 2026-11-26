@@ -1,0 +1,38 @@
+@layer ui {
+  .notice {
+    display: flex;
+    gap: var(--space-md);
+    align-items: flex-start;
+    margin-block: var(--space-lg);
+    padding: var(--space-md) var(--space-lg);
+    border: var(--border-width) solid;
+    border-radius: var(--radius-control);
+    & p {
+      margin: 0;
+    }
+  }
+  .icon {
+    flex: none;
+    margin-block-start: 0.15em;
+  }
+  .success {
+    color: var(--color-badge-success-text);
+    background: var(--color-badge-success-surface);
+    border-color: var(--color-badge-success-border);
+  }
+  .error {
+    color: var(--color-badge-danger-text);
+    background: var(--color-badge-danger-surface);
+    border-color: var(--color-badge-danger-border);
+  }
+  .warning {
+    color: var(--color-badge-warning-text);
+    background: var(--color-badge-warning-surface);
+    border-color: var(--color-badge-warning-border);
+  }
+  .info {
+    color: var(--color-badge-info-text);
+    background: var(--color-badge-info-surface);
+    border-color: var(--color-badge-info-border);
+  }
+}

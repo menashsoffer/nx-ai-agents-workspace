@@ -1,0 +1,25 @@
+@layer features {
+  .page {
+    display: grid;
+    gap: var(--space-lg);
+  }
+  .steps {
+    display: grid;
+    gap: var(--space-md);
+    margin: 0;
+    padding-inline-start: var(--space-lg);
+    & li {
+      padding: var(--space-md);
+      background: var(--color-surface);
+      border: var(--border-width) solid var(--color-border);
+      border-radius: var(--radius-panel);
+    }
+    & h2 {
+      margin: 0 0 var(--space-xs);
+      font-size: 1.125rem;
+    }
+    & p {
+      margin: 0 0 var(--space-sm);
+    }
+  }
+}

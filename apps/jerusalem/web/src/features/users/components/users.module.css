@@ -1,0 +1,69 @@
+@layer features {
+  .grants table {
+    min-inline-size: max-content;
+  }
+  .grants button {
+    white-space: nowrap;
+  }
+  .card {
+    padding: var(--space-lg) var(--space-xl);
+    margin-block: var(--space-lg);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+  }
+  .actions {
+    display: flex;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+  }
+  .page {
+    display: grid;
+    gap: var(--space-lg);
+    & h2 {
+      margin: 0;
+    }
+  }
+  /* Two areas of one screen, as links so each has its own address. */
+  .tabs {
+    display: flex;
+    gap: var(--space-lg);
+    border-block-end: var(--border-width) solid var(--color-border);
+    & a {
+      padding-block: var(--space-sm);
+      color: var(--color-muted);
+      text-decoration: none;
+      font-weight: var(--font-weight-strong);
+      border-block-end: 3px solid transparent;
+    }
+    & a[aria-current='page'] {
+      color: var(--color-brand);
+      border-block-end-color: var(--color-brand);
+    }
+  }
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    & li {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-xs);
+      padding: 0 var(--space-sm);
+      border: var(--border-width) solid var(--color-brand-line);
+      border-radius: 999px;
+      background: var(--color-brand-soft);
+      white-space: nowrap;
+    }
+  }
+  /* An IconButton (size small) inside the role tag: only its colours change here. */
+  .tagRemove {
+    color: var(--color-text);
+    &:hover {
+      background: var(--color-surface);
+    }
+  }
+}

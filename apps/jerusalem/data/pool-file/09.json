@@ -1,0 +1,527 @@
+{
+ "name": "יועצים לאגף למדיניות ותכנון אסטרטגי",
+ "status": "unknown",
+ "note": "נטען מקובץ המאגר המאוחד (17.11.2026). מצב המקור בקובץ: אומת מול המקור.",
+ "url": "https://www.jerusalem.muni.il/media/j1yeqolc/מאגר-יועצים-אתר-עירוני.pdf",
+ "file_name": "מאגר-יועצים-אתר-עירוני.pdf",
+ "rows": [
+  {
+   "key": "SUP-0232",
+   "name": "בילד אסטרטגיה אורבנית בע\"מ",
+   "names": [
+    "בילד אסטרטגיה אורבנית בע\"מ",
+    "בילד אסטרטגיה אורבנית"
+   ],
+   "published_name": "בילד אסטרטגיה אורבנית",
+   "phones": [
+    "050-8442744"
+   ],
+   "emails": [
+    "levlovich@bld.co.il"
+   ],
+   "address": "הגדוד העברי 57, תל אביב-יפו 6605715"
+  },
+  {
+   "key": "SUP-0015",
+   "name": "תאסק תל אביב ייעוץ אסטרטגי בע\"מ",
+   "names": [
+    "תאסק תל אביב ייעוץ אסטרטגי בע\"מ",
+    "TASC"
+   ],
+   "published_name": "TASC",
+   "phones": [
+    "03-6081688"
+   ],
+   "emails": [
+    "tal.bar@tasc-consulting.com"
+   ],
+   "address": "דרך מנחם בגין 132, תל אביב-יפו",
+   "scheme": "company",
+   "value": "513596445"
+  },
+  {
+   "key": "SUP-0949",
+   "name": "רן שטוק – ייעוץ ניהולי ועסקי",
+   "names": [
+    "רן שטוק – ייעוץ ניהולי ועסקי",
+    "רן שטוק"
+   ],
+   "published_name": "רן שטוק",
+   "phones": [
+    "050-3528881"
+   ],
+   "emails": [
+    "ran@ranstock.com"
+   ],
+   "address": "רח' יגאל אלון 159 (כניסה ב'), תל אביב 67443",
+   "person": "רן 050-3528881",
+   "scheme": "personal_id",
+   "value": "059166009"
+  },
+  {
+   "key": "SUP-0720",
+   "name": "Know Your Data (נו-יור-דאטה)",
+   "names": [
+    "Know Your Data (נו-יור-דאטה)",
+    "נו-יור-דאטה"
+   ],
+   "published_name": "נו-יור-דאטה",
+   "phones": [
+    "054-4937952"
+   ],
+   "emails": [
+    "naamah@knowyourdata.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0487",
+   "name": "י.ק - תכנון כלכלי בע\"מ (ישראל קורץ)",
+   "names": [
+    "י.ק - תכנון כלכלי בע\"מ (ישראל קורץ)",
+    "י.ק. תכנון כלכלי"
+   ],
+   "published_name": "י.ק. תכנון כלכלי",
+   "phones": [
+    "054-4309808"
+   ],
+   "emails": [
+    "israelk77677@gmail.com"
+   ],
+   "address": "נתניה"
+  },
+  {
+   "key": "SUP-0435",
+   "name": "זגו",
+   "names": [
+    "זגו"
+   ],
+   "published_name": "זגו",
+   "emails": [
+    "a.goren@zago.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0718",
+   "name": "נאס מחקר וייעוץ בע\"מ (NAS Research & Consulting)",
+   "names": [
+    "נאס מחקר וייעוץ בע\"מ (NAS Research & Consulting)",
+    "נאס"
+   ],
+   "published_name": "נאס",
+   "phones": [
+    "050-861-9317"
+   ],
+   "emails": [
+    "avivit@nasconsulting"
+   ]
+  },
+  {
+   "key": "SUP-0133",
+   "name": "אל טי ג'י (לידינג טו גרו) גרופ בע\"מ",
+   "names": [
+    "אל טי ג'י (לידינג טו גרו) גרופ בע\"מ",
+    "אל טי ג'י"
+   ],
+   "published_name": "אל טי ג'י",
+   "phones": [
+    "050-7538876"
+   ],
+   "emails": [
+    "ido@ltg.co.il"
+   ],
+   "address": "מרחבים 1, עין צורים 7951000",
+   "scheme": "company",
+   "value": "516561115"
+  },
+  {
+   "key": "SUP-0874",
+   "name": "Q Behavioral Thinking (קו חשיבה התנהגותית)",
+   "names": [
+    "Q Behavioral Thinking (קו חשיבה התנהגותית)",
+    "קו חשיבה התנהגותית"
+   ],
+   "published_name": "קו חשיבה התנהגותית",
+   "emails": [
+    "roy@q-bt.co"
+   ]
+  },
+  {
+   "key": "SUP-0880",
+   "name": "קומיוניטי",
+   "names": [
+    "קומיוניטי"
+   ],
+   "published_name": "קומיוניטי",
+   "emails": [
+    "sebastian@pplan.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0005",
+   "name": "זיו האפט ייעוץ וניהול בע\"מ",
+   "names": [
+    "זיו האפט ייעוץ וניהול בע\"מ",
+    "זיו האפט"
+   ],
+   "published_name": "זיו האפט",
+   "emails": [
+    "yaarao@bdo.co.il"
+   ],
+   "address": "דרך בגין 48, תל אביב-יפו 6618003",
+   "scheme": "company",
+   "value": "510986011"
+  },
+  {
+   "key": "SUP-0238",
+   "name": "בן אברהמי",
+   "names": [
+    "בן אברהמי"
+   ],
+   "published_name": "בן אברהמי",
+   "emails": [
+    "b.avrahami@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0733",
+   "name": "ניר זקס",
+   "names": [
+    "ניר זקס"
+   ],
+   "published_name": "ניר זקס",
+   "emails": [
+    "@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0007",
+   "name": "Data Fusion",
+   "names": [
+    "Data Fusion"
+   ],
+   "published_name": "Data Fusion",
+   "emails": [
+    "info@datafusion.co.il"
+   ]
+  },
+  {
+   "key": "SUP-1065",
+   "name": "ד\"ר עידו ליטמנוביץ'",
+   "names": [
+    "ד\"ר עידו ליטמנוביץ'",
+    "עדו ליטמנוביץ"
+   ],
+   "published_name": "עדו ליטמנוביץ",
+   "emails": [
+    "@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0087",
+   "name": "אורבניקס בע\"מ",
+   "names": [
+    "אורבניקס בע\"מ",
+    "אורבניקס"
+   ],
+   "published_name": "אורבניקס",
+   "phones": [
+    "(52) 360-8692"
+   ],
+   "emails": [
+    "@urbanics.co.il"
+   ],
+   "address": "ז'בוטינסקי 1, רמת גן 5252001",
+   "person": "יפית בראון",
+   "scheme": "company",
+   "value": "512002130"
+  },
+  {
+   "key": "SUP-0087",
+   "name": "אורבניקס בע\"מ",
+   "names": [
+    "אורבניקס בע\"מ",
+    "אורבניקס"
+   ],
+   "published_name": "אורבניקס",
+   "phones": [
+    "(52) 360-8692"
+   ],
+   "emails": [
+    "iris@urbanics.co.il"
+   ],
+   "address": "ז'בוטינסקי 1, רמת גן 5252001",
+   "person": "יפית בראון",
+   "scheme": "company",
+   "value": "512002130"
+  },
+  {
+   "key": "SUP-0645",
+   "name": "מיכה פריינד",
+   "names": [
+    "מיכה פריינד"
+   ],
+   "published_name": "מיכה פריינד",
+   "emails": [
+    "michafraind@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0362",
+   "name": "דיאלוג - יעוץ ארגוני, מחקר והדרכה בע\"מ",
+   "names": [
+    "דיאלוג - יעוץ ארגוני, מחקר והדרכה בע\"מ",
+    "דיאלוג"
+   ],
+   "published_name": "דיאלוג",
+   "phones": [
+    "03-7659559"
+   ],
+   "emails": [
+    "hsima@amanet.co.il"
+   ],
+   "address": "הברזל 34, רמת החייל, תל אביב-יפו 6971050",
+   "scheme": "company",
+   "value": "512719709"
+  },
+  {
+   "key": "SUP-0799",
+   "name": "עידית ביטון",
+   "names": [
+    "עידית ביטון"
+   ],
+   "published_name": "עידית ביטון",
+   "emails": [
+    "iditbiton@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0660",
+   "name": "מכון ירושלים למחקרי מדיניות (ע\"ר)",
+   "names": [
+    "מכון ירושלים למחקרי מדיניות (ע\"ר)",
+    "מכון ירושלים"
+   ],
+   "published_name": "מכון ירושלים",
+   "phones": [
+    "02-5630175"
+   ],
+   "emails": [
+    "davidr@jerusalemintitute.org.il"
+   ],
+   "address": "רד\"ק 20, ירושלים 9218604",
+   "scheme": "nonprofit",
+   "value": "580051894"
+  },
+  {
+   "key": "SUP-0359",
+   "name": "ביון אי טי סולושנס בע\"מ ייעוץ ארגוני",
+   "names": [
+    "ביון אי טי סולושנס בע\"מ ייעוץ ארגוני",
+    "BYON"
+   ],
+   "published_name": "BYON",
+   "emails": [
+    "byonoffice@byon-it.com"
+   ]
+  },
+  {
+   "key": "SUP-0775",
+   "name": "ספינקס",
+   "names": [
+    "ספינקס"
+   ],
+   "published_name": "ספינקס",
+   "emails": [
+    "sefi@sphinx.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0175",
+   "name": "אס קיו השיטה בע\"מ",
+   "names": [
+    "אס קיו השיטה בע\"מ",
+    "אס.קיו.השיטה SQ"
+   ],
+   "published_name": "אס.קיו.השיטה SQ",
+   "phones": [
+    "03-5351364"
+   ],
+   "emails": [
+    "office@sqm.co.il"
+   ],
+   "address": "מושב גאליה",
+   "scheme": "company",
+   "value": "513936997"
+  },
+  {
+   "key": "SUP-0160",
+   "name": "ד\"ר אמיר ברודנר",
+   "names": [
+    "ד\"ר אמיר ברודנר",
+    "אמיר ברודנר"
+   ],
+   "published_name": "אמיר ברודנר",
+   "emails": [
+    "amir.brd@gmail.com"
+   ],
+   "address": "האוניברסיטה העברית, בית הספר למנהל עסקים, ירושלים"
+  },
+  {
+   "key": "SUP-0717",
+   "name": "נאמברזון בע\"מ",
+   "names": [
+    "נאמברזון בע\"מ",
+    "נאמברזון"
+   ],
+   "published_name": "נאמברזון",
+   "emails": [
+    "nadav115@gmail.com"
+   ],
+   "address": "המשנה 15, תל אביב-יפו 6291007",
+   "scheme": "company",
+   "value": "516871274"
+  },
+  {
+   "key": "SUP-0005",
+   "name": "זיו האפט ייעוץ וניהול בע\"מ",
+   "names": [
+    "זיו האפט ייעוץ וניהול בע\"מ",
+    "זיו האפט BDO"
+   ],
+   "published_name": "זיו האפט BDO",
+   "emails": [
+    "yoramb@bdo.co.il"
+   ],
+   "address": "דרך בגין 48, תל אביב-יפו 6618003",
+   "scheme": "company",
+   "value": "510986011"
+  },
+  {
+   "key": "SUP-0943",
+   "name": "רן וולף תכנון אורבאני וניהול פרוייקטים בע\"מ",
+   "names": [
+    "רן וולף תכנון אורבאני וניהול פרוייקטים בע\"מ",
+    "רן וולף"
+   ],
+   "published_name": "רן וולף",
+   "phones": [
+    "03-5546733"
+   ],
+   "emails": [
+    "ran@ranwolf.co.il"
+   ],
+   "address": "מנדלקרן 5א, תל אביב - יפו, 6789579"
+  },
+  {
+   "key": "SUP-0145",
+   "name": "ד\"ר אליה בן שבת הנדסת תחבורה תנועה ובקרה בע\"מ",
+   "names": [
+    "ד\"ר אליה בן שבת הנדסת תחבורה תנועה ובקרה בע\"מ",
+    "אליה הנדסה"
+   ],
+   "published_name": "אליה הנדסה",
+   "emails": [
+    "or@eliabs.com"
+   ]
+  },
+  {
+   "key": "SUP-0015",
+   "name": "תאסק תל אביב ייעוץ אסטרטגי בע\"מ",
+   "names": [
+    "תאסק תל אביב ייעוץ אסטרטגי בע\"מ",
+    "TASC"
+   ],
+   "published_name": "TASC",
+   "phones": [
+    "03-6081688"
+   ],
+   "emails": [
+    "alon.preminger@tasc-consulting.com"
+   ],
+   "address": "דרך מנחם בגין 132, תל אביב-יפו",
+   "scheme": "company",
+   "value": "513596445"
+  },
+  {
+   "key": "SUP-0874",
+   "name": "Q Behavioral Thinking (קו חשיבה התנהגותית)",
+   "names": [
+    "Q Behavioral Thinking (קו חשיבה התנהגותית)",
+    "קו חשיבה התנהגותית"
+   ],
+   "published_name": "קו חשיבה התנהגותית",
+   "emails": [
+    "roy@q-bt.co"
+   ]
+  },
+  {
+   "key": "SUP-0767",
+   "name": "סיגמא 6 בע\"מ",
+   "names": [
+    "סיגמא 6 בע\"מ",
+    "סיגמא 6"
+   ],
+   "published_name": "סיגמא 6",
+   "phones": [
+    "050-4014076"
+   ],
+   "emails": [
+    "ori_b@jtmt.gov.il"
+   ],
+   "address": "אגריפס 88, ירושלים 9451309",
+   "scheme": "company",
+   "value": "515736809"
+  },
+  {
+   "key": "SUP-0012",
+   "name": "סומך חייקין (KPMG)",
+   "names": [
+    "סומך חייקין (KPMG)",
+    "KPMG"
+   ],
+   "published_name": "KPMG",
+   "phones": [
+    "03-6848918"
+   ],
+   "emails": [
+    "onnisraeli@kpmg.com"
+   ],
+   "address": "הארבעה 17, תל אביב-יפו",
+   "scheme": "company",
+   "value": "540002383"
+  },
+  {
+   "key": "SUP-0012",
+   "name": "סומך חייקין (KPMG)",
+   "names": [
+    "סומך חייקין (KPMG)",
+    "KPMG"
+   ],
+   "published_name": "KPMG",
+   "phones": [
+    "03-6848918"
+   ],
+   "emails": [
+    "marselalmog@kpmg.com"
+   ],
+   "address": "הארבעה 17, תל אביב-יפו",
+   "scheme": "company",
+   "value": "540002383"
+  },
+  {
+   "key": "SUP-0005",
+   "name": "זיו האפט ייעוץ וניהול בע\"מ",
+   "names": [
+    "זיו האפט ייעוץ וניהול בע\"מ",
+    "זיו האפט BDO"
+   ],
+   "published_name": "זיו האפט BDO",
+   "emails": [
+    "gideonc@bdo.co.il"
+   ],
+   "address": "דרך בגין 48, תל אביב-יפו 6618003",
+   "scheme": "company",
+   "value": "510986011"
+  }
+ ]
+}

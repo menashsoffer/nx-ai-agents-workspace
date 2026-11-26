@@ -1,0 +1,895 @@
+<title>שפת העיצוב של מאגרי הספקים</title>
+<meta name="claude:viewport-fit-sides" content="cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&display=swap"
+/>
+<style>
+  /* Layout: one reading column; mocks sit in their own frames, desktop then two phones side by side. */
+  :root {
+    --bg: #f7f6f9;
+    --surface: #ffffff;
+    --fg: #1f1a2b;
+    --muted: #5b5568;
+    --line: #e2dfe8;
+    --brand: #522583;
+    --brand-soft: #f1ecf7;
+    --font: 'Assistant', 'Segoe UI', Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --bg: #16131c;
+      --surface: #1f1b27;
+      --fg: #ece8f2;
+      --muted: #aaa3b8;
+      --line: #332d3f;
+      --brand: #c4a6ea;
+      --brand-soft: #2a2236;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme='dark'] {
+    --bg: #16131c;
+    --surface: #1f1b27;
+    --fg: #ece8f2;
+    --muted: #aaa3b8;
+    --line: #332d3f;
+    --brand: #c4a6ea;
+    --brand-soft: #2a2236;
+    color-scheme: dark;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font);
+    font-size: 17px;
+    line-height: 1.6;
+    direction: rtl;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap {
+    max-width: 1100px;
+    margin-inline: auto;
+    padding-block: 40px 64px;
+    display: grid;
+    gap: 52px;
+  }
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+  h1 {
+    font-size: clamp(1.9rem, 1.4rem + 2vw, 2.6rem);
+    font-weight: 800;
+  }
+  h2 {
+    font-size: 1.55rem;
+    font-weight: 800;
+  }
+  h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+  }
+  p {
+    margin: 0;
+    max-width: 68ch;
+  }
+  .lead {
+    color: var(--muted);
+    font-size: 1.1rem;
+  }
+  .note {
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+  .stripe {
+    height: 6px;
+    border-radius: 3px;
+    width: 200px;
+    background: linear-gradient(
+      to left,
+      #522583 0%,
+      #a0127f 22%,
+      #e6007e 38%,
+      #f59c0e 58%,
+      #bccf02 76%,
+      #6093cd 100%
+    );
+  }
+  .sec {
+    display: grid;
+    gap: 16px;
+  }
+  .frame {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface);
+  }
+  .phones {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    align-items: flex-start;
+  }
+  .phone {
+    width: 360px;
+    max-width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 28px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .picks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .pick {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: grid;
+    gap: 6px;
+    align-content: start;
+  }
+  .pick p {
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+  }
+  .sw {
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 2px 10px;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px;
+    font-size: 0.85rem;
+  }
+  .sw i {
+    grid-row: span 2;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    border: 1px solid #0000001a;
+  }
+  .sw b {
+    font-weight: 700;
+  }
+  .sw span {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    direction: ltr;
+    text-align: end;
+  }
+  .qs {
+    display: grid;
+    gap: 10px;
+  }
+  .qs div {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 18px;
+  }
+  bdi.n {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- product mock (fixed light look: this is the product itself) ---------- */
+  .ui {
+    --p: #522583;
+    --p-hover: #3f1c66;
+    --p-soft: #f1ecf7;
+    --p-line: #ddd2ea;
+    --page: #f7f6f9;
+    --surf: #fff;
+    --text: #1f1a2b;
+    --mut: #5b5568;
+    --ln: #e2dfe8;
+    --in: #8c8599;
+    --pink: #e6007e;
+    --lime: #bccf02;
+    --orange: #f59c0e;
+    --blue: #6093cd;
+    --ok: #1e6b3c;
+    --ok-bg: #e7f4ec;
+    --warn: #7a4b06;
+    --warn-bg: #fdf1d8;
+    --bad: #9b1c2c;
+    --bad-bg: #fbe8ea;
+    --info: #1f4f86;
+    --info-bg: #e8f0fa;
+    background: var(--page);
+    color: var(--text);
+    font-family: 'Assistant', 'Segoe UI', Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  .ui .bar {
+    background: var(--surf);
+    border-bottom: 1px solid var(--ln);
+  }
+  .ui .bar-in {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 0 28px;
+    height: 64px;
+  }
+  .ui .mark {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 800;
+    font-size: 17px;
+    color: var(--p);
+    white-space: nowrap;
+  }
+  .ui .mark small {
+    display: block;
+    color: var(--mut);
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .ui .dots {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+  }
+  .ui .dots i {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+  }
+  .ui .tabs {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+  }
+  .ui .tabs a {
+    padding: 8px 14px;
+    border-radius: 8px;
+    color: var(--mut);
+    font-weight: 600;
+  }
+  .ui .tabs a.on {
+    background: var(--p-soft);
+    color: var(--p);
+  }
+  .ui .me {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--p);
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+  }
+  .ui .rule {
+    height: 3px;
+    background: linear-gradient(
+      to left,
+      #522583 0%,
+      #a0127f 22%,
+      #e6007e 38%,
+      #f59c0e 58%,
+      #bccf02 76%,
+      #6093cd 100%
+    );
+  }
+  .ui main {
+    padding: 28px;
+    display: grid;
+    gap: 18px;
+  }
+  .ui .h {
+    font-size: 28px;
+    font-weight: 800;
+    margin: 0;
+  }
+  .ui .sub {
+    color: var(--mut);
+    margin: 0;
+  }
+  .ui .search {
+    display: flex;
+    gap: 10px;
+  }
+  .ui .field {
+    flex: 1;
+    height: 48px;
+    border: 1px solid var(--in);
+    border-radius: 10px;
+    background: var(--surf);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-inline: 14px;
+    color: var(--mut);
+  }
+  .ui .field svg {
+    flex: none;
+  }
+  .ui .btn {
+    height: 48px;
+    padding-inline: 22px;
+    border-radius: 10px;
+    background: var(--p);
+    color: #fff;
+    display: inline-grid;
+    place-items: center;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .ui .btn2 {
+    height: 40px;
+    padding-inline: 16px;
+    border-radius: 10px;
+    border: 1px solid var(--p-line);
+    color: var(--p);
+    background: var(--surf);
+    display: inline-grid;
+    place-items: center;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .ui .chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .ui .chip {
+    border: 1px solid var(--ln);
+    background: var(--surf);
+    border-radius: 999px;
+    padding: 4px 14px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .ui .chip.on {
+    background: var(--p);
+    color: #fff;
+    border-color: var(--p);
+  }
+  .ui .meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--mut);
+  }
+  .ui .grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .ui .card {
+    background: var(--surf);
+    border: 1px solid var(--ln);
+    border-radius: 14px;
+    padding: 18px;
+    display: grid;
+    gap: 10px;
+  }
+  .ui .card-h {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: start;
+  }
+  .ui .card h5 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  .ui .pool {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--mut);
+    font-size: 14px;
+  }
+  .ui .pool i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .ui .tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .ui .tag {
+    background: var(--page);
+    border: 1px solid var(--ln);
+    border-radius: 6px;
+    padding: 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--mut);
+  }
+  .ui .foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--ln);
+    padding-top: 12px;
+  }
+  .ui .st {
+    border-radius: 999px;
+    padding: 1px 10px;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .ui .ok {
+    background: var(--ok-bg);
+    color: var(--ok);
+  }
+  .ui .warn {
+    background: var(--warn-bg);
+    color: var(--warn);
+  }
+  .ui .bad {
+    background: var(--bad-bg);
+    color: var(--bad);
+  }
+  .ui .lnk {
+    color: var(--p);
+    font-weight: 700;
+  }
+  .ui .last {
+    font-size: 13px;
+    color: var(--mut);
+  }
+  /* phone */
+  .ui.m main {
+    padding: 16px;
+    gap: 14px;
+  }
+  .ui.m .bar-in {
+    padding: 0 16px;
+    height: 56px;
+    gap: 12px;
+    justify-content: space-between;
+  }
+  .ui.m .h {
+    font-size: 24px;
+  }
+  .ui.m .grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .ui.m .card {
+    padding: 16px;
+  }
+  .ui.m .chips {
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  .ui .tabbar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    background: var(--surf);
+    border-top: 1px solid var(--ln);
+    padding: 8px 0 14px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--mut);
+  }
+  .ui .tabbar span {
+    display: grid;
+    gap: 2px;
+    justify-items: center;
+  }
+  .ui .tabbar span.on {
+    color: var(--p);
+  }
+  .ui .tabbar i {
+    width: 22px;
+    height: 4px;
+    border-radius: 2px;
+    background: transparent;
+  }
+  .ui .tabbar span.on i {
+    background: var(--p);
+  }
+  .ui .back {
+    color: var(--p);
+    font-weight: 700;
+  }
+  .ui .kv {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 14px;
+    font-size: 15px;
+  }
+  .ui .kv span {
+    color: var(--mut);
+  }
+  .ui .kv > * {
+    justify-self: start;
+  }
+  .ui .verdict {
+    border-radius: 12px;
+    background: var(--ok-bg);
+    padding: 14px 16px;
+    display: grid;
+    gap: 4px;
+  }
+  .ui .verdict b {
+    color: var(--ok);
+    font-size: 16px;
+  }
+  .ui .verdict span {
+    font-size: 14px;
+    color: var(--text);
+  }
+  .ui .sticky {
+    background: var(--surf);
+    border-top: 1px solid var(--ln);
+    padding: 12px 16px;
+    display: flex;
+    gap: 10px;
+  }
+  .ui .sticky .btn {
+    flex: 1;
+  }
+</style>
+
+<div class="wrap">
+  <header class="sec">
+    <div class="stripe" aria-hidden="true"></div>
+    <h1>מאגרי הספקים, בצבעי ירושלים</h1>
+    <p class="lead">
+      הכיוון שהתגבש מהתשובות שלך: הפריסה הרגועה של "שקט מוסדי", הגופן Assistant, כרטיסים מסודרים
+      ונעימים לגלילה, וצבעי עיריית ירושלים בגרסה נקייה. אותה שפה במחשב ובנייד.
+    </p>
+    <p class="note">
+      הספקים והמספרים בדוגמאות אינם אמיתיים. הסכום בבדיקת המסלול הוא הסף של נובמבר.
+    </p>
+  </header>
+
+  <section class="sec">
+    <h2>במחשב: איתור ספקים</h2>
+    <div class="frame">
+      <div class="ui" style="min-width: 960px">
+        <div class="bar">
+          <div class="bar-in">
+            <span class="mark"
+              ><span class="dots" aria-hidden="true"
+                ><i style="background: var(--p)"></i><i style="background: var(--pink)"></i
+                ><i style="background: var(--orange)"></i
+                ><i style="background: var(--blue)"></i></span
+              ><span>מאגרי ספקים<small>עיריית ירושלים</small></span></span
+            >
+            <nav class="tabs"><a class="on">איתור ספקים</a><a>בקשות התקשרות</a><a>ניהול</a></nav>
+            <span class="me">מ</span>
+          </div>
+          <div class="rule" aria-hidden="true"></div>
+        </div>
+        <main>
+          <div>
+            <p class="h">איתור ספקים</p>
+            <p class="sub">חיפוש בכל מאגרי היועצים והספקים של העירייה</p>
+          </div>
+          <div class="search">
+            <div class="field">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" /></svg
+              >שם ספק, ח.פ., תחום או מאגר
+            </div>
+            <span class="btn">חיפוש</span>
+          </div>
+          <div class="chips">
+            <span class="chip on">הכול</span><span class="chip">תכנון ובינוי</span
+            ><span class="chip">תחבורה</span><span class="chip">חינוך וקהילה</span
+            ><span class="chip">מתקנים ואולמות</span><span class="chip">עוד מסננים</span>
+          </div>
+          <div class="meta">
+            <span><bdi class="n">1,299</bdi> ספקים ב-<bdi class="n">44</bdi> מאגרים</span
+            ><span>מיון: שם ספק</span>
+          </div>
+          <div class="grid">
+            <article class="card">
+              <div class="card-h">
+                <h5>דוגמה הנדסה ותכנון בע"מ</h5>
+                <span class="st ok">פעיל</span>
+              </div>
+              <span class="pool"><i style="background: var(--blue)"></i>מאגר יועצי תנועה</span>
+              <div class="tags">
+                <span class="tag">תכנון תנועה</span><span class="tag">בטיחות</span>
+              </div>
+              <div class="foot">
+                <span class="last">פנייה אחרונה: 14.09.2026</span
+                ><span class="lnk">לכרטיס הספק</span>
+              </div>
+            </article>
+            <article class="card">
+              <div class="card-h">
+                <h5>סטודיו נוף לדוגמה</h5>
+                <span class="st warn">בבדיקה</span>
+              </div>
+              <span class="pool"><i style="background: var(--lime)"></i>מאגר אדריכלות נוף</span>
+              <div class="tags"><span class="tag">אדריכלות נוף</span></div>
+              <div class="foot">
+                <span class="last">לא פנו בשנה האחרונה</span><span class="lnk">לכרטיס הספק</span>
+              </div>
+            </article>
+            <article class="card">
+              <div class="card-h">
+                <h5>אולם הדוגמה</h5>
+                <span class="st ok">פעיל</span>
+              </div>
+              <span class="pool"><i style="background: var(--orange)"></i>מאגר אולמות וטקסים</span>
+              <div class="tags">
+                <span class="tag">עד 400 מקומות</span><span class="tag">נגיש</span>
+              </div>
+              <div class="foot">
+                <span class="last">פנייה אחרונה: 02.05.2026</span
+                ><span class="lnk">לכרטיס הספק</span>
+              </div>
+            </article>
+            <article class="card">
+              <div class="card-h">
+                <h5>ייעוץ חינוכי לדוגמה</h5>
+                <span class="st bad">חסום</span>
+              </div>
+              <span class="pool"><i style="background: var(--pink)"></i>מאגר יועצי חינוך</span>
+              <div class="tags"><span class="tag">הדרכה</span><span class="tag">פדגוגיה</span></div>
+              <div class="foot">
+                <span class="last">חסום עד בירור מסמכים</span><span class="lnk">לכרטיס הספק</span>
+              </div>
+            </article>
+            <article class="card">
+              <div class="card-h">
+                <h5>מדידות דוגמה ושות'</h5>
+                <span class="st ok">פעיל</span>
+              </div>
+              <span class="pool"><i style="background: var(--p)"></i>מאגר מודדים</span>
+              <div class="tags"><span class="tag">מדידה</span><span class="tag">GIS</span></div>
+              <div class="foot">
+                <span class="last">פנייה אחרונה: 30.10.2026</span
+                ><span class="lnk">לכרטיס הספק</span>
+              </div>
+            </article>
+            <article class="card">
+              <div class="card-h">
+                <h5>כלכלה עירונית לדוגמה</h5>
+                <span class="st ok">פעיל</span>
+              </div>
+              <span class="pool"><i style="background: var(--p)"></i>מאגר יועצים כלכליים</span>
+              <div class="tags"><span class="tag">שמאות</span><span class="tag">כלכלה</span></div>
+              <div class="foot">
+                <span class="last">לא פנו בשנה האחרונה</span><span class="lnk">לכרטיס הספק</span>
+              </div>
+            </article>
+          </div>
+        </main>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>בנייד: אותה רשימה, וכרטיס ספק עם בדיקת מסלול</h2>
+    <div class="phones">
+      <div class="phone">
+        <div class="ui m">
+          <div class="bar">
+            <div class="bar-in">
+              <span class="mark"
+                ><span class="dots" aria-hidden="true"
+                  ><i style="background: var(--p)"></i><i style="background: var(--pink)"></i
+                  ><i style="background: var(--orange)"></i
+                  ><i style="background: var(--blue)"></i></span
+                >מאגרי ספקים</span
+              ><span class="me">מ</span>
+            </div>
+            <div class="rule" aria-hidden="true"></div>
+          </div>
+          <main>
+            <p class="h">איתור ספקים</p>
+            <div class="field">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" /></svg
+              >שם, ח.פ., תחום
+            </div>
+            <div class="chips">
+              <span class="chip on">סינון (2)</span><span class="chip">תחבורה</span
+              ><span class="chip">פעיל</span>
+            </div>
+            <div class="meta">
+              <span><bdi class="n">38</bdi> ספקים</span>
+            </div>
+            <div class="grid">
+              <article class="card">
+                <div class="card-h">
+                  <h5>דוגמה הנדסה ותכנון בע"מ</h5>
+                  <span class="st ok">פעיל</span>
+                </div>
+                <span class="pool"><i style="background: var(--blue)"></i>מאגר יועצי תנועה</span>
+                <div class="foot">
+                  <span class="last">פנייה אחרונה: 14.09.2026</span><span class="lnk">לכרטיס</span>
+                </div>
+              </article>
+              <article class="card">
+                <div class="card-h">
+                  <h5>תנועה ותחבורה לדוגמה</h5>
+                  <span class="st ok">פעיל</span>
+                </div>
+                <span class="pool"><i style="background: var(--blue)"></i>מאגר יועצי תנועה</span>
+                <div class="foot">
+                  <span class="last">לא פנו בשנה האחרונה</span><span class="lnk">לכרטיס</span>
+                </div>
+              </article>
+            </div>
+          </main>
+          <div class="tabbar">
+            <span class="on"><i></i>איתור</span><span><i></i>בקשות</span><span><i></i>ניהול</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="phone">
+        <div class="ui m">
+          <div class="bar">
+            <div class="bar-in">
+              <span class="back">→ חזרה לרשימה</span><span class="me">מ</span>
+            </div>
+          </div>
+          <main>
+            <div>
+              <p class="h">דוגמה הנדסה ותכנון בע"מ</p>
+              <span class="st ok">פעיל</span>
+            </div>
+            <div class="kv">
+              <span>ח.פ.</span><bdi class="n">51-000000-1</bdi><span>מאגר</span><b>יועצי תנועה</b
+              ><span>תוקף רישום</span><bdi class="n">31.03.2027</bdi><span>פנייה אחרונה</span
+              ><bdi class="n">14.09.2026</bdi>
+            </div>
+            <div class="verdict">
+              <b>אפשר להתקשר בהצעות מחיר</b
+              ><span
+                >אומדן <bdi class="n">120,000</bdi> ₪, מתחת לסף <bdi class="n">170,500</bdi> ₪</span
+              >
+            </div>
+            <div class="tags">
+              <span class="tag">תכנון תנועה</span><span class="tag">בטיחות</span>
+            </div>
+          </main>
+          <div class="sticky">
+            <span class="btn">הוספה לבקשה</span><span class="btn2">פרטי קשר</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>מה הוחלט</h2>
+    <div class="picks">
+      <div class="pick">
+        <h3>צבע</h3>
+        <p>
+          הסגול של לוגו העירייה הוא צבע הפעולה: כפתורים, קישורים, הלשונית הנבחרת. ארבעת הצבעים
+          האחרים של הלוגו מופיעים רק כקישוט: פס דק מתחת לכותרת שבו הצבעים נמזגים זה בזה במעבר רך
+          ונקודת צבע לכל משפחת מאגרים. אף פעם לא כטקסט.
+        </p>
+      </div>
+      <div class="pick">
+        <h3>גופן</h3>
+        <p>
+          Assistant בשלושה משקלים (רגיל, חצי-מודגש, מודגש). מתארח אצלנו כקובץ WOFF2 בעברית בלבד, עם
+          גופן גיבוי שלא גורם לקפיצה.
+        </p>
+      </div>
+      <div class="pick">
+        <h3>צפיפות</h3>
+        <p>
+          כרטיסים מרווחים עם ארבע שורות בדיוק: שם וסטטוס, מאגר, תחומים, פנייה אחרונה. כל השאר בכרטיס
+          הספק. במחשב שלוש עמודות, בנייד אחת.
+        </p>
+      </div>
+      <div class="pick">
+        <h3>נייד</h3>
+        <p>
+          ניווט בסרגל תחתון, מסננים כשורת תגיות שנפתחת לחלון, וכפתור הפעולה הראשי צמוד לתחתית המסך.
+        </p>
+      </div>
+      <div class="pick">
+        <h3>מצב כהה</h3>
+        <p>
+          לא מפעילים עכשיו. בונים את הצבעים כך שהוספה בעתיד תהיה החלפת ערכים בקובץ אחד, בלי לגעת
+          במסכים.
+        </p>
+      </div>
+      <div class="pick">
+        <h3>אזור ספקים בעתיד</h3>
+        <p>אותה שפה בדיוק. ההבדל רק בדף הבית: "התיק שלי" עם עבודות ומסמכים, במקום חיפוש.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>הצבעים</h2>
+    <div class="swatches">
+      <div class="sw">
+        <i style="background: #522583"></i><b>סגול ירושלים</b><span>#522583</span>
+      </div>
+      <div class="sw">
+        <i style="background: #3f1c66"></i><b>סגול במעבר עכבר</b><span>#3F1C66</span>
+      </div>
+      <div class="sw">
+        <i style="background: #f1ecf7"></i><b>רקע סגול רך</b><span>#F1ECF7</span>
+      </div>
+      <div class="sw"><i style="background: #f7f6f9"></i><b>רקע הדף</b><span>#F7F6F9</span></div>
+      <div class="sw"><i style="background: #1f1a2b"></i><b>טקסט</b><span>#1F1A2B</span></div>
+      <div class="sw"><i style="background: #5b5568"></i><b>טקסט משני</b><span>#5B5568</span></div>
+      <div class="sw">
+        <i style="background: #e6007e"></i><b>ורוד (קישוט)</b><span>#E6007E</span>
+      </div>
+      <div class="sw">
+        <i style="background: #f59c0e"></i><b>כתום (קישוט)</b><span>#F59C0E</span>
+      </div>
+      <div class="sw">
+        <i style="background: #bccf02"></i><b>ירוק-ליים (קישוט)</b><span>#BCCF02</span>
+      </div>
+      <div class="sw">
+        <i style="background: #6093cd"></i><b>תכלת (קישוט)</b><span>#6093CD</span>
+      </div>
+    </div>
+    <p class="note">
+      צבעי הלוגו נלקחו מרישום הלוגו של העירייה ב-whatthelogo.com. לא הצלחתי לפתוח את אתר העירייה
+      בדפדפן שלך כדי לאמת, ולכן כדאי לוודא מול מדריך המותג של העירייה אם יש לך גישה אליו.
+    </p>
+  </section>
+
+  <section class="sec">
+    <h2>נשאר לאשר</h2>
+    <div class="qs">
+      <div>
+        האם הסגול כצבע ראשי מרגיש לך "עיריית ירושלים"? אפשרות אחרת היא תכלת כהה מהלוגו, אבל הוא חלש
+        מדי לטקסט על לבן.
+      </div>
+    </div>
+  </section>
+</div>

@@ -1,0 +1,24 @@
+{
+  "include": [
+    "web/src/**/*.{ts,tsx}",
+    "supabase/functions/**/*.ts",
+    "scripts/bundle/**/*.ts",
+    "scripts/coverage/**/*.ts",
+    "scripts/thresholds/**/*.ts"
+  ],
+  "exclude": [
+    "**/tests/**",
+    "web/src/database.types.ts",
+    "web/src/main.tsx",
+    "scripts/bundle/check-bundle-size.ts",
+    "scripts/coverage/check-coverage.ts",
+    "scripts/thresholds/calculate.ts",
+    "scripts/coverage/run.ts"
+  ],
+  "thresholds": {
+    "lines": 90,
+    "branches": 90,
+    "functions": 90,
+    "sqlFunctions": 90
+  }
+}

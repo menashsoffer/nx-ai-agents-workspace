@@ -1,0 +1,25 @@
+# Loads the registries of the consolidated pool file (data/pool-file) into production.
+# Started by hand only, and waits for the owner's approval in the production
+# environment. There is no staging job: staging holds dummy data only.
+name: load-pool-file
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-supabase
+  cancel-in-progress: false
+
+jobs:
+  production:
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Load registries
+        run: scripts/deploy/load-pool-file.sh "${{ vars.PRODUCTION_PROJECT_REF }}"

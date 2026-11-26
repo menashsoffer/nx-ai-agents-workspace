@@ -1,0 +1,67 @@
+@layer ui {
+  /* Icon-only buttons (DESIGN.md 6.2): a square target and a name bubble above it. */
+  .wrap {
+    position: relative;
+    flex: none;
+    display: inline-flex;
+    vertical-align: middle;
+  }
+  /* Two classes, so these win over the variant's padding and height in the same layer. */
+  .wrap > .iconButton {
+    inline-size: var(--control-min-size);
+    min-inline-size: var(--control-min-size);
+    padding: 0;
+    & svg {
+      inline-size: 1.375rem;
+      block-size: 1.375rem;
+    }
+  }
+  .wrap > .regular {
+    block-size: var(--control-min-size);
+  }
+  /* Small inside a filter tag: 2rem to the eye, 44px to a finger (WCAG 2.5.5). */
+  .wrap > .small {
+    position: relative;
+    inline-size: 2rem;
+    min-inline-size: 2rem;
+    block-size: 2rem;
+    min-block-size: 2rem;
+    border-radius: var(--radius-pill);
+    & svg {
+      inline-size: 1rem;
+      block-size: 1rem;
+    }
+    @media (pointer: coarse) {
+      &::before {
+        content: '';
+        position: absolute;
+        inset: calc((2rem - 2.75rem) / 2);
+      }
+    }
+  }
+  .tip {
+    position: absolute;
+    inset-block-end: calc(100% + var(--space-xs));
+    inset-inline-end: 0;
+    z-index: 1;
+    padding: var(--space-xs) var(--space-sm);
+    border-radius: var(--radius-tag);
+    background: var(--color-text);
+    color: var(--color-surface);
+    font-size: var(--font-xs);
+    font-weight: var(--font-weight-label);
+    line-height: var(--line-height-body);
+    white-space: nowrap;
+    &[hidden] {
+      display: none;
+    }
+  }
+  /* A long tip beside a label opens toward the field, so it stays on a narrow screen. */
+  .tip.long {
+    inset-inline-end: auto;
+    inset-inline-start: 0;
+    inline-size: max-content;
+    max-inline-size: min(18rem, 80vw);
+    white-space: normal;
+  }
+}

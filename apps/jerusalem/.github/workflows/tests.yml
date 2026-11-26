@@ -1,0 +1,73 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+      - run: pip install ruff==0.16.9 coverage==7.17.3 -r requirements-scripts.txt
+      - run: ruff format --check .
+      - run: ruff check .
+      # Fails below the fail_under value in pyproject.toml.
+      - run: python -m coverage run -m unittest discover -s tests -t . -v
+      - run: python -m coverage report
+
+  typescript:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build:web
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run types:db:check
+      # Runs every TypeScript test and fails below the thresholds in scripts/coverage/scope.json.
+      - run: npm run coverage
+      - run: npm run size:check
+
+  # Browser tests of the main journeys against a local Supabase (documentation/e2e-tests-he.md).
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: supabase/setup-cli@v3.2.0
+        with:
+          version: 3.1.0
+      - name: Start the local database with migrations, dummy data and Edge Functions
+        run: supabase start -x studio,imgproxy,logflare,vector,realtime,supavisor,postgres-meta
+      - name: Pass its addresses and public key to the tests
+        run: |
+          supabase status -o env | grep -E '^(API_URL|PUBLISHABLE_KEY|DB_URL|MAILPIT_URL)=' \
+            | sed -E 's/^([A-Z_]+)="?([^"]*)"?$/E2E_\1=\2/' >> "$GITHUB_ENV"
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

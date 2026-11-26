@@ -1,0 +1,262 @@
+@layer ui {
+  .control {
+    box-sizing: border-box;
+    border: var(--border-width) solid var(--color-input-border);
+    border-radius: var(--radius-control);
+    padding: var(--space-md) var(--space-lg);
+    min-block-size: var(--control-min-size);
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    color: var(--color-text);
+    background: var(--color-surface);
+    font: inherit;
+    font-size: var(--font-body-size);
+  }
+  /* Every button (DESIGN.md 6.2): shared behaviour only. The variants below add the look. */
+  .base {
+    cursor: pointer;
+    &:disabled {
+      opacity: var(--skeleton-opacity-min);
+      cursor: not-allowed;
+    }
+    &[aria-disabled='true'] {
+      cursor: progress;
+    }
+  }
+  /* Special patterns (action tile, step indicator, status mark) style themselves. */
+  .plain {
+    composes: base;
+  }
+  .button {
+    composes: control base;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+    color: var(--color-on-brand);
+    background: var(--color-brand);
+    border-color: var(--color-brand);
+    font-weight: var(--font-weight-strong);
+    overflow-wrap: anywhere;
+    text-align: center;
+    /* A physical edge under the button that it presses into (DESIGN.md 6.2, 26.11.2026). */
+    box-shadow: 0 var(--press-depth) 0 var(--color-press-edge);
+    @media (prefers-reduced-motion: no-preference) {
+      transition:
+        background-color var(--duration-quick),
+        border-color var(--duration-quick),
+        color var(--duration-quick),
+        transform var(--duration-spring) var(--ease-spring),
+        box-shadow var(--duration-quick);
+      &:active:not(:disabled, [aria-disabled='true']) {
+        transform: translateY(calc(var(--press-depth) * 0.7)) scale(0.97);
+      }
+    }
+    &:active:not(:disabled, [aria-disabled='true']) {
+      box-shadow: 0 calc(var(--press-depth) * 0.3) 0 var(--color-press-edge);
+    }
+    &:hover:not(:disabled, [aria-disabled='true']),
+    &:active:not(:disabled, [aria-disabled='true']) {
+      background: var(--color-brand-hover);
+      border-color: var(--color-brand-hover);
+    }
+    & svg {
+      flex: none;
+    }
+  }
+  .secondary {
+    composes: button;
+    color: var(--color-brand);
+    background: var(--color-surface);
+    border-color: var(--color-brand-line);
+    box-shadow: 0 var(--press-depth) 0 var(--color-press-edge-soft);
+    &:active:not(:disabled, [aria-disabled='true']) {
+      box-shadow: 0 calc(var(--press-depth) * 0.3) 0 var(--color-press-edge-soft);
+    }
+    &:hover:not(:disabled, [aria-disabled='true']),
+    &:active:not(:disabled, [aria-disabled='true']) {
+      color: var(--color-brand-hover);
+      background: var(--color-brand-soft);
+      border-color: var(--color-brand-line);
+    }
+  }
+  /* Cancel, clear filters, links styled as actions, icon buttons: no fill (spec 4.1). */
+  .quiet {
+    composes: button;
+    color: var(--color-brand);
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    &:active:not(:disabled, [aria-disabled='true']) {
+      box-shadow: none;
+    }
+    &:hover:not(:disabled, [aria-disabled='true']),
+    &:active:not(:disabled, [aria-disabled='true']) {
+      color: var(--color-brand-hover);
+      background: var(--color-brand-soft);
+      border-color: transparent;
+    }
+  }
+  /* Hard to undo, such as removing a role: only inside a confirm dialog (spec 4.1). */
+  .danger {
+    composes: button;
+    color: var(--color-on-brand);
+    background: var(--color-error);
+    border-color: var(--color-error);
+    box-shadow: 0 var(--press-depth) 0 var(--color-press-edge-danger);
+    &:active:not(:disabled, [aria-disabled='true']) {
+      box-shadow: 0 calc(var(--press-depth) * 0.3) 0 var(--color-press-edge-danger);
+    }
+    &:hover:not(:disabled, [aria-disabled='true']),
+    &:active:not(:disabled, [aria-disabled='true']) {
+      background: var(--color-badge-danger-text);
+      border-color: var(--color-badge-danger-text);
+      filter: brightness(0.9);
+    }
+  }
+  /* A link that looks like a button, such as "הוספת ספק" or "מעבר לבקשה". */
+  a.button {
+    text-decoration: none;
+  }
+  /* Saving (DESIGN.md 6.8): the logo stripe from the header flows along the button's bottom edge,
+     the same sign the site uses for every wait, instead of a separate loader inside the label. */
+  .base[data-pending] {
+    position: relative;
+    overflow: hidden;
+    &::after {
+      content: '';
+      position: absolute;
+      inset-inline: 0;
+      inset-block-end: 0;
+      block-size: var(--stripe-size);
+      background: var(--gradient-jlm-loop) 100% 0 / 200% 100%;
+      pointer-events: none;
+      @media (prefers-reduced-motion: no-preference) {
+        animation: button-stripe-flow var(--duration-stripe) linear infinite;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        animation: button-stripe-breathe var(--duration-breathe) ease-in-out infinite alternate;
+      }
+    }
+  }
+  /* "שומר…" sits over the label it replaces, which keeps its place but is not shown. */
+  .saving {
+    display: inline-grid;
+    place-items: center;
+    & > * {
+      grid-area: 1 / 1;
+    }
+  }
+  .held {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-sm);
+    visibility: hidden;
+  }
+  @keyframes button-stripe-flow {
+    to {
+      background-position: 300% 0;
+    }
+  }
+  @keyframes button-stripe-breathe {
+    to {
+      opacity: var(--skeleton-opacity-min);
+    }
+  }
+  .field {
+    display: grid;
+    gap: var(--space-sm);
+    margin-block: var(--space-lg);
+  }
+  .field label {
+    font-weight: var(--font-weight-label);
+  }
+  /* The label and its info icon on one line; the icon does not make the row taller. */
+  .labelRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+  .infoButton {
+    margin-block: calc((1lh - 2rem) / 2);
+  }
+  .infoText {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .hint {
+    color: var(--color-muted);
+    font-size: var(--font-small);
+  }
+  .error {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: flex-start;
+    color: var(--color-error);
+    &:empty {
+      display: none;
+    }
+  }
+  .errorIcon {
+    flex: none;
+    margin-block-start: 0.15em;
+  }
+  .required {
+    color: var(--color-error);
+  }
+  .summary {
+    margin-block: var(--space-lg);
+    padding: var(--space-md) var(--space-lg);
+    border: var(--border-width) solid var(--color-badge-danger-border);
+    border-radius: var(--radius-control);
+    background: var(--color-badge-danger-surface);
+    & h2 {
+      margin: 0;
+      font-size: var(--font-body-size);
+      color: var(--color-badge-danger-text);
+    }
+    & ul {
+      margin: var(--space-sm) 0 0;
+    }
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    justify-content: space-between;
+    margin-block-start: var(--space-xl);
+  }
+  .actionGroup {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+  }
+  /* On a phone the buttons stay in reach at the bottom, the primary one full width. */
+  @media (width < 40rem) {
+    .actions {
+      position: sticky;
+      inset-block-end: 0;
+      padding-block: var(--space-md);
+      background: var(--actions-surface, var(--color-surface));
+      border-block-start: var(--border-width) solid var(--color-border);
+    }
+    /* The primary button takes the row; a secondary one such as "ביטול" sits beside it. */
+    .actionGroup {
+      flex: 1 1 100%;
+      flex-wrap: nowrap;
+      & > :first-child {
+        flex: 1 1 auto;
+      }
+      & > :not(:first-child) {
+        flex: none;
+      }
+    }
+  }
+  .control:where(:user-invalid, [aria-invalid='true']) {
+    border-color: var(--color-error);
+  }
+}

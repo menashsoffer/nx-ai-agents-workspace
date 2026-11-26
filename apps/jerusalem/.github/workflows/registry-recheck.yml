@@ -1,0 +1,34 @@
+# Daily trigger for the registry-recheck Edge Function (supplier-edit-checks spec 6.7). Each
+# verified company or nonprofit number is asked again in its registry 30 days after its
+# last answer, so every number is re-checked about once a month. No secrets are needed.
+name: registry-recheck
+
+on:
+  schedule:
+    - cron: '37 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: registry-recheck
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: scripts/deploy/call-registry-recheck.sh staging "${{ vars.SUPABASE_PROJECT_REF }}"
+
+  production:
+    needs: staging
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: scripts/deploy/call-registry-recheck.sh production "${{ vars.PRODUCTION_PROJECT_REF }}"

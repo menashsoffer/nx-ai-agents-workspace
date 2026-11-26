@@ -1,0 +1,1312 @@
+<title>כיוונים לעיצוב אתר הספקים</title>
+<meta name="claude:viewport-fit-sides" content="cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Heebo:wght@400;500;700;800&family=IBM+Plex+Sans+Hebrew:wght@400;500;600&display=swap"
+/>
+<style>
+  /* Layout: one reading column; each direction is a section with a live mock in its own scroll box. */
+  :root {
+    --bg: #f4f5f6;
+    --surface: #ffffff;
+    --fg: #1b2328;
+    --muted: #55636b;
+    --line: #d5dbde;
+    --accent: #1f5f8b;
+    --chip: #e7edf1;
+    --f-display: 'Heebo', 'Assistant', system-ui, sans-serif;
+    --f-body: 'Assistant', 'Heebo', system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --bg: #12171a;
+      --surface: #1a2125;
+      --fg: #e4eaed;
+      --muted: #9eadb5;
+      --line: #2c373d;
+      --accent: #7cb8e0;
+      --chip: #233038;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme='dark'] {
+    --bg: #12171a;
+    --surface: #1a2125;
+    --fg: #e4eaed;
+    --muted: #9eadb5;
+    --line: #2c373d;
+    --accent: #7cb8e0;
+    --chip: #233038;
+    color-scheme: dark;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--f-body);
+    font-size: 17px;
+    line-height: 1.6;
+    direction: rtl;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .wrap {
+    max-width: 1080px;
+    margin-inline: auto;
+    padding-block: 40px 64px;
+    display: grid;
+    gap: 56px;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--f-display);
+    text-wrap: balance;
+    margin: 0;
+    line-height: 1.25;
+  }
+  h1 {
+    font-size: clamp(1.9rem, 1.4rem + 2vw, 2.6rem);
+    font-weight: 800;
+  }
+  h2 {
+    font-size: 1.6rem;
+    font-weight: 700;
+  }
+  h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+  }
+  p {
+    margin: 0;
+    max-width: 68ch;
+  }
+  .lead {
+    color: var(--muted);
+    font-size: 1.1rem;
+  }
+  .eyebrow {
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .intro {
+    display: grid;
+    gap: 14px;
+  }
+  .today {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: 24px;
+    align-items: start;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .today img {
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .today ul {
+    margin: 8px 0 0;
+    padding-inline-start: 20px;
+    display: grid;
+    gap: 6px;
+  }
+  @media (max-width: 760px) {
+    .today {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .dir {
+    display: grid;
+    gap: 18px;
+  }
+  .dir-head {
+    display: grid;
+    gap: 6px;
+  }
+  .dir-tag {
+    display: inline-flex;
+    gap: 8px;
+    align-items: baseline;
+  }
+  .dir-letter {
+    font-family: var(--f-display);
+    font-weight: 800;
+    color: var(--accent);
+    font-size: 1.6rem;
+  }
+  .stage {
+    overflow-x: auto;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .stage > .mock {
+    min-width: 900px;
+  }
+  .stage > .mock.mB {
+    min-width: 1000px;
+  }
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+  }
+  .facts > div {
+    display: grid;
+    gap: 6px;
+    align-content: start;
+    min-width: 0;
+  }
+  .facts ul {
+    margin: 0;
+    padding-inline-start: 18px;
+    display: grid;
+    gap: 4px;
+    color: var(--muted);
+  }
+  .swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sw {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .sw i {
+    inline-size: 22px;
+    block-size: 22px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    display: inline-block;
+  }
+  @media (max-width: 760px) {
+    .facts {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .compare {
+    overflow-x: auto;
+  }
+  .compare table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 640px;
+    background: var(--surface);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .compare th,
+  .compare td {
+    text-align: start;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .compare th {
+    font-family: var(--f-display);
+    font-size: 0.9rem;
+    background: var(--chip);
+  }
+  .qs {
+    display: grid;
+    gap: 14px;
+    counter-reset: q;
+  }
+  .q {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: grid;
+    gap: 6px;
+  }
+  .q b {
+    font-family: var(--f-display);
+  }
+  .q .rec {
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .note {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  bdi.num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- Mock A: calm civic ---------- */
+  .mA {
+    --a-bg: #f3f6f6;
+    --a-surface: #fff;
+    --a-text: #17313a;
+    --a-muted: #4f646c;
+    --a-line: #d6e0e2;
+    --a-brand: #0f4c5c;
+    --a-brand-soft: #e3eff1;
+    --ok: #1e6b3c;
+    --ok-bg: #e6f4ea;
+    --warn: #7a4b06;
+    --warn-bg: #fdf1d8;
+    --bad: #8f1f1f;
+    --bad-bg: #fbe7e7;
+    background: var(--a-bg);
+    color: var(--a-text);
+    font-family: 'Assistant', system-ui, sans-serif;
+    font-size: 15px;
+  }
+  .mA .top {
+    background: var(--a-surface);
+    border-bottom: 1px solid var(--a-line);
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    padding: 0 28px;
+    height: 60px;
+  }
+  .mA .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .mA .logo i {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    background: var(--a-brand);
+    display: inline-block;
+  }
+  .mA nav {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+  }
+  .mA nav a {
+    padding: 8px 14px;
+    border-radius: 8px;
+    color: var(--a-muted);
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .mA nav a.on {
+    background: var(--a-brand-soft);
+    color: var(--a-brand);
+  }
+  .mA .user {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--a-brand-soft);
+    color: var(--a-brand);
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+  }
+  .mA main {
+    padding: 28px;
+    display: grid;
+    gap: 18px;
+  }
+  .mA h4 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+  }
+  .mA .search {
+    display: flex;
+    gap: 10px;
+  }
+  .mA .search .in {
+    flex: 1;
+    height: 48px;
+    border: 1px solid var(--a-line);
+    border-radius: 10px;
+    background: var(--a-surface);
+    display: flex;
+    align-items: center;
+    padding-inline: 16px;
+    color: var(--a-muted);
+  }
+  .mA .btn {
+    height: 48px;
+    padding-inline: 22px;
+    border-radius: 10px;
+    background: var(--a-brand);
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+  }
+  .mA .chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .mA .chip {
+    border: 1px solid var(--a-line);
+    background: var(--a-surface);
+    border-radius: 999px;
+    padding: 4px 14px;
+    font-weight: 600;
+  }
+  .mA .chip.on {
+    background: var(--a-brand);
+    color: #fff;
+    border-color: var(--a-brand);
+  }
+  .mA .count {
+    color: var(--a-muted);
+  }
+  .mA .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  .mA .card {
+    background: var(--a-surface);
+    border: 1px solid var(--a-line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: grid;
+    gap: 8px;
+  }
+  .mA .card h5 {
+    margin: 0;
+    font-size: 17px;
+  }
+  .mA .pool {
+    color: var(--a-muted);
+    font-size: 14px;
+  }
+  .mA .tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .mA .tag {
+    background: var(--a-brand-soft);
+    color: var(--a-brand);
+    border-radius: 6px;
+    padding: 1px 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .mA .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--a-line);
+    padding-top: 10px;
+    margin-top: 4px;
+  }
+  .mA .st {
+    border-radius: 999px;
+    padding: 1px 10px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .mA .st.ok {
+    background: var(--ok-bg);
+    color: var(--ok);
+  }
+  .mA .st.warn {
+    background: var(--warn-bg);
+    color: var(--warn);
+  }
+  .mA .st.bad {
+    background: var(--bad-bg);
+    color: var(--bad);
+  }
+  .mA .link {
+    color: var(--a-brand);
+    font-weight: 700;
+  }
+
+  /* ---------- Mock B: dense workbench (dark) ---------- */
+  .mB {
+    --b-bg: #0f1316;
+    --b-side: #13181c;
+    --b-surface: #171d21;
+    --b-line: #263038;
+    --b-text: #e3eaee;
+    --b-muted: #93a3ac;
+    --b-acc: #5aa9e6;
+    --b-acc-soft: #1b3446;
+    --ok: #6fcf97;
+    --warn: #f2c46d;
+    --bad: #f08a8a;
+    background: var(--b-bg);
+    color: var(--b-text);
+    font-family: 'IBM Plex Sans Hebrew', system-ui, sans-serif;
+    font-size: 13.5px;
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr) 270px;
+    min-height: 520px;
+  }
+  .mB aside.side {
+    background: var(--b-side);
+    border-inline-end: 1px solid var(--b-line);
+    padding: 14px 10px;
+    display: grid;
+    gap: 2px;
+    align-content: start;
+  }
+  .mB .brand {
+    font-weight: 600;
+    padding: 4px 10px 14px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .mB .brand i {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background: var(--b-acc);
+    display: inline-block;
+  }
+  .mB .nav {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-radius: 6px;
+    color: var(--b-muted);
+  }
+  .mB .nav.on {
+    background: var(--b-acc-soft);
+    color: var(--b-text);
+  }
+  .mB .nav span {
+    font-variant-numeric: tabular-nums;
+  }
+  .mB .grp {
+    font-size: 11px;
+    color: var(--b-muted);
+    padding: 12px 10px 4px;
+    letter-spacing: 0.04em;
+  }
+  .mB .center {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    min-width: 0;
+  }
+  .mB .bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--b-line);
+  }
+  .mB .qbar {
+    flex: 1;
+    height: 34px;
+    border: 1px solid var(--b-line);
+    border-radius: 7px;
+    background: var(--b-surface);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-inline: 12px;
+    color: var(--b-muted);
+  }
+  .mB kbd {
+    font-family: inherit;
+    font-size: 11px;
+    border: 1px solid var(--b-line);
+    border-radius: 4px;
+    padding: 0 5px;
+  }
+  .mB .flt {
+    display: flex;
+    gap: 6px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--b-line);
+    color: var(--b-muted);
+  }
+  .mB .flt b {
+    color: var(--b-text);
+    font-weight: 500;
+    background: var(--b-surface);
+    border: 1px solid var(--b-line);
+    border-radius: 6px;
+    padding: 2px 8px;
+  }
+  .mB table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  .mB th {
+    text-align: start;
+    font-weight: 500;
+    color: var(--b-muted);
+    font-size: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--b-line);
+  }
+  .mB td {
+    color: var(--b-text);
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--b-line);
+    white-space: nowrap;
+  }
+  .mB tr.sel td {
+    background: var(--b-acc-soft);
+  }
+  .mB .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-inline-end: 6px;
+  }
+  .mB .num {
+    font-variant-numeric: tabular-nums;
+    color: var(--b-muted);
+  }
+  .mB aside.detail {
+    background: var(--b-surface);
+    border-inline-start: 1px solid var(--b-line);
+    padding: 16px;
+    display: grid;
+    gap: 12px;
+    align-content: start;
+  }
+  .mB .detail h5 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .mB .kv {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    color: var(--b-muted);
+  }
+  .mB .kv b {
+    color: var(--b-text);
+    font-weight: 500;
+  }
+  .mB .verdict {
+    border: 1px solid var(--b-line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: grid;
+    gap: 4px;
+  }
+  .mB .verdict .t {
+    color: var(--ok);
+    font-weight: 600;
+  }
+  .mB .act {
+    display: flex;
+    gap: 8px;
+  }
+  .mB .act span {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--b-line);
+  }
+  .mB .act span.p {
+    background: var(--b-acc);
+    color: #0b1a26;
+    border-color: var(--b-acc);
+    font-weight: 600;
+  }
+
+  /* ---------- Mock C: search first ---------- */
+  .mC {
+    --c-bg: #f6f7f9;
+    --c-surface: #fff;
+    --c-text: #141b2d;
+    --c-muted: #566079;
+    --c-line: #dde1e9;
+    --c-navy: #1d2b53;
+    --c-acc: #c2552d;
+    --c-acc-soft: #fbeee8;
+    --ok: #17663a;
+    --warn: #80500a;
+    --bad: #9b1c1c;
+    background: var(--c-bg);
+    color: var(--c-text);
+    font-family: 'Heebo', system-ui, sans-serif;
+    font-size: 15px;
+  }
+  .mC .hero {
+    background: var(--c-navy);
+    color: #fff;
+    padding: 22px 28px 26px;
+    display: grid;
+    gap: 14px;
+  }
+  .mC .hero .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    color: #c9d1e6;
+  }
+  .mC .hero .top b {
+    color: #fff;
+    font-weight: 800;
+    font-size: 16px;
+  }
+  .mC .hero h4 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .mC .big {
+    background: #fff;
+    color: var(--c-muted);
+    border-radius: 12px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-inline: 18px;
+    font-size: 17px;
+  }
+  .mC .big b {
+    color: var(--c-text);
+    font-weight: 500;
+  }
+  .mC .big span.go {
+    background: var(--c-acc);
+    color: #fff;
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .mC .sugg {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: #c9d1e6;
+  }
+  .mC .sugg span {
+    border: 1px solid #3d4b75;
+    border-radius: 999px;
+    padding: 2px 12px;
+    color: #fff;
+  }
+  .mC .body {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 22px;
+    padding: 22px 28px;
+  }
+  .mC .facets {
+    display: grid;
+    gap: 16px;
+    align-content: start;
+  }
+  .mC .facet {
+    display: grid;
+    gap: 6px;
+  }
+  .mC .facet h6 {
+    margin: 0;
+    font-size: 13px;
+    color: var(--c-muted);
+    font-weight: 700;
+  }
+  .mC .opt {
+    display: flex;
+    justify-content: space-between;
+  }
+  .mC .opt span:last-child {
+    color: var(--c-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .mC .opt.on {
+    color: var(--c-acc);
+    font-weight: 700;
+  }
+  .mC .list {
+    display: grid;
+    gap: 0;
+    background: var(--c-surface);
+    border: 1px solid var(--c-line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .mC .item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 16px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--c-line);
+  }
+  .mC .item:last-child {
+    border-bottom: 0;
+  }
+  .mC .item h5 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+  }
+  .mC .meta {
+    color: var(--c-muted);
+    font-size: 14px;
+    display: flex;
+    gap: 14px;
+  }
+  .mC .add {
+    align-self: center;
+    border: 1px solid var(--c-line);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-weight: 700;
+    color: var(--c-navy);
+    grid-row: span 2;
+  }
+  .mC .add.in {
+    background: var(--c-acc-soft);
+    border-color: var(--c-acc);
+    color: var(--c-acc);
+  }
+  .mC .s {
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .mC .tray {
+    margin: 0 28px 22px;
+    background: var(--c-navy);
+    color: #fff;
+    border-radius: 12px;
+    padding: 12px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .mC .tray span.go {
+    background: var(--c-acc);
+    border-radius: 8px;
+    padding: 6px 16px;
+    font-weight: 700;
+  }
+</style>
+
+<div class="wrap">
+  <header class="intro">
+    <span class="eyebrow">עיצוב מחדש · שלב חשיבה, לפני קוד</span>
+    <h1>שלושה כיוונים לאתר איתור הספקים</h1>
+    <p class="lead">
+      האתר עובד, אבל נראה כמו טיוטה. כאן שלושה כיוונים שונים באמת זה מזה: בתחושה, בצפיפות ובמבנה
+      הניווט. כל אחד מוצג על אותו מסך, איתור ספקים, עם אותם נתונים לדוגמה, כדי שאפשר יהיה להשוות.
+    </p>
+    <p class="note">
+      השמות, המספרים והספקים במסכים הם דוגמה בלבד. הסכומים לקוחים מהסף של נובמבר (<bdi class="num"
+        >170,500</bdi
+      >
+      ₪).
+    </p>
+  </header>
+
+  <section class="today">
+    <img
+      alt="צילום מסך של האתר היום: פס עליון כהה ורשימת קישורים פשוטה בלי עיצוב"
+      src="data:image/jpeg;base64,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APP3p/8A38f/AOJo/wCFRa//AM/en/8Afx//AImjmQezl2OEoru/+FRa/wD8/en/APfx/wD4mj/hUWv/APP3p/8A38f/AOJo5kHs5djhKK7v/hUWv/8AP3p//fx//iaP+FRa/wD8/en/APfx/wD4mjmQezl2OEoru/8AhUWv/wDP3p//AH8f/wCJo/4VFr//AD96f/38f/4mjmQezl2OEoru/wDhUWv/APP3p/8A38f/AOJo/wCFRa//AM/en/8Afx//AImjmQezl2OEoru/+FRa/wD8/en/APfx/wD4mj/hUWv/APP3p/8A38f/AOJo5kHs5djhKK7v/hUWv/8AP3p//fx//iaP+FRa/wD8/en/APfx/wD4mjmQezl2OEoru/8AhUWv/wDP3p//AH8f/wCJo/4VFr//AD96f/38f/4mjmQezl2OEoru/wDhUWv/APP3p/8A38f/AOJo/wCFRa//AM/en/8Afx//AImjmQezl2OEoru/+FRa/wD8/en/APfx/wD4mj/hUWv/APP3p/8A38f/AOJo5kHs5djhKK7v/hUWv/8AP3p//fx//iaP+FRa/wD8/en/APfx/wD4mjmQezl2OEoru/8AhUWv/wDP3p//AH8f/wCJo/4VFr//AD96f/38f/4mjmQezl2OEoru/wDhUWv/APP3p/8A38f/AOJo/wCFRa//AM/en/8Afx//AImjmQezl2OEoru/+FRa/wD8/en/APfx/wD4mj/hUWv/APP3p/8A38f/AOJo5kHs5djhKK7v/hUWv/8AP3p//fx//iaP+FRa/wD8/en/APfx/wD4mjmQezl2OEoru/8AhUWv/wDP3p//AH8f/wCJo/4VFr//AD96f/38f/4mjmQezl2OEoru/wDhUWv/APP3p/8A38f/AOJo/wCFRa//AM/en/8Afx//AImjmQezl2OEoru/+FRa/wD8/en/APfx/wD4mj/hUWv/APP3p/8A38f/AOJo5kHs5djhKK7v/hUWv/8AP3p//fx//iaP+FRa/wD8/en/APfx/wD4mjmQezl2OEoru/8AhUWv/wDP3p//AH8f/wCJo/4VFr//AD96f/38f/4mjmQezl2OEoru/wDhUWv/APP3p/8A38f/AOJo/wCFRa//AM/en/8Afx//AImjmQezl2OEoru/+FRa/wD8/en/APfx/wD4mj/hUWv/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AOKo/wCEK0L/AJ43X/gbN/8AFVvUUXYcq7GD/wAIVoX/ADxuv/A2b/4qj/hCtC/543X/AIGzf/FVvUUXYcq7GD/whWhf88br/wADZv8A4qj/AIQrQv8Anjdf+Bs3/wAVW9UV1I0NpNKmNyRsy59QMii7DlXYxv8AhCtC/wCeN1/4Gzf/ABVH/CFaF/zxuv8AwNm/+KqOLWrp7eaRLqGeOCJXeRUwQWU/KBnBIIH4Gg6tqKvH++hYOSIkMeHmG/Gducr8vOfbmnqT7vYk/wCEK0L/AJ43X/gbN/8AFUf8IVoX/PG6/wDA2b/4qpdH1K5vCyTXEbkQAuwj2eVLkgoeef8APrUFzqt/C8lus0ZdHKLKIvv8xY4z6O35Uah7u9h3/CFaF/zxuv8AwNm/+KqxYeF9I0y9W9tYJROisqvJcSSYB68MxFRPqOpRo4QQzus/koMbfMIbJJ9Bt7+taOmXMl3p0NxKAHkBJUDG3k8H3HQ+4pajSj2LVFFFIoKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiioWvLVHkR7mFWiG51LgFR6n0oAmpGVXUq6hlIwQRkGmNcwICXmjUKcHLAYOM/y5qD+1bDzo4vtcRMm7aQ42kggEZ9fmHFAEn2Gz/wCfSD/v0v8AhSmxsySTaQEnkkxLz+lK93bRzCGS4iSQjIRnAOPpUf8AaenhFc31ttYkKfNXBx17+9AtB32Cy/587f8A79L/AIUfYLL/AJ87f/v0v+FLNeWtu6pNcxRM/Kh3ALfTNI2oWSGQNdwKYjh8yD5ecc+nNAaB9gsv+fO3/wC/S/4VMkaRIEjRUUdFUYAqE31mIhKbuARkZD+YMdcdfrUysrqGRgysMgg5BFAxaKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigArK1WyvL2VPJjjQIGXf5mGZWAB/h44+tatFANXOY/4R+/xvPltMYzEWaYkFfL2D5cdRzz/ALR9asf2XqLGWMwWq28rpuiR8fIgwFyR7DJ/lW/RTuTyoxrywv7y8MssURgwp8ky8FhuHXHTkdhn14qmNF1ND5iJaiUoYjlyU2FQvAIzngck10tFFx8qMWfTryZEj+zwiOO0e2UNNk/MFGSdv+yOKrPol+7FhFbJsJeLErH5yysS2RyMoOBjqa6Oii4cqMCHS9RiuluSkO8vvkVJSFY7iSBx05H5VrabbvaadDbyBQ0YI+U5HU1ZoouCVgooopDCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAjuZxbWss7YxEhc56cDNUotRu5pZIEsV82IkOTL8mcKR823uG9Oxq9PClxA8MgJSQbWAOMiq66ZChYrLcqXOWIuH5OMc8+gFMTuUB4li2xuYMByBgv82Sm7pjpnjPuKdLrzRbh9njBEayrumwGUozddvB+U8fTmrA0KwUghZQRjGJW7Yx39h+QpqeH9NjjWNInCK+8L5h4bBGf1o0F7wXmqy2wiaO0Dq9s9wwaTayhQpIxg8/NVeTxJGkki/ZnIQOwOeCq7sk8cdB/30KuvpNtI5d2uGYoUJM7ElT1HXpUT+H9OkZGeORmjJKkysdpJySOfUUaBqJBqs9zcGCK1iZyrMMzEY2sFIb5eOc465wau2VyLyziuVUoJFztJzj2qq+hWEiurJIRIxdx5hG45JyfXkmrdpaw2Vsltbpsij4Vc5xRoNX6ktFFFIYUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRR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sjObQbB0dGSTbIxZwJCNxyTk469TVy0tYbK2S2t02RR8Kuc4qWikOyCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAKuqFxpV0YvM8zymCeXnduxxjHvWFNNeRs8NvNdtEVIVmWQlSVUZyRng5NdPS5ppiaucg93q6Sf6y5lZ9+4pEyruHCEZ+6pByepyvTpV6WRo7iOOKW8lgdUExPmjBDDJHccZ6cV0OaM0XFynO215dR2l2JWuHk8jbCGR+WBfHIHXGzmq1zLcJNIIm1GSIB1h2NICrFU2sSeoDB+uevTFdXmjNFw5TnZLlop4ldtQuU2SGZokdMksCoHTBHPPHH5Vr6W0z6ZAZ2ZpdvzFgc9e+e+Kt5pKLjSCiiikMKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAIbi7htdnnMVDkgHHGQpb+QNV01m0lYpEJZZAu4xpGSwHHOPfcMev4U+90yDUMLcvM0e4MYg+FJH05/XmmNpUZvHulurmOR0CfI6gBQcgAY7e/qaegtQttWiuZ1j8uREmP+jyFTtlG3ceexHPB9KE1e2kkaNI52Yb9oER+fa21tvrg06z0q3smjZGlkMSeXH5j7toJycDpk+tRro0KTGVLm6UguUAkGELnLY49aNA1HDWbJigVpCXClB5Z+bJ24HuDwR2pE1uxkQSRtI8W4I0qxkqjHGAT2+8PpSLolokiOGm/dgBAXztw27P1J5OadFpFvFbT25kmkS4k8x97jO7g8YAxyAaNA1El1qygLicywsnVZIyDjDNn3BCt+VTHUIfs/nIski+YY8ImWLAkHA+oNVp9Btrl2knnuZHZkYMzjKlSSuOP9o/nVlNPt44beJVbbbyeYmWJJbnJJ753GjQNStHrtseZUljjfmGQodsq4HI9Dk9D6U6TXbGNo1zK7yHCokZLZywxj1yjflSjRLMR7CJWUII1DSE7FBB49MkDPrSJotrGkgR5g8snmPLvBcnnuRx1PTHWjQNR1nqsV5MIvLkTzAWgYqdsqDHzA/iOKbFrdlKyKPNUyEBN0ZG/Lbcj1GanttPt7SUSRK2VjESBmJCKOwHbpz61BBottATiWdx5TRKHcEIrHJxx60aBqNXxBYSLGYGln8zAXyYy3JDHB9DhW49qcmuWMkqRo0h3hCH8s7fmGVyffBH1FPh0ezt50lhRk2OHCKcKWCbNxHrt4qNdCs0RY1aYIHVyu/7xUALnjoMUaBqTwajDcJKY0m3RAM0ZjIYg9CB3BwelQf29ZBsETgKMufJOI/mK/N6cg1ZtrGC0OYQw/dJFyc/Kmdv8zVUaHbtI8kkkhMkjM6qdqupfcFYdwCaNA1HprVpIXCLOSucAxEFiG2kLnrhiBT31W2S0juQszpJJ5QVYyWD5IwR25BFRjRLQPExaYiIYRS/A+cOT06llGan/ALPgCxr8+2Oczgburkk8+2TnFGgakI1uwLRr5xDygFFZSC2X2dPUNwfSpJdTt4ZmjcS/JII3cRkqjEDGT2+8KjXRLFZBKEbzFkEiOW5QgsePQfO2fY1O9hBItwrBsXDq8nPcYAx/3yKNA1IYtYtptwijuGYAsFEJy4B2kr6jNW7eeO6t454W3RyLuU4xxVYaXCgj8qSaFo0ZFZHGQC249Qe4qaztY7K0jtomdkjGAXOT+dA9SaiiikAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAf//Z"
+    />
+    <div>
+      <h3>מה לא עובד היום</h3>
+      <ul>
+        <li>אין היררכיה. כותרת ענקית, ומתחתיה קישורים כחולים עם קו תחתון, כמו מסמך משנות ה-90.</li>
+        <li>הניווט לא אומר איפה אני. אין מצב "נבחר", ותפריט הניהול הוא רשימה של 9 קישורים.</li>
+        <li>גופן המערכת בלבד (Segoe או Arial), בלי משקלים, ולכן הכול נראה באותו גובה.</li>
+        <li>הפס העליון לוקח מקום ולא נותן כלום: אין חיפוש, אין משתמש, אין סטטוס.</li>
+        <li>כל מסך נבנה לבד. אין שפה משותפת לכרטיס, לטבלה, לתגית או לכפתור.</li>
+      </ul>
+      <p class="note" style="margin-top: 10px">
+        מה כן טוב ונשמר: הצבע הטורקיז-כהה, הנגישות (פוקוס, גדלי לחיצה, ניגודיות), והטוקנים
+        ב-tokens.css שכבר קיימים.
+      </p>
+    </div>
+  </section>
+
+  <!-- A -->
+  <section class="dir" id="a">
+    <div class="dir-head">
+      <span class="dir-tag"
+        ><span class="dir-letter">א</span>
+        <h2>שקט מוסדי</h2></span
+      >
+      <p class="lead">
+        רגוע, בהיר ומרווח, ברוח מערכות ממשלתיות מודרניות. ממשיך את הצבע הקיים. מתאים למי שנכנס לאתר
+        כמה פעמים בשבוע, מחפש ספק ויוצא.
+      </p>
+    </div>
+    <div class="stage">
+      <div class="mock mA">
+        <div class="top">
+          <span class="logo"><i></i>מאגרי ספקים</span>
+          <nav><a class="on">איתור ספקים</a><a>בקשת התקשרות</a><a>ניהול</a></nav>
+          <span class="user">מ</span>
+        </div>
+        <main>
+          <h4>איתור ספקים</h4>
+          <div class="search">
+            <div class="in">חיפוש לפי שם, ח.פ., תחום או מאגר</div>
+            <div class="btn">חיפוש</div>
+          </div>
+          <div class="chips">
+            <span class="chip on">כל המאגרים</span><span class="chip">תכנון ובינוי</span
+            ><span class="chip">תחבורה</span><span class="chip">חינוך</span
+            ><span class="chip">מתקנים ואולמות</span><span class="chip">+ סינון</span>
+          </div>
+          <span class="count"
+            ><bdi class="num">1,299</bdi> ספקים ב-<bdi class="num">44</bdi> מאגרים</span
+          >
+          <div class="grid">
+            <div class="card">
+              <h5>דוגמה הנדסה ותכנון בע"מ</h5>
+              <span class="pool">מאגר יועצי תנועה</span>
+              <div class="tags">
+                <span class="tag">תכנון תנועה</span><span class="tag">בטיחות</span>
+              </div>
+              <div class="row"><span class="st ok">פעיל</span><span class="link">פרטים</span></div>
+            </div>
+            <div class="card">
+              <h5>סטודיו נוף לדוגמה</h5>
+              <span class="pool">מאגר אדריכלות נוף</span>
+              <div class="tags"><span class="tag">אדריכלות נוף</span></div>
+              <div class="row">
+                <span class="st warn">בבדיקה</span><span class="link">פרטים</span>
+              </div>
+            </div>
+            <div class="card">
+              <h5>אולם הדוגמה</h5>
+              <span class="pool">מאגר אולמות וטקסים</span>
+              <div class="tags">
+                <span class="tag">עד 400 מקומות</span><span class="tag">נגיש</span>
+              </div>
+              <div class="row"><span class="st ok">פעיל</span><span class="link">פרטים</span></div>
+            </div>
+            <div class="card">
+              <h5>ייעוץ חינוכי לדוגמה</h5>
+              <span class="pool">מאגר יועצי חינוך</span>
+              <div class="tags"><span class="tag">הדרכה</span><span class="tag">פדגוגיה</span></div>
+              <div class="row"><span class="st bad">חסום</span><span class="link">פרטים</span></div>
+            </div>
+            <div class="card">
+              <h5>מדידות דוגמה ושות'</h5>
+              <span class="pool">מאגר מודדים</span>
+              <div class="tags"><span class="tag">מדידה</span></div>
+              <div class="row"><span class="st ok">פעיל</span><span class="link">פרטים</span></div>
+            </div>
+            <div class="card">
+              <h5>כלכלה עירונית לדוגמה</h5>
+              <span class="pool">מאגר יועצים כלכליים</span>
+              <div class="tags"><span class="tag">שמאות</span><span class="tag">כלכלה</span></div>
+              <div class="row"><span class="st ok">פעיל</span><span class="link">פרטים</span></div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+    <div class="facts">
+      <div>
+        <h3>צבע וגופן</h3>
+        <div class="swatches">
+          <span class="sw"><i style="background: #0f4c5c"></i>מותג</span
+          ><span class="sw"><i style="background: #e3eff1"></i>רקע מותג</span
+          ><span class="sw"><i style="background: #f3f6f6"></i>דף</span
+          ><span class="sw"><i style="background: #17313a"></i>טקסט</span>
+        </div>
+        <p class="note">Assistant לכל הטקסט. כרטיסים לבנים עם גבול דק, בלי צללים.</p>
+      </div>
+      <div>
+        <h3>חזק ב</h3>
+        <ul>
+          <li>הכי קרוב למה שקיים, הכי פחות סיכון</li>
+          <li>קריא למשתמשים לא טכניים</li>
+          <li>מצב כהה קל להוסיף</li>
+        </ul>
+      </div>
+      <div>
+        <h3>חלש ב</h3>
+        <ul>
+          <li>מעט ספקים על המסך (שישה כרטיסים)</li>
+          <li>מסכי ניהול ארוכים ירגישו ריקים</li>
+          <li>פחות "וואו"</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- B -->
+  <section class="dir" id="b">
+    <div class="dir-head">
+      <span class="dir-tag"
+        ><span class="dir-letter">ב</span>
+        <h2>שולחן עבודה</h2></span
+      >
+      <p class="lead">
+        צפוף ומהיר, כמו כלי מקצועי (בסגנון Linear או Notion). תפריט צד קבוע, טבלה במקום כרטיסים,
+        ולוח פרטים שנפתח בצד בלי לעזוב את הרשימה. מוצג כאן במצב כהה, ויש לו גם מצב בהיר.
+      </p>
+    </div>
+    <div class="stage">
+      <div class="mock mB">
+        <aside class="side">
+          <span class="brand"><i></i>מאגרי ספקים</span>
+          <span class="nav on">איתור ספקים <span>1,299</span></span>
+          <span class="nav">בקשות התקשרות <span>7</span></span>
+          <span class="nav">רשימה קצרה <span>3</span></span>
+          <span class="grp">ניהול</span>
+          <span class="nav">מזהי ספק לאישור <span>42</span></span>
+          <span class="nav">בקשות קטגוריה <span>5</span></span>
+          <span class="nav">סף חודשי</span>
+          <span class="nav">בקרת טעינה</span>
+          <span class="nav">משתמשים</span>
+        </aside>
+        <div class="center">
+          <div class="bar">
+            <div class="qbar">חיפוש ספק, ח.פ. או מאגר <kbd>Ctrl K</kbd></div>
+          </div>
+          <div class="flt">מסננים: <b>תחום: תחבורה</b><b>סטטוס: פעיל</b><span>+ הוספה</span></div>
+          <table>
+            <thead>
+              <tr>
+                <th>ספק</th>
+                <th>ח.פ.</th>
+                <th>מאגר</th>
+                <th>תוקף רישום</th>
+                <th>סטטוס</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="sel">
+                <td>דוגמה הנדסה ותכנון בע"מ</td>
+                <td class="num">51-000000-1</td>
+                <td>יועצי תנועה</td>
+                <td class="num">2027-03-31</td>
+                <td><span class="dot" style="background: var(--ok)"></span>פעיל</td>
+              </tr>
+              <tr>
+                <td>תנועה ותחבורה לדוגמה</td>
+                <td class="num">51-000000-2</td>
+                <td>יועצי תנועה</td>
+                <td class="num">2027-03-31</td>
+                <td><span class="dot" style="background: var(--ok)"></span>פעיל</td>
+              </tr>
+              <tr>
+                <td>בטיחות בדרכים דוגמה</td>
+                <td class="num">51-000000-3</td>
+                <td>יועצי תנועה</td>
+                <td class="num">2026-12-31</td>
+                <td><span class="dot" style="background: var(--warn)"></span>בבדיקה</td>
+              </tr>
+              <tr>
+                <td>הנדסת כבישים לדוגמה</td>
+                <td class="num">51-000000-4</td>
+                <td>תשתיות</td>
+                <td class="num">2027-06-30</td>
+                <td><span class="dot" style="background: var(--ok)"></span>פעיל</td>
+              </tr>
+              <tr>
+                <td>חניות ותנועה דוגמה</td>
+                <td class="num">51-000000-5</td>
+                <td>תשתיות</td>
+                <td class="num">2026-11-30</td>
+                <td><span class="dot" style="background: var(--bad)"></span>חסום</td>
+              </tr>
+              <tr>
+                <td>תכנון רמזורים לדוגמה</td>
+                <td class="num">51-000000-6</td>
+                <td>יועצי תנועה</td>
+                <td class="num">2027-03-31</td>
+                <td><span class="dot" style="background: var(--ok)"></span>פעיל</td>
+              </tr>
+              <tr>
+                <td>סקרי תנועה דוגמה</td>
+                <td class="num">51-000000-7</td>
+                <td>יועצי תנועה</td>
+                <td class="num">2027-01-31</td>
+                <td><span class="dot" style="background: var(--ok)"></span>פעיל</td>
+              </tr>
+              <tr>
+                <td>מודלים תחבורתיים לדוגמה</td>
+                <td class="num">51-000000-8</td>
+                <td>תכנון</td>
+                <td class="num">2027-03-31</td>
+                <td><span class="dot" style="background: var(--ok)"></span>פעיל</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <aside class="detail">
+          <h5>דוגמה הנדסה ותכנון בע"מ</h5>
+          <div class="kv">
+            <span>מאגר</span><b>יועצי תנועה</b><span>תחומים</span><b>תכנון תנועה, בטיחות</b
+            ><span>פנייה אחרונה</span><b class="num">2026-09-14</b>
+          </div>
+          <div class="verdict">
+            <span class="t">אפשר להתקשר: הצעות מחיר</span
+            ><span class="num">אומדן <bdi>120,000</bdi> ₪, מתחת לסף <bdi>170,500</bdi> ₪</span>
+          </div>
+          <div class="act"><span class="p">הוספה לבקשה</span><span>פרטי קשר</span></div>
+        </aside>
+      </div>
+    </div>
+    <div class="facts">
+      <div>
+        <h3>צבע וגופן</h3>
+        <div class="swatches">
+          <span class="sw"><i style="background: #0f1316"></i>רקע</span
+          ><span class="sw"><i style="background: #171d21"></i>משטח</span
+          ><span class="sw"><i style="background: #5aa9e6"></i>הדגשה</span
+          ><span class="sw"><i style="background: #e3eaee"></i>טקסט</span>
+        </div>
+        <p class="note">IBM Plex Sans Hebrew, מספרים ברוחב קבוע. כמעט בלי צבע: הסטטוס הוא נקודה.</p>
+      </div>
+      <div>
+        <h3>חזק ב</h3>
+        <ul>
+          <li>פי שלושה ספקים על המסך</li>
+          <li>השוואה, מיון וסינון מהירים</li>
+          <li>מסכי הניהול נראים טבעיים</li>
+          <li>בדיקת המסלול ליד הספק</li>
+        </ul>
+      </div>
+      <div>
+        <h3>חלש ב</h3>
+        <ul>
+          <li>מאיים על משתמש מזדמן</li>
+          <li>בטלפון צריך פריסה אחרת לגמרי</li>
+          <li>הכי הרבה עבודה לבנות</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- C -->
+  <section class="dir" id="c">
+    <div class="dir-head">
+      <span class="dir-tag"
+        ><span class="dir-letter">ג</span>
+        <h2>החיפוש במרכז</h2></span
+      >
+      <p class="lead">
+        האתר הוא קודם כול תיבת חיפוש, כמו אתר הזמנות. פס כחול-כהה עם חיפוש גדול והצעות, מסננים בצד,
+        ורשימה קצרה שנאספת בתחתית ומובילה ישר לבדיקת המסלול.
+      </p>
+    </div>
+    <div class="stage">
+      <div class="mock mC">
+        <div class="hero">
+          <div class="top"><b>מאגרי ספקים</b><span>בקשות התקשרות · ניהול · מנש</span></div>
+          <h4>איזה ספק צריך?</h4>
+          <div class="big"><b>יועץ תנועה לתכנון צומת</b><span class="go">חיפוש</span></div>
+          <div class="sugg">
+            חיפושים נפוצים: <span>אדריכלות נוף</span><span>אולם ל-300 איש</span><span>מודד</span
+            ><span>שמאי</span>
+          </div>
+        </div>
+        <div class="body">
+          <div class="facets">
+            <div class="facet">
+              <h6>מאגר</h6>
+              <div class="opt on"><span>יועצי תנועה</span><span>38</span></div>
+              <div class="opt"><span>תשתיות</span><span>21</span></div>
+              <div class="opt"><span>תכנון</span><span>9</span></div>
+            </div>
+            <div class="facet">
+              <h6>סטטוס</h6>
+              <div class="opt on"><span>פעיל</span><span>31</span></div>
+              <div class="opt"><span>בבדיקה</span><span>6</span></div>
+              <div class="opt"><span>חסום</span><span>1</span></div>
+            </div>
+            <div class="facet">
+              <h6>פנייה אחרונה</h6>
+              <div class="opt"><span>לא פנו בשנה</span><span>14</span></div>
+            </div>
+          </div>
+          <div class="list">
+            <div class="item">
+              <h5>דוגמה הנדסה ותכנון בע"מ</h5>
+              <span class="add in">ברשימה ✓</span>
+              <div class="meta">
+                <span>יועצי תנועה</span><span class="s" style="color: var(--ok)">פעיל</span
+                ><span>פנייה אחרונה לפני חודשיים</span>
+              </div>
+            </div>
+            <div class="item">
+              <h5>תנועה ותחבורה לדוגמה</h5>
+              <span class="add in">ברשימה ✓</span>
+              <div class="meta">
+                <span>יועצי תנועה</span><span class="s" style="color: var(--ok)">פעיל</span
+                ><span>לא פנו בשנה</span>
+              </div>
+            </div>
+            <div class="item">
+              <h5>בטיחות בדרכים דוגמה</h5>
+              <span class="add">+ לרשימה</span>
+              <div class="meta">
+                <span>יועצי תנועה</span><span class="s" style="color: var(--warn)">בבדיקה</span
+                ><span>לא פנו בשנה</span>
+              </div>
+            </div>
+            <div class="item">
+              <h5>תכנון רמזורים לדוגמה</h5>
+              <span class="add in">ברשימה ✓</span>
+              <div class="meta">
+                <span>יועצי תנועה</span><span class="s" style="color: var(--ok)">פעיל</span
+                ><span>פנייה אחרונה לפני 5 חודשים</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tray">
+          <span>3 ספקים ברשימה הקצרה</span><span class="go">בדיקת מסלול והתקשרות</span>
+        </div>
+      </div>
+    </div>
+    <div class="facts">
+      <div>
+        <h3>צבע וגופן</h3>
+        <div class="swatches">
+          <span class="sw"><i style="background: #1d2b53"></i>כחול-כהה</span
+          ><span class="sw"><i style="background: #c2552d"></i>נחושת לפעולה</span
+          ><span class="sw"><i style="background: #f6f7f9"></i>דף</span
+          ><span class="sw"><i style="background: #141b2d"></i>טקסט</span>
+        </div>
+        <p class="note">Heebo במשקלים חזקים לכותרות. צבע מותג חדש, לא הטורקיז הקיים.</p>
+      </div>
+      <div>
+        <h3>חזק ב</h3>
+        <ul>
+          <li>הכי ברור למשתמש חדש: "מה אתה מחפש?"</li>
+          <li>מוביל את התהליך: חיפוש, רשימה, בדיקה</li>
+          <li>מראה מודרני ובולט</li>
+        </ul>
+      </div>
+      <div>
+        <h3>חלש ב</h3>
+        <ul>
+          <li>מחליף את צבע המותג</li>
+          <li>הפס הגדול לוקח מקום בכל כניסה</li>
+          <li>מסכי ניהול צריכים שפה משנית</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="dir">
+    <h2>בהשוואה</h2>
+    <div class="compare">
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th>א · שקט מוסדי</th>
+            <th>ב · שולחן עבודה</th>
+            <th>ג · החיפוש במרכז</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>תחושה</td>
+            <td>רגוע, רשמי</td>
+            <td>מקצועי, מהיר</td>
+            <td>מזמין, מודרני</td>
+          </tr>
+          <tr>
+            <td>ספקים על המסך</td>
+            <td><bdi class="num">6</bdi> כרטיסים</td>
+            <td><bdi class="num">15-20</bdi> שורות</td>
+            <td><bdi class="num">6-8</bdi> שורות</td>
+          </tr>
+          <tr>
+            <td>ניווט</td>
+            <td>לשוניות למעלה</td>
+            <td>תפריט צד קבוע</td>
+            <td>פס עליון + חיפוש</td>
+          </tr>
+          <tr>
+            <td>צבע המותג</td>
+            <td>נשמר</td>
+            <td>אפור + כחול</td>
+            <td>מוחלף בכחול-כהה ונחושת</td>
+          </tr>
+          <tr>
+            <td>עבודה לבנות</td>
+            <td>קטנה</td>
+            <td>גדולה</td>
+            <td>בינונית</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">
+      אפשר גם לשלב, למשל: הקטלוג בסגנון ג לעובדי המחלקות, ומסכי הניהול בסגנון ב למנהל ולמבקר, על
+      אותם צבעים וגופן.
+    </p>
+  </section>
+
+  <section class="dir">
+    <h2>שאלות שיקבעו את הכיוון</h2>
+    <div class="qs">
+      <div class="q">
+        <b>1. מי המשתמש העיקרי?</b
+        ><span>עובדי מחלקות שמחפשים ספק פעם בשבוע, או אנשי רכש ומנהלים שעובדים באתר כל יום?</span
+        ><span class="rec">זה מכריע בין א/ג (מזדמן) לבין ב (יומיומי).</span>
+      </div>
+      <div class="q">
+        <b>2. כמה צפוף?</b
+        ><span
+          >כרטיסים מרווחים, או טבלה שמראה הרבה ספקים בבת אחת? אפשר גם מתג "צפוף / רגיל" שהמשתמש
+          בוחר.</span
+        >
+      </div>
+      <div class="q">
+        <b>3. מצב כהה?</b
+        ><span
+          >להוסיף עכשיו כחלק מהעיצוב, או להשאיר לאחר כך? ההמלצה שלי: לבנות את הטוקנים כך שמצב כהה
+          יהיה מוכן, גם אם מפעילים אותו מאוחר יותר.</span
+        >
+      </div>
+      <div class="q">
+        <b>4. צבעי העירייה?</b
+        ><span
+          >להישאר בטורקיז הקיים, לעבור לצבעי עיריית ירושלים, או ללכת על זהות חדשה? סמל העירייה לא
+          נכנס בלי אישור.</span
+        >
+      </div>
+      <div class="q">
+        <b>5. גופן?</b
+        ><span
+          >Assistant (רך, קריא), Heebo (חזק ומודרני), או IBM Plex Sans Hebrew (טכני, מספרים
+          מסודרים). כולם חינמיים ומתארחים אצלנו.</span
+        >
+      </div>
+      <div class="q">
+        <b>6. טלפון?</b><span>האם עובדים יפתחו את האתר בנייד, או שזה כלי למחשב בעיקר?</span>
+      </div>
+    </div>
+  </section>
+</div>

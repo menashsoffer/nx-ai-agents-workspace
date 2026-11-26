@@ -1,0 +1,101 @@
+@layer features {
+  /* The supplier area (supplier-portal-spec-he.md 6): one calm column of cards. */
+  .area {
+    display: grid;
+    gap: var(--space-lg);
+    inline-size: min(100%, 48rem);
+    margin-inline: auto;
+  }
+  .title {
+    display: grid;
+    gap: var(--space-xs);
+    & h1,
+    & p {
+      margin: 0;
+    }
+  }
+  .panel {
+    display: grid;
+    gap: var(--space-md);
+    padding: var(--space-xl);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    & h2,
+    & p {
+      margin: 0;
+    }
+  }
+  .list {
+    display: grid;
+    gap: var(--space-sm);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    & li {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-xs) var(--space-sm);
+      align-items: baseline;
+      padding-block: var(--space-sm);
+      border-block-end: var(--border-width) solid var(--color-border);
+    }
+    & li[data-state='soon'] .until {
+      color: var(--color-badge-warning-text);
+      font-weight: 700;
+    }
+    & li:is([data-state='expired'], [data-state='rejected'], [data-state='missing']) .until {
+      color: var(--color-error);
+      font-weight: 700;
+    }
+    & li[data-state='ended'] {
+      color: var(--color-muted);
+    }
+    & form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+      align-items: center;
+    }
+  }
+  .tasks {
+    display: grid;
+    gap: var(--space-sm);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    & li {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-md);
+      background: var(--color-badge-warning-surface);
+      border-inline-start: 0.25rem solid var(--color-badge-warning-border);
+      border-radius: var(--radius-control);
+    }
+  }
+  .until {
+    margin-inline-start: auto;
+  }
+  .facts {
+    display: grid;
+    gap: var(--space-sm);
+    margin: 0;
+    & div {
+      display: grid;
+      grid-template-columns: minmax(7rem, auto) 1fr;
+      gap: var(--space-sm);
+    }
+    & dt {
+      color: var(--color-muted);
+    }
+    & dd {
+      margin: 0;
+    }
+  }
+  .muted {
+    color: var(--color-muted);
+  }
+}

@@ -1,0 +1,146 @@
+{
+ "name": "ספקים לליווי בתי ספר",
+ "status": "unknown",
+ "note": "נטען מקובץ המאגר המאוחד (17.11.2026). מצב המקור בקובץ: מקור קיים – נדרש אימות.",
+ "url": "https://www.jerusalem.muni.il/media/xp1d23xo/accompanying-school-providers.pdf",
+ "file_name": "accompanying-school-providers.pdf",
+ "rows": [
+  {
+   "key": "SUP-0771",
+   "name": "סמ\"ל",
+   "names": [
+    "סמ\"ל"
+   ],
+   "published_name": "סמ\"ל",
+   "field": "ליווי בתי ספר",
+   "phones": [
+    "02-5820526"
+   ],
+   "emails": [
+    "sarit@semel.org.il"
+   ]
+  },
+  {
+   "key": "SUP-0804",
+   "name": "הקרן לעידוד יוזמות חינוכיות בהוראה (ע\"ר)",
+   "names": [
+    "הקרן לעידוד יוזמות חינוכיות בהוראה (ע\"ר)",
+    "עמותת הקרן לעידוד יוזמות חינוכיות"
+   ],
+   "published_name": "עמותת הקרן לעידוד יוזמות חינוכיות",
+   "field": "ליווי בתי ספר",
+   "phones": [
+    "02-5638895"
+   ],
+   "emails": [
+    "yael@keren-yozmot.org.il"
+   ],
+   "address": "נרקיס 11, ירושלים 9246115",
+   "scheme": "nonprofit",
+   "value": "580152684"
+  },
+  {
+   "key": "SUP-0805",
+   "name": "תאפאווק - עמותה למצוינות בחינוך במגזר הערבי (ע\"ר)",
+   "names": [
+    "תאפאווק - עמותה למצוינות בחינוך במגזר הערבי (ע\"ר)",
+    "עמותת תאפאווק"
+   ],
+   "published_name": "עמותת תאפאווק",
+   "field": "ליווי בתי ספר",
+   "phones": [
+    "04-8336448"
+   ],
+   "address": "היובל 6, חיפה",
+   "scheme": "nonprofit",
+   "value": "580597631"
+  },
+  {
+   "key": "SUP-0013",
+   "name": "QSCHOOL",
+   "names": [
+    "QSCHOOL"
+   ],
+   "published_name": "QSCHOOL",
+   "field": "ליווי בתי ספר",
+   "phones": [
+    "09-7932223"
+   ]
+  },
+  {
+   "key": "SUP-0191",
+   "name": "אקסיומה - הישגים בהשכלה בע\"מ",
+   "names": [
+    "אקסיומה - הישגים בהשכלה בע\"מ",
+    "אקסיומה"
+   ],
+   "published_name": "אקסיומה",
+   "field": "ליווי בתי ספר",
+   "phones": [
+    "03-5611830"
+   ],
+   "emails": [
+    "info@sightandsound.co.il",
+    "digital@axiomedu.com"
+   ],
+   "address": "סעדיה גאון 24, תל אביב-יפו 6713519"
+  },
+  {
+   "key": "SUP-0562",
+   "name": "כל ישראל חברים (ע\"ר)",
+   "names": [
+    "כל ישראל חברים (ע\"ר)",
+    "כי\"ח"
+   ],
+   "published_name": "כי\"ח",
+   "field": "ליווי בתי ספר",
+   "phones": [
+    "722566671"
+   ],
+   "emails": [
+    "account3@kiah.org.il"
+   ],
+   "address": "בית כל ישראל חברים, כפר הנוער מקווה ישראל",
+   "scheme": "nonprofit",
+   "value": "580010890"
+  },
+  {
+   "key": "SUP-0659",
+   "name": "המכון הדמוקרטי - חברה וחינוך (ע\"ר)",
+   "names": [
+    "המכון הדמוקרטי - חברה וחינוך (ע\"ר)",
+    "מכון דמוקרטי"
+   ],
+   "published_name": "מכון דמוקרטי",
+   "field": "ליווי בתי ספר",
+   "phones": [
+    "03-7412729"
+   ],
+   "emails": [
+    "di@democratic.co.il"
+   ],
+   "address": "מכללת בית ברל, מבנה 521",
+   "scheme": "nonprofit",
+   "value": "580330660"
+  },
+  {
+   "key": "SUP-0257",
+   "name": "מכון ברנקו וייס - חינוך, חשיבה, יוזמה (ע\"ר)",
+   "names": [
+    "מכון ברנקו וייס - חינוך, חשיבה, יוזמה (ע\"ר)",
+    "ברנקו וייס"
+   ],
+   "published_name": "ברנקו וייס",
+   "field": "ליווי בתי ספר",
+   "phones": [
+    "02-6436881"
+   ],
+   "emails": [
+    "mosko@brancoweiss.org.il"
+   ],
+   "address": "הנטקה 40, ירושלים",
+   "scheme": "nonprofit",
+   "value": "580168789"
+  }
+ ]
+}

@@ -1,0 +1,156 @@
+@layer ui {
+  /*
+   * Loading indicators (DESIGN.md 6.8). Motion runs only when the visitor has not asked for less;
+   * otherwise the same shapes fade slowly, so they still read as busy without moving.
+   */
+  .visuallyHidden {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* The logo colors as a row of dots that hop one after another (direction B). */
+  .dots {
+    display: inline-flex;
+    gap: var(--loader-dot-gap);
+    align-items: center;
+    & i {
+      inline-size: var(--loader-dot-size);
+      block-size: var(--loader-dot-size);
+      border-radius: 50%;
+      background: var(--color-brand);
+    }
+    & i:nth-child(2) {
+      background: var(--color-jlm-pink);
+      animation-delay: calc(var(--duration-loader-step) * 1);
+    }
+    & i:nth-child(3) {
+      background: var(--color-jlm-orange);
+      animation-delay: calc(var(--duration-loader-step) * 2);
+    }
+    & i:nth-child(4) {
+      background: var(--color-jlm-lime);
+      animation-delay: calc(var(--duration-loader-step) * 3);
+    }
+    & i:nth-child(5) {
+      background: var(--color-jlm-blue);
+      animation-delay: calc(var(--duration-loader-step) * 4);
+    }
+  }
+  /* Inside a button the dots take the label's color, so they keep its contrast. */
+  .small {
+    --loader-dot-size: var(--loader-dot-size-small);
+    --loader-dot-gap: var(--loader-dot-gap-small);
+    --loader-hop: var(--loader-hop-small);
+    margin-inline-end: var(--space-sm);
+    vertical-align: middle;
+    & i,
+    & i:nth-child(n) {
+      background: currentColor;
+    }
+  }
+  .page {
+    display: grid;
+    justify-items: center;
+    gap: var(--space-md);
+    padding-block: var(--space-3xl);
+    color: var(--color-muted);
+    font-weight: var(--font-weight-label);
+  }
+
+  /* Placeholders in the shape of the content (direction A). */
+  .skeleton {
+    display: grid;
+    gap: var(--space-lg);
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min-size)), 1fr));
+    gap: var(--space-lg);
+  }
+  .card {
+    display: grid;
+    gap: var(--space-md);
+    padding: var(--space-lg) var(--space-xl);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+  }
+  .line {
+    display: block;
+    block-size: var(--space-lg);
+    border-radius: var(--radius-tag);
+    background: var(--color-subtle);
+    position: relative;
+    overflow: hidden;
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to left, transparent, var(--color-skeleton-sheen), transparent);
+      translate: 100% 0;
+    }
+  }
+  .title {
+    block-size: var(--font-h2);
+    inline-size: 70%;
+  }
+  .short {
+    inline-size: 45%;
+  }
+  .tags {
+    display: flex;
+    gap: var(--space-sm);
+    & .line {
+      inline-size: 5rem;
+      block-size: var(--space-xl);
+      border-radius: var(--radius-pill);
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .dots i {
+      animation: hop var(--duration-loader) ease-in-out infinite;
+    }
+    .line::after {
+      animation: sheen var(--duration-sheen) ease-in-out infinite;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dots,
+    .line {
+      animation: breathe var(--duration-breathe) ease-in-out infinite alternate;
+    }
+  }
+  @media (forced-colors: active) {
+    .dots i,
+    .line {
+      forced-color-adjust: none;
+      background: CanvasText;
+    }
+  }
+  @keyframes hop {
+    0%,
+    60%,
+    100% {
+      translate: 0 0;
+    }
+    30% {
+      translate: 0 calc(-1 * var(--loader-hop));
+    }
+  }
+  /* RTL: the sheen moves from the reading start (right) to the end (left). */
+  @keyframes sheen {
+    to {
+      translate: -100% 0;
+    }
+  }
+  @keyframes breathe {
+    to {
+      opacity: var(--skeleton-opacity-min);
+    }
+  }
+}

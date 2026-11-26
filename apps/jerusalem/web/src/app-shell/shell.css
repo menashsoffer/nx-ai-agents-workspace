@@ -1,0 +1,236 @@
+@layer base {
+  /* Frame of every page: DESIGN.md section 6.1. */
+  .skip-link {
+    position: absolute;
+    inset-inline-start: var(--space-lg);
+    inset-block-start: -100%;
+    padding: var(--space-md) var(--space-lg);
+    background: var(--color-surface);
+    color: var(--color-brand);
+    z-index: calc(var(--layer-raised) + 1);
+    &:focus-visible {
+      inset-block-start: var(--space-lg);
+    }
+  }
+  .shell-header {
+    background: var(--color-surface);
+    border-block-end: var(--border-width) solid var(--color-border);
+  }
+  .shell-header-inner {
+    max-inline-size: var(--page-max-size);
+    margin-inline: auto;
+    padding-inline: var(--space-xl);
+    min-block-size: 4rem;
+    padding-block: var(--space-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--space-xl);
+  }
+  .shell-stripe {
+    block-size: var(--stripe-size);
+    background: var(--gradient-jlm);
+  }
+  .shell-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    color: var(--color-brand);
+    font-size: var(--font-lg);
+    font-weight: var(--font-weight-title);
+    line-height: 1.2;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  /* The product logo. Its own file carries the name, so the header shows no extra title. */
+  /* The logo file has a white background; multiply lets the cream header show through it. */
+  .shell-logo {
+    display: block;
+    block-size: 4.5rem;
+    inline-size: auto;
+    mix-blend-mode: multiply;
+  }
+  .shell-brand-area {
+    padding-inline-start: var(--space-md);
+    border-inline-start: var(--border-width) solid var(--color-border);
+  }
+  .shell-nav {
+    flex: 1;
+    display: flex;
+    gap: var(--space-xs);
+    & a {
+      min-block-size: 2.5rem;
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-sm);
+      padding-inline: var(--space-lg);
+      border-radius: var(--radius-control);
+      color: var(--color-muted);
+      font-weight: var(--font-weight-label);
+      text-decoration: none;
+      &:hover {
+        color: var(--color-brand);
+      }
+      &[aria-current='page'] {
+        background: var(--color-brand-soft);
+        color: var(--color-brand);
+      }
+    }
+  }
+  .shell-icon {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .shell-nav .shell-icon {
+    display: none;
+  }
+  .shell-account {
+    inline-size: 2.5rem;
+    block-size: 2.5rem;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--color-brand);
+    color: var(--color-on-brand);
+    font-weight: var(--font-weight-strong);
+    text-decoration: none;
+    &:hover {
+      background: var(--color-brand-hover);
+    }
+  }
+  /* While a screen loads the stripe's colors flow from right to left (layout.tsx). */
+  .shell-stripe[data-busy] {
+    /* At 100% the visible half matches the resting stripe; each loop moves one full tile. */
+    background: var(--gradient-jlm-loop) 100% 0 / 200% 100%;
+    @media (prefers-reduced-motion: no-preference) {
+      animation: stripe-flow var(--duration-stripe) linear var(--delay-pending) infinite;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      animation: stripe-breathe var(--duration-breathe) ease-in-out var(--delay-pending) infinite
+        alternate;
+    }
+  }
+  @keyframes stripe-flow {
+    to {
+      background-position: 300% 0;
+    }
+  }
+  @keyframes stripe-breathe {
+    to {
+      opacity: var(--skeleton-opacity-min);
+    }
+  }
+  /* Spoken only: screen readers hear that a screen is loading. */
+  .shell-busy {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .shell-main[data-pending] {
+    opacity: var(--pending-opacity);
+    transition: opacity var(--duration-quick) var(--delay-pending);
+  }
+
+  .shell-main {
+    max-inline-size: var(--page-max-size);
+    margin-inline: auto;
+    padding: var(--space-2xl) var(--space-xl) var(--space-3xl);
+    /* The h1 receives focus on navigation so screen readers announce the new screen. It is
+       not a control, so it shows no focus ring. */
+    & h1[tabindex='-1']:focus {
+      outline: none;
+    }
+  }
+
+  /* An error or notice that replaces a screen (screen-error.tsx). */
+  .shell-notice {
+    margin-inline: auto;
+    max-inline-size: 36rem;
+    display: grid;
+    justify-items: start;
+    gap: var(--space-sm);
+    padding: var(--space-xl);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    & h1 {
+      margin: 0;
+      font-size: var(--font-h2);
+    }
+    & p {
+      margin: 0 0 var(--space-sm);
+      color: var(--color-muted);
+    }
+    & a {
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+    }
+  }
+
+  .shell-notice-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+  }
+
+  /* Phones: tabs become a bottom bar; the top bar keeps the brand and the account link. */
+  @media (width < 48rem) {
+    .shell-header-inner {
+      min-block-size: 3.5rem;
+      padding-inline: var(--space-lg);
+      justify-content: space-between;
+    }
+    .shell-logo {
+      block-size: 3.5rem;
+    }
+    .shell-nav {
+      position: fixed;
+      inset-inline: 0;
+      inset-block-end: 0;
+      z-index: var(--layer-raised);
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
+      gap: 0;
+      padding-block-end: env(safe-area-inset-bottom, 0px);
+      background: var(--color-surface);
+      border-block-start: var(--border-width) solid var(--color-border);
+      & a {
+        min-block-size: 3.5rem;
+        flex-direction: column;
+        justify-content: center;
+        gap: 0.125rem;
+        padding-inline: var(--space-xs);
+        border-radius: 0;
+        font-size: var(--font-xs);
+        white-space: nowrap;
+        box-shadow: inset 0 0.1875rem 0 transparent;
+        &[aria-current='page'] {
+          background: transparent;
+          box-shadow: inset 0 0.1875rem 0 var(--color-brand);
+        }
+      }
+      & .shell-icon {
+        display: block;
+      }
+    }
+    /* A focused field is scrolled clear of the bottom bar, not under it. */
+    :root {
+      scroll-padding-block-end: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+    }
+    .shell-main {
+      padding: var(--space-xl) var(--space-lg)
+        calc(var(--space-3xl) + 3.5rem + env(safe-area-inset-bottom, 0px));
+    }
+  }
+}

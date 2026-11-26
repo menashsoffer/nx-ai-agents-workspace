@@ -1,0 +1,43 @@
+@layer base {
+  :root {
+    font-family: var(--font-body);
+    color: var(--color-text);
+    background: var(--color-page);
+  }
+  body {
+    margin: 0;
+    line-height: var(--line-height-body);
+  }
+  :where(button, input, select, textarea, dialog, main, table, th, td) {
+    box-sizing: border-box;
+  }
+  :where(button, input, select, textarea) {
+    font: inherit;
+    font-size: var(--font-body-size);
+  }
+  :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+    outline: var(--focus-width) solid var(--color-focus);
+    outline-offset: var(--space-xs);
+  }
+  :where(h1, h2, h3) {
+    line-height: var(--line-height-heading);
+    text-wrap: balance;
+  }
+  h1 {
+    font-size: var(--font-title);
+    font-weight: var(--font-weight-title);
+    margin-block: var(--space-sm);
+  }
+  h2 {
+    font-size: var(--font-h2);
+    font-weight: var(--font-weight-strong);
+    margin-block: var(--space-sm);
+  }
+  a {
+    color: var(--color-brand);
+    overflow-wrap: anywhere;
+  }
+  p {
+    overflow-wrap: anywhere;
+  }
+}

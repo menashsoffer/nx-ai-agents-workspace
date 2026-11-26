@@ -1,0 +1,294 @@
+@layer features {
+  .page {
+    display: grid;
+    gap: var(--space-lg);
+    & h2 {
+      margin: 0;
+    }
+  }
+  .panel {
+    display: grid;
+    gap: var(--space-lg);
+    padding: var(--space-xl);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    @media (width < 40rem) {
+      padding: var(--space-lg);
+    }
+  }
+  .muted {
+    color: var(--color-muted);
+    margin: 0;
+  }
+
+  /* Step indicator: a numbered pill per step; done steps get a check. */
+  .steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: step;
+    & li {
+      counter-increment: step;
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-sm);
+      min-block-size: 2.5rem;
+      padding: var(--space-xs) var(--space-md) var(--space-xs) var(--space-lg);
+      border-radius: var(--radius-pill);
+      background: var(--color-subtle);
+      color: var(--color-muted);
+      font-weight: var(--font-weight-label);
+      &::before {
+        content: counter(step);
+        inline-size: 1.5rem;
+        block-size: 1.5rem;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--color-surface);
+        font-size: var(--font-xs);
+      }
+      &[data-done] {
+        color: var(--color-badge-success-text);
+        background: var(--color-badge-success-surface);
+        &::before {
+          content: '✓';
+        }
+      }
+      &[aria-current='step'] {
+        background: var(--color-brand);
+        color: var(--color-on-brand);
+        &::before {
+          color: var(--color-brand);
+        }
+      }
+    }
+    @media (width < 40rem) {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      & li {
+        flex-direction: column;
+        gap: var(--space-xs);
+        padding: var(--space-xs);
+        border-radius: var(--radius-panel);
+        font-size: var(--font-small);
+        text-align: center;
+      }
+    }
+  }
+
+  .list {
+    display: grid;
+    gap: var(--space-md);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .card {
+    display: grid;
+    gap: var(--space-md);
+    padding: var(--space-lg);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-inline-start: 0.25rem solid var(--color-brand-line);
+    border-radius: var(--radius-panel);
+    /* Thousands of rows: the browser skips drawing the ones off screen. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 14rem;
+    &[data-issues] {
+      border-inline-start-color: var(--color-badge-warning-border);
+    }
+  }
+  .cardHead {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    align-items: center;
+    justify-content: space-between;
+    & strong {
+      font-size: 1.125rem;
+    }
+  }
+  .rowNumber {
+    color: var(--color-muted);
+    font-weight: normal;
+    margin-inline-end: var(--space-sm);
+  }
+  .badge {
+    display: inline-block;
+    padding: 0.125rem var(--space-md);
+    border-radius: var(--radius-pill);
+    border: var(--border-width) solid var(--color-badge-info-border);
+    background: var(--color-badge-info-surface);
+    color: var(--color-badge-info-text);
+    font-size: var(--font-small);
+    font-weight: var(--font-weight-label);
+    &[data-tone='new'] {
+      border-color: var(--color-badge-success-border);
+      background: var(--color-badge-success-surface);
+      color: var(--color-badge-success-text);
+    }
+    &[data-tone='hold'] {
+      border-color: var(--color-badge-warning-border);
+      background: var(--color-badge-warning-surface);
+      color: var(--color-badge-warning-text);
+    }
+    &[data-tone='skip'] {
+      border-color: var(--color-border);
+      background: var(--color-subtle);
+      color: var(--color-muted);
+    }
+  }
+  .issues {
+    margin: 0;
+    padding: var(--space-sm) var(--space-lg);
+    padding-inline-start: var(--space-2xl);
+    border-radius: var(--radius-control);
+    background: var(--color-badge-warning-surface);
+    color: var(--color-badge-warning-text);
+  }
+  .values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs) var(--space-lg);
+    margin: 0;
+    color: var(--color-muted);
+    & dt {
+      font-weight: var(--font-weight-label);
+      color: var(--color-text);
+    }
+    & div {
+      display: flex;
+      gap: var(--space-xs);
+    }
+    & dd {
+      margin: 0;
+    }
+  }
+
+  /* The decision: each option is a tile, the chosen one in the brand colour. */
+  .choices {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: var(--space-sm);
+    border: 0;
+    margin: 0;
+    padding: 0;
+    & legend {
+      margin-block-end: var(--space-sm);
+      font-weight: var(--font-weight-label);
+    }
+  }
+  .choice {
+    display: flex;
+    gap: var(--space-sm);
+    align-items: baseline;
+    padding: var(--space-sm) var(--space-md);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-control);
+    cursor: pointer;
+    &:has(input:checked) {
+      border-color: var(--color-brand);
+      background: var(--color-brand-soft);
+    }
+    & input {
+      accent-color: var(--color-brand);
+    }
+  }
+  .note {
+    grid-column: 1 / -1;
+  }
+  .fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+    gap: var(--space-md);
+    padding-block-start: var(--space-md);
+  }
+  details > summary {
+    cursor: pointer;
+    color: var(--color-brand);
+    font-weight: var(--font-weight-label);
+  }
+
+  .compare {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-small);
+    & th,
+    & td {
+      padding: var(--space-sm);
+      text-align: start;
+      vertical-align: top;
+      border-block-end: var(--border-width) solid var(--color-border);
+    }
+    & thead th {
+      color: var(--color-muted);
+      font-weight: var(--font-weight-label);
+      background: var(--color-subtle);
+    }
+  }
+  .scroll {
+    overflow-x: auto;
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-control);
+  }
+  .added {
+    display: block;
+    color: var(--color-badge-info-text);
+  }
+  .mapping {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: var(--space-md);
+    border: 0;
+    margin: 0;
+    padding: 0;
+    & legend {
+      margin-block-end: var(--space-sm);
+      font-weight: var(--font-weight-label);
+    }
+  }
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    align-items: center;
+    justify-content: space-between;
+  }
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: var(--space-sm);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    & li {
+      display: grid;
+      gap: var(--space-xs);
+      padding: var(--space-md);
+      border-radius: var(--radius-control);
+      background: var(--color-subtle);
+      color: var(--color-muted);
+    }
+    & strong {
+      font-size: 1.75rem;
+      color: var(--color-text);
+    }
+  }
+  .draft {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-md) 0;
+    border-block-end: var(--border-width) solid var(--color-border);
+    &:last-child {
+      border-block-end: 0;
+    }
+  }
+}

@@ -1,0 +1,28 @@
+# Daily trigger for the threshold-index Edge Function (monthly threshold update).
+# CBS publishes the CPI on the 15th at about 18:30 Israel time, so the evening run
+# usually proposes the new row before the 16th. The function only proposes; an
+# admin approves the row before it is in force. No secrets are needed.
+name: threshold-index
+
+on:
+  schedule:
+    - cron: '45 17 * * *'
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  staging:
+    runs-on: ubuntu-24.04
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: scripts/deploy/call-threshold-index.sh staging "${{ vars.SUPABASE_PROJECT_REF }}"
+
+  production:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: scripts/deploy/call-threshold-index.sh production "${{ vars.PRODUCTION_PROJECT_REF }}"

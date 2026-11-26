@@ -1,0 +1,193 @@
+{
+ "name": "מאגר יועצי חירום וביטחון 2018",
+ "status": "unknown",
+ "note": "נטען מקובץ המאגר המאוחד (17.11.2026). מצב המקור בקובץ: אומת מול המקור.",
+ "url": "https://www.jerusalem.muni.il/media/zkif5uwv/advertisingresults-security.pdf",
+ "file_name": "advertisingresults-security.pdf",
+ "rows": [
+  {
+   "key": "SUP-0549",
+   "name": "\"ישרא-טים\" 98 בע\"מ",
+   "names": [
+    "\"ישרא-טים\" 98 בע\"מ",
+    "ישראטים 98 בע\"מ"
+   ],
+   "published_name": "ישראטים 98 בע\"מ",
+   "field": "כתיבת נהלים עירוניים בתחום החרום; כתיבת תיק אב; כתיבת נהלי אבטחה; כתיבת תיק שטח",
+   "emails": [
+    "abachar@israteam.co.il"
+   ],
+   "address": "הזמר העברי 96, הרצליה 4606400",
+   "scheme": "company",
+   "value": "512679903"
+  },
+  {
+   "key": "HIST",
+   "name": "מטריקס",
+   "names": [
+    "מטריקס"
+   ],
+   "published_name": "מטריקס",
+   "field": "כתיבת תיק אב או תרחיש ייחוס לחרום",
+   "emails": [
+    "davidkl@matrix.co.il"
+   ],
+   "scheme": "company",
+   "value": "511752065"
+  },
+  {
+   "key": "SUP-0008",
+   "name": "אי.אם.ג'י. אלקטרוניק מנג'מנט גרופ בע\"מ",
+   "names": [
+    "אי.אם.ג'י. אלקטרוניק מנג'מנט גרופ בע\"מ",
+    "EMG"
+   ],
+   "published_name": "EMG",
+   "field": "הכנת מכרזים בתחום החרום והבטחון; ייעוץ בקרה ופיקוח על זכיינים",
+   "emails": [
+    "eli@eng.co.il"
+   ],
+   "scheme": "company",
+   "value": "512770751"
+  },
+  {
+   "key": "HIST",
+   "name": "לוטן גרופ אינטרנשיונל",
+   "names": [
+    "לוטן גרופ אינטרנשיונל"
+   ],
+   "published_name": "לוטן גרופ אינטרנשיונל",
+   "field": "כתיבת נהלי אבטחה; כתיבת תיק שטח; הכנת מכרזים; ייעוץ בקרה ופיקוח",
+   "emails": [
+    "asaf@lotangrp.com"
+   ],
+   "scheme": "company",
+   "value": "514236637"
+  },
+  {
+   "key": "SUP-0822",
+   "name": "פור.סי.איי בע\"מ (4 .C.I LTD)",
+   "names": [
+    "פור.סי.איי בע\"מ (4 .C.I LTD)",
+    "4CI פור סי אי",
+    "פור סי אי 4CI"
+   ],
+   "published_name": "פור סי אי 4CI",
+   "field": "כתיבת נהלים עירוניים בתחום החרום; הכנת מכרזים",
+   "phones": [
+    "09-7664497"
+   ],
+   "emails": [
+    "4ci@4ci-security.com"
+   ],
+   "address": "התע\"ש 20, בית הפעמון חדר 216, כפר סבא 4442520",
+   "scheme": "company",
+   "value": "513368845"
+  },
+  {
+   "key": "HIST",
+   "name": "Spire security solution",
+   "names": [
+    "Spire security solution"
+   ],
+   "published_name": "Spire security solution",
+   "field": "כתיבת נהלי עירוניים בתחום החרום; כתיבת תיק אב; הכנת מכרזים",
+   "emails": [
+    "manny@spireses.com"
+   ],
+   "scheme": "company",
+   "value": "515371987"
+  },
+  {
+   "key": "HIST",
+   "name": "איתן תלמי",
+   "names": [
+    "איתן תלמי"
+   ],
+   "published_name": "איתן תלמי",
+   "field": "כתיבת נהלי אבטחה; כתיבת תיק שטח; הכנת מכרזים; ייעוץ בקרה ופיקוח",
+   "emails": [
+    "eitantalmi@gmail.com"
+   ],
+   "scheme": "personal_id",
+   "value": "327369815"
+  },
+  {
+   "key": "HIST",
+   "name": "מיקי וינברג/יאיר ונונו",
+   "names": [
+    "מיקי וינברג/יאיר ונונו"
+   ],
+   "published_name": "מיקי וינברג/יאיר ונונו",
+   "field": "כתיבת נהלי אבטחה; כתיבת תיק שטח",
+   "emails": [
+    "mikyws@gmail.com"
+   ],
+   "scheme": "personal_id",
+   "value": "327369815"
+  },
+  {
+   "key": "HIST",
+   "name": "אבן איתנה",
+   "names": [
+    "אבן איתנה"
+   ],
+   "published_name": "אבן איתנה",
+   "field": "כתיבת נהלים עירוניים בתחום החרום; כתיבת תיק אב",
+   "emails": [
+    "eitan@even-eytana.com"
+   ],
+   "scheme": "company",
+   "value": "558324745"
+  },
+  {
+   "key": "HIST",
+   "name": "אניגמה חקירות ובטחון",
+   "names": [
+    "אניגמה חקירות ובטחון",
+    "אניגמה חקירות וביטחון"
+   ],
+   "published_name": "אניגמה חקירות וביטחון",
+   "field": "כתיבת נהלי אבטחה; כתיבת תיק שטח; הכנת מכרזים; ייעוץ בקרה ופיקוח",
+   "emails": [
+    "alex@anigma-security.com"
+   ],
+   "scheme": "personal_id",
+   "value": "043298280"
+  },
+  {
+   "key": "SUP-0243",
+   "name": "בן ישי אבטחה וחירום בע\"מ",
+   "names": [
+    "בן ישי אבטחה וחירום בע\"מ",
+    "בן ישי אבטחה וחרום",
+    "בן ישי אבטחה וחירום"
+   ],
+   "published_name": "בן ישי אבטחה וחירום",
+   "field": "כתיבת נהלים עירוניים; תיק אב; נהלי אבטחה; תיק שטח; הכנת מכרזים",
+   "phones": [
+    "050-6273164"
+   ],
+   "emails": [
+    "benishay57@gmail.com"
+   ],
+   "address": "בירנית 2, כוכב יאיר 4486400",
+   "scheme": "company",
+   "value": "515015196"
+  },
+  {
+   "key": "HIST",
+   "name": "טנדו טכנולוגיות",
+   "names": [
+    "טנדו טכנולוגיות"
+   ],
+   "published_name": "טנדו טכנולוגיות",
+   "field": "כתיבת נהלי אבטחה; כתיבת תיק שטח; הכנת מכרזים; ייעוץ בקרה ופיקוח",
+   "emails": [
+    "tandu@tandu.co.il"
+   ],
+   "scheme": "company",
+   "value": "511309809"
+  }
+ ]
+}

@@ -1,0 +1,12 @@
+*.sqlite3
+__pycache__/
+node_modules/
+dist/
+supabase/.temp/
+supabase/.branches/
+.env
+
+/coverage/
+/e2e-dist/
+/test-results/
+/playwright-report/

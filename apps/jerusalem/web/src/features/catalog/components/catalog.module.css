@@ -1,0 +1,318 @@
+@layer features {
+  /* Catalog screen: DESIGN.md sections 6.4 and 6.6. */
+  .searchPanel {
+    display: grid;
+    gap: var(--space-md);
+    padding: var(--space-lg) var(--space-xl);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    & > div:first-child {
+      margin-block: 0;
+    }
+    /* One large search field across the panel (spec 1.2). */
+    & input[type='search'] {
+      inline-size: 100%;
+      min-block-size: 3rem;
+      font-size: var(--font-lg);
+    }
+  }
+  .filterRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: var(--space-md) var(--space-lg);
+  }
+  .filters {
+    flex: 1 1 36rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+    gap: 0 var(--space-lg);
+    & > div {
+      margin-block: 0;
+    }
+  }
+  .moreButton {
+    white-space: nowrap;
+  }
+  /* The filters dialog (DESIGN.md 6.6): two columns on a computer, one on a phone; the fields sit
+     close together, the display toggles in their own soft box, and a footer that stays in view. */
+  .sheetFilters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-lg);
+    inline-size: 33rem;
+    max-inline-size: 100%;
+    & > div {
+      margin-block: 0;
+    }
+    @media (width < 40rem) {
+      grid-template-columns: minmax(0, 1fr);
+      inline-size: auto;
+    }
+  }
+  .sheetToggles {
+    display: grid;
+    gap: 0;
+    margin: var(--space-xl) 0 0;
+    padding: var(--space-xs) var(--space-lg);
+    border: var(--border-width) solid var(--color-brand-line);
+    border-radius: var(--radius-control);
+    background: var(--color-brand-soft);
+    & legend {
+      float: inline-start;
+      inline-size: 100%;
+      padding: var(--space-sm) 0 0;
+      font-weight: var(--font-weight-label);
+    }
+  }
+  /* Stays in view at the bottom of a long sheet. */
+  .sheetActions {
+    position: sticky;
+    inset-block-end: calc(-1 * var(--space-xl));
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    margin: var(--space-xl) calc(-1 * var(--space-xl)) calc(-1 * var(--space-xl));
+    padding: var(--space-md) var(--space-xl);
+    border-block-start: var(--border-width) solid var(--color-border);
+    background: var(--color-surface);
+    @media (width < 40rem) {
+      flex-wrap: nowrap;
+      & > :first-child {
+        flex: 1 1 auto;
+      }
+    }
+  }
+  /* Active filters as tags with their own ×, then "ניקוי הכול" (spec 1.4). */
+  .active {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+  .tags {
+    display: contents;
+    list-style: none;
+  }
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding-inline: var(--space-md) var(--space-xs);
+    min-block-size: 2.25rem;
+    border-radius: var(--radius-pill);
+    background: var(--color-brand-soft);
+    color: var(--color-brand);
+    font-size: var(--font-small);
+    font-weight: var(--font-weight-label);
+  }
+  /* An IconButton (size small) inside the tag: only its colours change here. */
+  .tagRemove {
+    color: inherit;
+    &:hover {
+      background: var(--color-surface);
+    }
+  }
+  .dataNote {
+    margin-block: 0 var(--space-md);
+    color: var(--color-muted);
+    font-size: var(--font-small);
+  }
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    min-block-size: var(--control-min-size);
+  }
+  .toggle input {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    accent-color: var(--color-brand);
+  }
+  .resultsHead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-sm) var(--space-lg);
+    margin-block: var(--space-xl) var(--space-md);
+    & h2 {
+      margin: 0;
+      font-size: var(--font-lg);
+    }
+    & p {
+      margin: 0;
+      color: var(--color-muted);
+      font-size: var(--font-small);
+    }
+  }
+  .results {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min-size)), 1fr));
+    gap: var(--space-lg);
+  }
+  .item {
+    display: grid;
+  }
+  /* The first batch stays eager. Later batches are far below the initial viewport. */
+  .deferred {
+    display: grid;
+    content-visibility: auto;
+    contain-intrinsic-size: auto none auto 16rem;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    padding: var(--space-lg) var(--space-xl);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    position: relative;
+    overflow-wrap: anywhere;
+    transition:
+      border-color var(--duration-quick),
+      scale var(--duration-quick);
+    &:hover {
+      border-color: var(--color-brand-line);
+    }
+    &:has(h3 a:hover) h3 a {
+      color: var(--color-brand);
+      text-decoration: underline;
+    }
+    &:has(h3 a:active) {
+      scale: 0.99;
+    }
+    &:has(h3 a:focus-visible) {
+      outline: var(--focus-width) solid var(--color-focus);
+      outline-offset: var(--space-xs);
+    }
+  }
+  .cardHead {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: var(--space-md);
+    & h3 {
+      margin: 0;
+      font-size: var(--font-lg);
+      line-height: var(--line-height-heading);
+    }
+    /* The name link covers the whole card, so the card is one click target. */
+    & h3 a {
+      color: var(--color-text);
+      text-decoration: none;
+      &::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+      }
+      &:focus-visible {
+        outline: none;
+      }
+    }
+  }
+  .badge {
+    padding-inline: var(--space-sm);
+    border: var(--border-width) solid var(--badge-border);
+    border-radius: var(--radius-pill);
+    background: var(--badge-surface);
+    color: var(--badge-text);
+    font-size: var(--font-xs);
+    font-weight: var(--font-weight-label);
+    white-space: nowrap;
+  }
+  .danger {
+    --badge-text: var(--color-badge-danger-text);
+    --badge-surface: var(--color-badge-danger-surface);
+    --badge-border: var(--color-badge-danger-border);
+  }
+  .inactive {
+    margin: 0;
+    color: var(--color-badge-danger-text);
+    font-size: var(--font-small);
+  }
+  .fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    & li {
+      padding: var(--space-xs) var(--space-sm);
+      border-radius: var(--radius-tag);
+      background: var(--color-brand-soft);
+      color: var(--color-brand);
+      font-size: var(--font-small);
+      font-weight: var(--font-weight-label);
+    }
+    & .more {
+      background: var(--color-subtle);
+      color: var(--color-muted);
+    }
+  }
+  .venue {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs) var(--space-md);
+    margin: 0;
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-control);
+    background: var(--color-subtle);
+    list-style: none;
+    font-size: var(--font-small);
+  }
+  .venue li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+  .venue svg {
+    inline-size: 1.25em;
+    block-size: 1.25em;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  /* Pinned to the bottom of the screen, above the phone tab bar (spec 1.7). */
+  .shortlist {
+    position: sticky;
+    inset-block-end: var(--space-md);
+    z-index: var(--layer-raised);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-sm) var(--space-lg);
+    margin-block-start: var(--space-xl);
+    padding: var(--space-md) var(--space-lg);
+    border: var(--border-width) solid var(--color-brand-line);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-overlay);
+    & p {
+      margin: 0;
+      font-weight: var(--font-weight-strong);
+    }
+    @media (width < 48rem) {
+      inset-block-end: calc(3.5rem + var(--space-sm) + env(safe-area-inset-bottom, 0px));
+    }
+  }
+  .shortlistActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    & a {
+      text-decoration: none;
+    }
+  }
+}

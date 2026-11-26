@@ -1,0 +1,35 @@
+# Hourly trigger for the address-check Edge Function (supplier page spec 4.6). Each
+# call checks up to 40 supplier addresses against OpenStreetMap; the script calls again
+# while addresses wait. The function only records map answers. No secrets are needed.
+name: address-check
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: address-check
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: scripts/deploy/call-address-check.sh staging "${{ vars.SUPABASE_PROJECT_REF }}"
+
+  # After staging, so the two projects never ask the map service at the same time.
+  production:
+    needs: staging
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: scripts/deploy/call-address-check.sh production "${{ vars.PRODUCTION_PROJECT_REF }}"

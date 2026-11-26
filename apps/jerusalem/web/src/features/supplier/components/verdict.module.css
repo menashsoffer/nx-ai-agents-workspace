@@ -1,0 +1,105 @@
+@layer features {
+  .band {
+    --kind-text: var(--color-badge-warning-text);
+    --kind-surface: var(--color-badge-warning-surface);
+    --kind-border: var(--color-badge-warning-border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-xl);
+    margin-block: var(--space-lg) var(--space-xl);
+    padding: var(--space-xl);
+    border: 0.125rem solid var(--kind-border);
+    border-radius: var(--radius-panel);
+    background: var(--kind-surface);
+    &[data-kind='allowed'] {
+      --kind-text: var(--color-badge-success-text);
+      --kind-surface: var(--color-badge-success-surface);
+      --kind-border: var(--color-badge-success-border);
+    }
+    &[data-kind='blocked'] {
+      --kind-text: var(--color-badge-danger-text);
+      --kind-surface: var(--color-badge-danger-surface);
+      --kind-border: var(--color-badge-danger-border);
+    }
+  }
+  .answer {
+    flex: 1 1 15rem;
+    display: grid;
+    gap: var(--space-sm);
+    color: var(--kind-text);
+  }
+  .question {
+    color: var(--color-muted);
+    font-size: var(--font-small);
+  }
+  .label {
+    margin: 0;
+    font-size: 2.125rem;
+    font-weight: var(--font-weight-title);
+    line-height: 1.1;
+  }
+  .summary {
+    margin: 0;
+    font-size: var(--font-lg);
+  }
+  .rows {
+    flex: 2 1 22rem;
+    list-style: none;
+    margin: 0;
+    padding: var(--space-xs) var(--space-lg);
+    background: var(--color-surface);
+    border-radius: var(--radius-control);
+  }
+  .row {
+    --state-text: var(--color-muted);
+    --state-surface: var(--color-subtle);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-md);
+    padding-block: var(--space-md);
+    & + & {
+      border-block-start: var(--border-width) solid var(--color-border);
+    }
+    &[data-state='ok'] {
+      --state-text: var(--color-badge-success-text);
+      --state-surface: var(--color-badge-success-surface);
+    }
+    &[data-state='warn'] {
+      --state-text: var(--color-badge-warning-text);
+      --state-surface: var(--color-badge-warning-surface);
+    }
+    &[data-state='bad'] {
+      --state-text: var(--color-badge-danger-text);
+      --state-surface: var(--color-badge-danger-surface);
+    }
+  }
+  .mark {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
+    border-radius: var(--radius-pill);
+    color: var(--state-text);
+    background: var(--state-surface);
+    font-weight: var(--font-weight-strong);
+  }
+  .rowText {
+    display: grid;
+    gap: 0.125rem;
+    & > span {
+      color: var(--color-muted);
+      font-size: var(--font-small);
+    }
+  }
+  /* Read aloud before each row, since the mark alone is a shape and a color. */
+  .spoken {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

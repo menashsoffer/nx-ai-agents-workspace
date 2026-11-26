@@ -1,0 +1,3207 @@
+{
+ "name": "מאגר יועצים ומתכננים - אגף תכנון",
+ "status": "closed",
+ "note": "נטען מקובץ המאגר המאוחד (17.11.2026). מצב המקור בקובץ: גרסה היסטורית.",
+ "url": "https://www.jerusalem.muni.il/media/ddkkkw12/consultants-planners-planning-database.pdf",
+ "file_name": "consultants-planners-planning-database.pdf",
+ "rows": [
+  {
+   "key": "HIST",
+   "name": "מ.נ.מ.מהנדסים בע\"מ",
+   "names": [
+    "מ.נ.מ.מהנדסים בע\"מ"
+   ],
+   "published_name": "מ.נ.מ.מהנדסים בע\"מ",
+   "field": "ייעוץ קרקע וביסוס",
+   "phones": [
+    "050-5389988, 04-6276771"
+   ],
+   "emails": [
+    "office@manam.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "וינפלד מיכאל",
+   "names": [
+    "וינפלד מיכאל"
+   ],
+   "published_name": "וינפלד מיכאל",
+   "field": "קונסטרוקציה",
+   "phones": [
+    "02-6523840 , 052-3429990"
+   ],
+   "emails": [
+    "parkedom@netvision.net.il"
+   ]
+  },
+  {
+   "key": "SUP-0840",
+   "name": "פרי - רבין מהנדסים בע\"מ",
+   "names": [
+    "פרי - רבין מהנדסים בע\"מ",
+    "פרי רבין מהנדסים בע\"מ"
+   ],
+   "published_name": "פרי רבין מהנדסים בע\"מ",
+   "field": "קונסטרוקציה",
+   "phones": [
+    "0544-3154283 , 03-5249110"
+   ],
+   "emails": [
+    "office@pr-eng.com"
+   ],
+   "address": "יד חרוצים 12, תל אביב - יפו",
+   "scheme": "company",
+   "value": "512665605"
+  },
+  {
+   "key": "HIST",
+   "name": "אמי מתום",
+   "names": [
+    "אמי מתום"
+   ],
+   "published_name": "אמי מתום",
+   "field": "קונסטרוקציה",
+   "phones": [
+    "052-3277784 , 04-8681111"
+   ],
+   "emails": [
+    "ron@amynetom.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "פ.ק.צ",
+   "names": [
+    "פ.ק.צ"
+   ],
+   "published_name": "פ.ק.צ",
+   "field": "קונסטרוקציה",
+   "phones": [
+    "054-2347412 , 03-7916916"
+   ],
+   "emails": [
+    "office@pakatz.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0033",
+   "name": "א.ש. רנד הנדסה בע\"מ",
+   "names": [
+    "א.ש. רנד הנדסה בע\"מ",
+    "א.ש.רנד הנדסה"
+   ],
+   "published_name": "א.ש.רנד הנדסה",
+   "field": "קונסטרוקציה",
+   "phones": [
+    "054-3543111"
+   ],
+   "emails": [
+    "anas.engin@gmail.com"
+   ],
+   "address": "ירושלים",
+   "scheme": "company",
+   "value": "515395796"
+  },
+  {
+   "key": "HIST",
+   "name": "ח.פאהום ושות'",
+   "names": [
+    "ח.פאהום ושות'"
+   ],
+   "published_name": "ח.פאהום ושות'",
+   "field": "יועץ ניקוז",
+   "phones": [
+    "04-8513050"
+   ],
+   "emails": [
+    "fahoum@kfahoum.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "יוגב הנדסה",
+   "names": [
+    "יוגב הנדסה"
+   ],
+   "published_name": "יוגב הנדסה",
+   "field": "יועץ ניקוז",
+   "phones": [
+    "054-3040001 , 08-9264477"
+   ],
+   "emails": [
+    "irit@yogeveng.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "י.ט הנדסה",
+   "names": [
+    "י.ט הנדסה"
+   ],
+   "published_name": "י.ט הנדסה",
+   "field": "יועץ ניקוז",
+   "phones": [
+    "054-6512730 , 04-8244132"
+   ],
+   "emails": [
+    "office.yteng@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.ס.ט",
+   "names": [
+    "א.ס.ט"
+   ],
+   "published_name": "א.ס.ט",
+   "field": "יועץ ניקוז",
+   "phones": [
+    "052-6450318 , 077-3451006"
+   ],
+   "emails": [
+    "tsn.arthur@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0540",
+   "name": "ירדן תנועה וכבישים בע\"מ",
+   "names": [
+    "ירדן תנועה וכבישים בע\"מ",
+    "ירדן הנדסה"
+   ],
+   "published_name": "ירדן הנדסה",
+   "field": "יועץ ניקוז",
+   "phones": [
+    "053-6646465 , 02-6275463"
+   ],
+   "emails": [
+    "info@yarden-eng.com"
+   ],
+   "address": "שיח סעד וסעיד 10, ירושלים",
+   "scheme": "company",
+   "value": "513914721"
+  },
+  {
+   "key": "SUP-0145",
+   "name": "ד\"ר אליה בן שבת הנדסת תחבורה תנועה ובקרה בע\"מ",
+   "names": [
+    "ד\"ר אליה בן שבת הנדסת תחבורה תנועה ובקרה בע\"מ",
+    "אליה בן שבת"
+   ],
+   "published_name": "אליה בן שבת",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "054-4417510, 04-8100085"
+   ],
+   "emails": [
+    "elia@eliabs.com"
+   ],
+   "address": "שד' הנשיא 77, חיפה 3464208; דרך מנחם בגין 156, תל אביב",
+   "scheme": "personal_id",
+   "value": "055575898"
+  },
+  {
+   "key": "HIST",
+   "name": "אייל קראוס",
+   "names": [
+    "אייל קראוס"
+   ],
+   "published_name": "אייל קראוס",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "052-3860113 , 02-5328813"
+   ],
+   "emails": [
+    "ekroads@ekroads.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0033",
+   "name": "א.ש. רנד הנדסה בע\"מ",
+   "names": [
+    "א.ש. רנד הנדסה בע\"מ",
+    "א.ש.רנד הנדסה בע\"מ"
+   ],
+   "published_name": "א.ש.רנד הנדסה בע\"מ",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "054-3543111"
+   ],
+   "emails": [
+    "anas.engin@gmail.com"
+   ],
+   "address": "ירושלים",
+   "scheme": "company",
+   "value": "515395796"
+  },
+  {
+   "key": "HIST",
+   "name": "ח.פאהום ושות'",
+   "names": [
+    "ח.פאהום ושות'"
+   ],
+   "published_name": "ח.פאהום ושות'",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "04-8513050"
+   ],
+   "emails": [
+    "fahoum@kfahoum.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "רע\"מ",
+   "names": [
+    "רע\"מ"
+   ],
+   "published_name": "רע\"מ",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "052-3475200 , 03-6344411"
+   ],
+   "emails": [
+    "office@rameng.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "לוי שטרק זילברשטיין",
+   "names": [
+    "לוי שטרק זילברשטיין"
+   ],
+   "published_name": "לוי שטרק זילברשטיין",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "050-5245916 , 04-8553655"
+   ],
+   "emails": [
+    "avram@levyshtark.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "מ.ת.נ",
+   "names": [
+    "מ.ת.נ"
+   ],
+   "published_name": "מ.ת.נ",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "054-2222351 , 03-5625919"
+   ],
+   "emails": [
+    "fadi@matan-eng.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "יוגב הנדסה",
+   "names": [
+    "יוגב הנדסה"
+   ],
+   "published_name": "יוגב הנדסה",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "054-3040001 , 08-9264477"
+   ],
+   "emails": [
+    "irit@yogeveng.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "שרים הנדסה",
+   "names": [
+    "שרים הנדסה"
+   ],
+   "published_name": "שרים הנדסה",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "052-5720430"
+   ],
+   "emails": [
+    "h_shrem@yahoo.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "צופיה הנדסה",
+   "names": [
+    "צופיה הנדסה"
+   ],
+   "published_name": "צופיה הנדסה",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "02-9709105 , 050-5260834"
+   ],
+   "emails": [
+    "zofiaeng1@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "פטר ליבוביץ מהנדסים בע\"מ",
+   "names": [
+    "פטר ליבוביץ מהנדסים בע\"מ"
+   ],
+   "published_name": "פטר ליבוביץ מהנדסים בע\"מ",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "050-9969696 , 09-9511376"
+   ],
+   "emails": [
+    "elad@ple.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "י.ט הנדסה",
+   "names": [
+    "י.ט הנדסה"
+   ],
+   "published_name": "י.ט הנדסה",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "054-6512730 , 04-8244132"
+   ],
+   "emails": [
+    "office.yteng@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "גד נובוק",
+   "names": [
+    "גד נובוק"
+   ],
+   "published_name": "גד נובוק",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "052-8616743 , 08-9255998"
+   ],
+   "emails": [
+    "novak-gd@zahav.net.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "פרייברג מהנדסים בע\"מ",
+   "names": [
+    "פרייברג מהנדסים בע\"מ"
+   ],
+   "published_name": "פרייברג מהנדסים בע\"מ",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "0542204760 , 03-7541046"
+   ],
+   "emails": [
+    "itsik932@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "תדם הנדסה",
+   "names": [
+    "תדם הנדסה"
+   ],
+   "published_name": "תדם הנדסה",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "050-5343158 , 04-8577566"
+   ],
+   "emails": [
+    "tedem@tedem.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "מהוד הנדסה בע\"מ",
+   "names": [
+    "מהוד הנדסה בע\"מ"
+   ],
+   "published_name": "מהוד הנדסה בע\"מ",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "0544-682923 , 03-6251188"
+   ],
+   "emails": [
+    "mahodta@mahod.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0134",
+   "name": "אל בי אס הנדסה - לואי בשיר",
+   "names": [
+    "אל בי אס הנדסה - לואי בשיר",
+    "אל בי אס"
+   ],
+   "published_name": "אל בי אס",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "050-5512458 , 04-6313357"
+   ],
+   "emails": [
+    "e_loai@hotmail.com"
+   ],
+   "scheme": "personal_id",
+   "value": "035956036"
+  },
+  {
+   "key": "SUP-0544",
+   "name": "ירון עברון הנדסה בע\"מ",
+   "names": [
+    "ירון עברון הנדסה בע\"מ"
+   ],
+   "published_name": "ירון עברון הנדסה בע\"מ",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "052-3937746 , 08-9318184"
+   ],
+   "emails": [
+    "yarone@ye-eng.co.il"
+   ],
+   "address": "אלי הורוביץ 19, רחובות 7608802",
+   "scheme": "company",
+   "value": "512799123"
+  },
+  {
+   "key": "HIST",
+   "name": "ג'בר עומר",
+   "names": [
+    "ג'בר עומר"
+   ],
+   "published_name": "ג'בר עומר",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "050-6212370 , 02-6630331"
+   ],
+   "emails": [
+    "jaberomar.eng@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "חאלד שחאדה",
+   "names": [
+    "חאלד שחאדה"
+   ],
+   "published_name": "חאלד שחאדה",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "050-7251289 , 073-7260653"
+   ],
+   "emails": [
+    "shehadeh.kha@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.א.אמאב תחבורה",
+   "names": [
+    "א.א.אמאב תחבורה"
+   ],
+   "published_name": "א.א.אמאב תחבורה",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "054-5262812 , 02-6726992"
+   ],
+   "emails": [
+    "amav@amav.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.ס.ט",
+   "names": [
+    "א.ס.ט"
+   ],
+   "published_name": "א.ס.ט",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "052-6450318 , 077-3451006"
+   ],
+   "emails": [
+    "tsn.arthur@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "סילבן רטוביץ",
+   "names": [
+    "סילבן רטוביץ"
+   ],
+   "published_name": "סילבן רטוביץ",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "050-6356888 , 02-6716321"
+   ],
+   "emails": [
+    "rato1@netvisen.net.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "אמי מתום",
+   "names": [
+    "אמי מתום"
+   ],
+   "published_name": "אמי מתום",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "052-3277784 , 04-8681111"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "יורו ברידג' הנדסה בורכוב יורי",
+   "names": [
+    "יורו ברידג' הנדסה בורכוב יורי"
+   ],
+   "published_name": "יורו ברידג' הנדסה בורכוב יורי",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "052-3867697 , 077-5503115"
+   ],
+   "emails": [
+    "office@ebridge-eng.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "משה אלבוחר",
+   "names": [
+    "משה אלבוחר"
+   ],
+   "published_name": "משה אלבוחר",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "052-8689560 , 02-6765666"
+   ],
+   "emails": [
+    "moshealbocher@bezeqint.net"
+   ]
+  },
+  {
+   "key": "SUP-0918",
+   "name": "רולי פלד",
+   "names": [
+    "רולי פלד"
+   ],
+   "published_name": "רולי פלד",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "050-6356999 , 02-6734472"
+   ],
+   "emails": [
+    "roshfeld@gmail.com"
+   ],
+   "address": "יפתח 4, ירושלים"
+  },
+  {
+   "key": "SUP-0806",
+   "name": "עמי בלום - הנדסת תנועה בע\"מ",
+   "names": [
+    "עמי בלום - הנדסת תנועה בע\"מ",
+    "עמי בלום"
+   ],
+   "published_name": "עמי בלום",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "054-4430427 , 02-6231132"
+   ],
+   "emails": [
+    "amiblum@netvision.net.il"
+   ],
+   "address": "יפו 97, ירושלים",
+   "scheme": "company",
+   "value": "513306878"
+  },
+  {
+   "key": "HIST",
+   "name": "מוחמד עמרו",
+   "names": [
+    "מוחמד עמרו"
+   ],
+   "published_name": "מוחמד עמרו",
+   "field": "תכנון הסדרי תנועה",
+   "phones": [
+    "053-6646465 , 02-6275463"
+   ],
+   "emails": [
+    "info@yarden-eng.com"
+   ]
+  },
+  {
+   "key": "SUP-0145",
+   "name": "ד\"ר אליה בן שבת הנדסת תחבורה תנועה ובקרה בע\"מ",
+   "names": [
+    "ד\"ר אליה בן שבת הנדסת תחבורה תנועה ובקרה בע\"מ",
+    "אליה בן שבת"
+   ],
+   "published_name": "אליה בן שבת",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "054-4417510, 04-8100085"
+   ],
+   "emails": [
+    "elia@eliabs.com"
+   ],
+   "address": "שד' הנשיא 77, חיפה 3464208; דרך מנחם בגין 156, תל אביב",
+   "scheme": "personal_id",
+   "value": "055575898"
+  },
+  {
+   "key": "HIST",
+   "name": "יורי ברדג' הנדסה",
+   "names": [
+    "יורי ברדג' הנדסה"
+   ],
+   "published_name": "יורי ברדג' הנדסה",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "052-3867697 , 077-5503115"
+   ],
+   "emails": [
+    "alex_a@ebridge-eng.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ח.פאהום ושות'",
+   "names": [
+    "ח.פאהום ושות'"
+   ],
+   "published_name": "ח.פאהום ושות'",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "04-8513050"
+   ],
+   "emails": [
+    "fahoum@kfahoum.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "יוגב הנדסה",
+   "names": [
+    "יוגב הנדסה"
+   ],
+   "published_name": "יוגב הנדסה",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "054-3040001 , 08-9264477"
+   ],
+   "emails": [
+    "irit@yogeveng.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "צופיה הנדסה",
+   "names": [
+    "צופיה הנדסה"
+   ],
+   "published_name": "צופיה הנדסה",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "02-9709105 , 050-5260834"
+   ],
+   "emails": [
+    "zofiaeng1@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "מ.ת.ן",
+   "names": [
+    "מ.ת.ן"
+   ],
+   "published_name": "מ.ת.ן",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "054-2222351 , 03-5625919"
+   ],
+   "emails": [
+    "fadi@matan-eng.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0540",
+   "name": "ירדן תנועה וכבישים בע\"מ",
+   "names": [
+    "ירדן תנועה וכבישים בע\"מ",
+    "ירדן הנדסה"
+   ],
+   "published_name": "ירדן הנדסה",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "053-6646465 , 02-6275463"
+   ],
+   "emails": [
+    "info@yarden-eng.com"
+   ],
+   "address": "שיח סעד וסעיד 10, ירושלים",
+   "scheme": "company",
+   "value": "513914721"
+  },
+  {
+   "key": "HIST",
+   "name": "י.ט הנדסה",
+   "names": [
+    "י.ט הנדסה"
+   ],
+   "published_name": "י.ט הנדסה",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "054-6512730 , 04-8244132"
+   ],
+   "emails": [
+    "office.yteng@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0918",
+   "name": "רולי פלד",
+   "names": [
+    "רולי פלד"
+   ],
+   "published_name": "רולי פלד",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "050-6356999 , 02-6734472"
+   ],
+   "emails": [
+    "roshfeld@gmail.com"
+   ],
+   "address": "יפתח 4, ירושלים"
+  },
+  {
+   "key": "SUP-0134",
+   "name": "אל בי אס הנדסה - לואי בשיר",
+   "names": [
+    "אל בי אס הנדסה - לואי בשיר",
+    "אל.בי.אס"
+   ],
+   "published_name": "אל.בי.אס",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "050-5512458 , 04-6313357"
+   ],
+   "emails": [
+    "e_loai@hotmail.com"
+   ],
+   "scheme": "personal_id",
+   "value": "035956036"
+  },
+  {
+   "key": "HIST",
+   "name": "ג'בר עומר",
+   "names": [
+    "ג'בר עומר"
+   ],
+   "published_name": "ג'בר עומר",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "050-6212370 , 02-6630331"
+   ],
+   "emails": [
+    "jaberomar.eng@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.א.אמאב תחבורה",
+   "names": [
+    "א.א.אמאב תחבורה"
+   ],
+   "published_name": "א.א.אמאב תחבורה",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "054-5262812 , 02-6726992"
+   ],
+   "emails": [
+    "amav@amav.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.ס.ט",
+   "names": [
+    "א.ס.ט"
+   ],
+   "published_name": "א.ס.ט",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "052-6450318 , 077-3451006"
+   ],
+   "emails": [
+    "tsn.arthur@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "אמי מתום",
+   "names": [
+    "אמי מתום"
+   ],
+   "published_name": "אמי מתום",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "0523-277784 , 04-8681111"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "סילבן רטוביץ",
+   "names": [
+    "סילבן רטוביץ"
+   ],
+   "published_name": "סילבן רטוביץ",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "050-6356888 , 02-6716321"
+   ],
+   "emails": [
+    "rato1@netvision.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "משה אלבוחר",
+   "names": [
+    "משה אלבוחר"
+   ],
+   "published_name": "משה אלבוחר",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "052-8689560 , 02-6765666"
+   ],
+   "emails": [
+    "moshealbocher@bezeqint.net"
+   ]
+  },
+  {
+   "key": "SUP-0806",
+   "name": "עמי בלום - הנדסת תנועה בע\"מ",
+   "names": [
+    "עמי בלום - הנדסת תנועה בע\"מ",
+    "עמי בלום"
+   ],
+   "published_name": "עמי בלום",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "054-4430427 , 02-6231132"
+   ],
+   "emails": [
+    "amiblum@netvision.net.il"
+   ],
+   "address": "יפו 97, ירושלים",
+   "scheme": "company",
+   "value": "513306878"
+  },
+  {
+   "key": "HIST",
+   "name": "פטר ליבוביץ מהנדסים בע\"מ",
+   "names": [
+    "פטר ליבוביץ מהנדסים בע\"מ"
+   ],
+   "published_name": "פטר ליבוביץ מהנדסים בע\"מ",
+   "field": "יועץ הסדרי תנועה",
+   "phones": [
+    "050-9969696 , 09-9511376"
+   ],
+   "emails": [
+    "elad@ple.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "רולי פלג",
+   "names": [
+    "רולי פלג"
+   ],
+   "published_name": "רולי פלג",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "050-6356999 , 02-6734472"
+   ],
+   "emails": [
+    "roshfeld@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "גבר עומר",
+   "names": [
+    "גבר עומר"
+   ],
+   "published_name": "גבר עומר",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "050-6212370 , 02-6630331"
+   ],
+   "emails": [
+    "jaberonmar.eng@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0544",
+   "name": "ירון עברון הנדסה בע\"מ",
+   "names": [
+    "ירון עברון הנדסה בע\"מ"
+   ],
+   "published_name": "ירון עברון הנדסה בע\"מ",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "052-3937746 , 08-9318184"
+   ],
+   "emails": [
+    "yarone@ye-eng.co.il"
+   ],
+   "address": "אלי הורוביץ 19, רחובות 7608802",
+   "scheme": "company",
+   "value": "512799123"
+  },
+  {
+   "key": "HIST",
+   "name": "חאלד שחאדה",
+   "names": [
+    "חאלד שחאדה"
+   ],
+   "published_name": "חאלד שחאדה",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "050-7251289 , 073-7260653"
+   ],
+   "emails": [
+    "shehadeh.kha@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ח.פאהום",
+   "names": [
+    "ח.פאהום"
+   ],
+   "published_name": "ח.פאהום",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "04-8513050"
+   ],
+   "emails": [
+    "fahoum@kfahoum.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0806",
+   "name": "עמי בלום - הנדסת תנועה בע\"מ",
+   "names": [
+    "עמי בלום - הנדסת תנועה בע\"מ",
+    "עמי בלום"
+   ],
+   "published_name": "עמי בלום",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "054-4430427 , 02-6231132"
+   ],
+   "emails": [
+    "amiblum@netvision.net.il"
+   ],
+   "address": "יפו 97, ירושלים",
+   "scheme": "company",
+   "value": "513306878"
+  },
+  {
+   "key": "HIST",
+   "name": "אמי מתום",
+   "names": [
+    "אמי מתום"
+   ],
+   "published_name": "אמי מתום",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "052-3277784 , 04-8681111"
+   ],
+   "emails": [
+    "ha-office@amymetom.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "מהוד",
+   "names": [
+    "מהוד"
+   ],
+   "published_name": "מהוד",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "0544-682923 , 03-6251188"
+   ],
+   "emails": [
+    "mahodta@mahod.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "מ.ת.ן הנדסת תנועה",
+   "names": [
+    "מ.ת.ן הנדסת תנועה"
+   ],
+   "published_name": "מ.ת.ן הנדסת תנועה",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "054-2222351 , 03-5625919"
+   ],
+   "emails": [
+    "raviv@matan-eng.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "צופיה הנדסה",
+   "names": [
+    "צופיה הנדסה"
+   ],
+   "published_name": "צופיה הנדסה",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "02-9709105 , 050-5260834"
+   ],
+   "emails": [
+    "zofiaeng1@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "שרים הנדסה",
+   "names": [
+    "שרים הנדסה"
+   ],
+   "published_name": "שרים הנדסה",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "052-5720430"
+   ],
+   "emails": [
+    "h_shrem@yahoo.com"
+   ]
+  },
+  {
+   "key": "SUP-0897",
+   "name": "קראוס חברה למדידות ולרישום (2007) בע\"מ",
+   "names": [
+    "קראוס חברה למדידות ולרישום (2007) בע\"מ",
+    "קראוס"
+   ],
+   "published_name": "קראוס",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "052-3860113 , 02-5328813"
+   ],
+   "emails": [
+    "ekroads@ekroads.co.il"
+   ],
+   "address": "הרטום 14, ירושלים 9777514",
+   "scheme": "company",
+   "value": "513974105"
+  },
+  {
+   "key": "SUP-0349",
+   "name": "דוד צבאן",
+   "names": [
+    "דוד צבאן"
+   ],
+   "published_name": "דוד צבאן",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "052-8232435 , 02-6733818"
+   ],
+   "emails": [
+    "davidsbn1@gmail.com"
+   ],
+   "address": "גדעון 24, ירושלים",
+   "scheme": "personal_id",
+   "value": "025112848"
+  },
+  {
+   "key": "HIST",
+   "name": "לוי ושטארק זילברשטין",
+   "names": [
+    "לוי ושטארק זילברשטין"
+   ],
+   "published_name": "לוי ושטארק זילברשטין",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "050-5245916 , 04-8553655"
+   ],
+   "emails": [
+    "office@levyshtark.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0145",
+   "name": "ד\"ר אליה בן שבת הנדסת תחבורה תנועה ובקרה בע\"מ",
+   "names": [
+    "ד\"ר אליה בן שבת הנדסת תחבורה תנועה ובקרה בע\"מ",
+    "אליה בן שבת"
+   ],
+   "published_name": "אליה בן שבת",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "054-4417510, 04-8100085"
+   ],
+   "emails": [
+    "elia@eliabs.com"
+   ],
+   "address": "שד' הנשיא 77, חיפה 3464208; דרך מנחם בגין 156, תל אביב",
+   "scheme": "personal_id",
+   "value": "055575898"
+  },
+  {
+   "key": "HIST",
+   "name": "א.א.אמאב תחבורה",
+   "names": [
+    "א.א.אמאב תחבורה"
+   ],
+   "published_name": "א.א.אמאב תחבורה",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "054-5262812 , 02-6726992"
+   ],
+   "emails": [
+    "amav@amav.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "סילבן רטוביץ",
+   "names": [
+    "סילבן רטוביץ"
+   ],
+   "published_name": "סילבן רטוביץ",
+   "field": "תכנון הסדרי רמזורים",
+   "phones": [
+    "050-6356888 , 02-6716321"
+   ],
+   "emails": [
+    "rato1@netvision.net.il"
+   ]
+  },
+  {
+   "key": "SUP-0918",
+   "name": "רולי פלד",
+   "names": [
+    "רולי פלד"
+   ],
+   "published_name": "רולי פלד",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "050-6356999 , 02-6734472"
+   ],
+   "emails": [
+    "roshfeld@gmail.com"
+   ],
+   "address": "יפתח 4, ירושלים"
+  },
+  {
+   "key": "HIST",
+   "name": "גבר עומר",
+   "names": [
+    "גבר עומר"
+   ],
+   "published_name": "גבר עומר",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "050-6212370 , 02-6630331"
+   ],
+   "emails": [
+    "jaberonmar.eng@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ח.פאהום",
+   "names": [
+    "ח.פאהום"
+   ],
+   "published_name": "ח.פאהום",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "04-8513050"
+   ],
+   "emails": [
+    "fahoum@kfahoum.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "אמי מתום",
+   "names": [
+    "אמי מתום"
+   ],
+   "published_name": "אמי מתום",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "052-3277784 , 04-8681111"
+   ],
+   "emails": [
+    "ha-office@amymetom.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "מהוד",
+   "names": [
+    "מהוד"
+   ],
+   "published_name": "מהוד",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "0544-682923 , 03-6251188"
+   ],
+   "emails": [
+    "mahodta@mahod.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0806",
+   "name": "עמי בלום - הנדסת תנועה בע\"מ",
+   "names": [
+    "עמי בלום - הנדסת תנועה בע\"מ",
+    "עמי בלום"
+   ],
+   "published_name": "עמי בלום",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "054-4430427 , 02-6231132"
+   ],
+   "emails": [
+    "amiblum@netvision.net.il"
+   ],
+   "address": "יפו 97, ירושלים",
+   "scheme": "company",
+   "value": "513306878"
+  },
+  {
+   "key": "HIST",
+   "name": "צופיה הנדסה",
+   "names": [
+    "צופיה הנדסה"
+   ],
+   "published_name": "צופיה הנדסה",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "02-9709105 , 050-5260834"
+   ],
+   "emails": [
+    "zofiaeng1@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0349",
+   "name": "דוד צבאן",
+   "names": [
+    "דוד צבאן"
+   ],
+   "published_name": "דוד צבאן",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "052-8232435 , 02-6733818"
+   ],
+   "emails": [
+    "davidsbn1@gmail.com"
+   ],
+   "address": "גדעון 24, ירושלים",
+   "scheme": "personal_id",
+   "value": "025112848"
+  },
+  {
+   "key": "HIST",
+   "name": "מ.ת.ן הנדסת תנועה",
+   "names": [
+    "מ.ת.ן הנדסת תנועה"
+   ],
+   "published_name": "מ.ת.ן הנדסת תנועה",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "054-2222351 , 03-5625919"
+   ],
+   "emails": [
+    "raviv@matan-eng.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0145",
+   "name": "ד\"ר אליה בן שבת הנדסת תחבורה תנועה ובקרה בע\"מ",
+   "names": [
+    "ד\"ר אליה בן שבת הנדסת תחבורה תנועה ובקרה בע\"מ",
+    "אליה בן שבת"
+   ],
+   "published_name": "אליה בן שבת",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "054-4417510, 04-8100085"
+   ],
+   "emails": [
+    "elia@eliabs.com"
+   ],
+   "address": "שד' הנשיא 77, חיפה 3464208; דרך מנחם בגין 156, תל אביב",
+   "scheme": "personal_id",
+   "value": "055575898"
+  },
+  {
+   "key": "HIST",
+   "name": "א.א.אמאב תחבורה",
+   "names": [
+    "א.א.אמאב תחבורה"
+   ],
+   "published_name": "א.א.אמאב תחבורה",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "054-5262812 , 02-6726992"
+   ],
+   "emails": [
+    "amav@amav.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "סילבן רטוביץ",
+   "names": [
+    "סילבן רטוביץ"
+   ],
+   "published_name": "סילבן רטוביץ",
+   "field": "ייעוץ הסדרי רמזורים",
+   "phones": [
+    "050-6356888 , 02-6716321"
+   ],
+   "emails": [
+    "rato1@netvisen.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ג.איטקין ע. בלום",
+   "names": [
+    "ג.איטקין ע. בלום"
+   ],
+   "published_name": "ג.איטקין ע. בלום",
+   "field": "יועץ חשמל",
+   "phones": [
+    "050-6550485 , 02-6735258"
+   ],
+   "emails": [
+    "yosi@e-blum.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.פ.ר הנדסה וניהול פרויקטים בע\"מ",
+   "names": [
+    "א.פ.ר הנדסה וניהול פרויקטים בע\"מ"
+   ],
+   "published_name": "א.פ.ר הנדסה וניהול פרויקטים בע\"מ",
+   "field": "יועץ חשמל",
+   "phones": [
+    "052-3000628, 076-488939"
+   ],
+   "emails": [
+    "office@apr-eng.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "קלינפלץ הנדסה בע\"מ",
+   "names": [
+    "קלינפלץ הנדסה בע\"מ"
+   ],
+   "published_name": "קלינפלץ הנדסה בע\"מ",
+   "field": "יועץ חשמל",
+   "phones": [
+    "052-4272730, 03-6818881"
+   ],
+   "emails": [
+    "igal@eng-klainplatz.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "טופז",
+   "names": [
+    "טופז"
+   ],
+   "published_name": "טופז",
+   "field": "יועץ חשמל",
+   "phones": [
+    "052-6676644 , 04-8124620"
+   ],
+   "emails": [
+    "office@topazenfgs.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "e.e.c.c",
+   "names": [
+    "e.e.c.c"
+   ],
+   "published_name": "e.e.c.c",
+   "field": "תאורת רחוב",
+   "phones": [
+    "052-6273939 , 02-6525442"
+   ],
+   "emails": [
+    "mazkirut@eecc.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "טופז",
+   "names": [
+    "טופז"
+   ],
+   "published_name": "טופז",
+   "field": "תאורת רחוב",
+   "phones": [
+    "052-6676644 , 04-8124620"
+   ],
+   "emails": [
+    "office@topazengs.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "קומיוניקשר בע\"מ- רוני רצבי)תמיר בלוך(",
+   "names": [
+    "קומיוניקשר בע\"מ- רוני רצבי)תמיר בלוך("
+   ],
+   "published_name": "קומיוניקשר בע\"מ- רוני רצבי)תמיר בלוך(",
+   "field": "תאורת רחוב",
+   "phones": [
+    "052-2547805 , 09-7926271"
+   ],
+   "emails": [
+    "office@cmk.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "נתיבי אור",
+   "names": [
+    "נתיבי אור"
+   ],
+   "published_name": "נתיבי אור",
+   "field": "תאורת רחוב",
+   "phones": [
+    "09-7716677,"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.מ רוטנברג",
+   "names": [
+    "א.מ רוטנברג"
+   ],
+   "published_name": "א.מ רוטנברג",
+   "field": "תאורת רחוב",
+   "phones": [
+    "050-5291863"
+   ],
+   "emails": [
+    "a_m_r@bezeqint.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "סלימאן וישאחי",
+   "names": [
+    "סלימאן וישאחי"
+   ],
+   "published_name": "סלימאן וישאחי",
+   "field": "תאורת רחוב",
+   "phones": [
+    "04-9913446, 050-5223268"
+   ],
+   "emails": [
+    "info@sw-eng.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "אי.טי.אס",
+   "names": [
+    "אי.טי.אס"
+   ],
+   "published_name": "אי.טי.אס",
+   "field": "תאורת רחוב",
+   "phones": [
+    "077-3003633, 052-3052828"
+   ],
+   "emails": [
+    "alon@its-eng.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "עוזי כרמל",
+   "names": [
+    "עוזי כרמל"
+   ],
+   "published_name": "עוזי כרמל",
+   "field": "תאורת רחוב",
+   "phones": [
+    "077-7990771, 0544-282999"
+   ],
+   "emails": [
+    "uzi@cts-eng.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "מידות ומעשה נוף",
+   "names": [
+    "מידות ומעשה נוף"
+   ],
+   "published_name": "מידות ומעשה נוף",
+   "field": "חוו\"ד ופיקוח יישום + אגרונומיה, תוכניות פיתוח",
+   "phones": [
+    "0050-4975800 , 04-6020604"
+   ],
+   "emails": [
+    "office@middot.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "רקפת הדר- גבאי",
+   "names": [
+    "רקפת הדר- גבאי"
+   ],
+   "published_name": "רקפת הדר- גבאי",
+   "field": "חוו\"ד ופיקוח יישום + אגרונומיה, תוכניות פיתוח",
+   "phones": [
+    "054-9107292 , 02-5703325"
+   ],
+   "emails": [
+    "dryy@zahav.net.il"
+   ]
+  },
+  {
+   "key": "SUP-0433",
+   "name": "ורד ייעוץ ולוגיסטיקה",
+   "names": [
+    "ורד ייעוץ ולוגיסטיקה"
+   ],
+   "published_name": "ורד ייעוץ ולוגיסטיקה",
+   "field": "חוו\"ד ופיקוח יישום + אגרונומיה, תוכניות פיתוח",
+   "phones": [
+    "052-8879010"
+   ],
+   "emails": [
+    "alon@veredgroup.co.il"
+   ],
+   "scheme": "personal_id",
+   "value": "038232955"
+  },
+  {
+   "key": "HIST",
+   "name": "גדעון שריג-לב וקסמן",
+   "names": [
+    "גדעון שריג-לב וקסמן"
+   ],
+   "published_name": "גדעון שריג-לב וקסמן",
+   "field": "אדריכלות נוף",
+   "phones": [
+    "052-6545776 , 03-5409316"
+   ],
+   "emails": [
+    "office@g-sarig.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "תפנית - ניהול בניה-ורד סינגר",
+   "names": [
+    "תפנית - ניהול בניה-ורד סינגר"
+   ],
+   "published_name": "תפנית - ניהול בניה-ורד סינגר",
+   "field": "אדריכלות נוף",
+   "phones": [
+    "050-5723428 , 02-5331500"
+   ],
+   "emails": [
+    "tafnit@tafnit-eng.com"
+   ]
+  },
+  {
+   "key": "SUP-0470",
+   "name": "טל רוסמן אדר' נוף",
+   "names": [
+    "טל רוסמן אדר' נוף",
+    "טל רוסמן"
+   ],
+   "published_name": "טל רוסמן",
+   "field": "אדריכלות נוף",
+   "phones": [
+    "052-2593233 , 03-5442082"
+   ],
+   "emails": [
+    "tal_land@netvision.net.il"
+   ],
+   "address": "שד' לוי אשכול, תל אביב 6936189",
+   "scheme": "personal_id",
+   "value": "024966517"
+  },
+  {
+   "key": "HIST",
+   "name": "לרמן בן שושן",
+   "names": [
+    "לרמן בן שושן"
+   ],
+   "published_name": "לרמן בן שושן",
+   "field": "אדריכלות נוף",
+   "phones": [
+    "050-5455060, 03-7158820"
+   ],
+   "emails": [
+    "michal@lerman.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "רינת גרוסמן",
+   "names": [
+    "רינת גרוסמן"
+   ],
+   "published_name": "רינת גרוסמן",
+   "field": "אדריכלות נוף",
+   "phones": [
+    "054-7779303"
+   ],
+   "emails": [
+    "rinat@land-art.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ק.ס.מ.קבוצת סוף מערב",
+   "names": [
+    "ק.ס.מ.קבוצת סוף מערב"
+   ],
+   "published_name": "ק.ס.מ.קבוצת סוף מערב",
+   "field": "אדריכלות נוף",
+   "phones": [
+    "03-9214510, 052-5476591"
+   ],
+   "emails": [
+    "bruce@ksm-a.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "אביב ניהול הנדסה",
+   "names": [
+    "אביב ניהול הנדסה"
+   ],
+   "published_name": "אביב ניהול הנדסה",
+   "field": "נגישות",
+   "phones": [
+    "052-3052000 , 03-9024004"
+   ],
+   "emails": [
+    "ariel.shabtai@avivamcg.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "אבי רמות- ש.ק.ל",
+   "names": [
+    "אבי רמות- ש.ק.ל"
+   ],
+   "published_name": "אבי רמות- ש.ק.ל",
+   "field": "נגישות",
+   "phones": [
+    "052-8390550, 02-6720157"
+   ],
+   "emails": [
+    "avir@shekel.org.il"
+   ]
+  },
+  {
+   "key": "SUP-0050",
+   "name": "אבני אפרת חברה להנדסה אזרחית בע\"מ",
+   "names": [
+    "אבני אפרת חברה להנדסה אזרחית בע\"מ",
+    "אבני אפרת"
+   ],
+   "published_name": "אבני אפרת",
+   "field": "נגישות",
+   "phones": [
+    "050-5239049 , 02-9931184"
+   ],
+   "emails": [
+    "avefrat1@gmail.com"
+   ],
+   "address": "שד' זלמן שז\"ר 1, ירושלים 9543501",
+   "scheme": "company",
+   "value": "511308348"
+  },
+  {
+   "key": "HIST",
+   "name": "חברת אשנב )איה וטל(- רק טל זמנדובה",
+   "names": [
+    "חברת אשנב )איה וטל(- רק טל זמנדובה"
+   ],
+   "published_name": "חברת אשנב )איה וטל(- רק טל זמנדובה",
+   "field": "נגישות",
+   "phones": [
+    "052-3685611, 03-7444941"
+   ],
+   "emails": [
+    "aya@eshnav-ltd.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "תפנית - ניהול בניה-ניסן שרבף וקרין שמחון",
+   "names": [
+    "תפנית - ניהול בניה-ניסן שרבף וקרין שמחון"
+   ],
+   "published_name": "תפנית - ניהול בניה-ניסן שרבף וקרין שמחון",
+   "field": "נגישות",
+   "phones": [
+    "052-3314028 , 02-6430445 ןוח"
+   ],
+   "emails": [
+    "karyn@tafnit-eng.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "הייתם דוויק",
+   "names": [
+    "הייתם דוויק"
+   ],
+   "published_name": "הייתם דוויק",
+   "field": "נגישות",
+   "phones": [
+    "058-5303336"
+   ],
+   "emails": [
+    "dwhaithamg@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0918",
+   "name": "רולי פלד",
+   "names": [
+    "רולי פלד"
+   ],
+   "published_name": "רולי פלד",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "050-6356999 , 02-6734472"
+   ],
+   "emails": [
+    "roshfeld@gmail.com"
+   ],
+   "address": "יפתח 4, ירושלים"
+  },
+  {
+   "key": "HIST",
+   "name": "ג'בר עומר",
+   "names": [
+    "ג'בר עומר"
+   ],
+   "published_name": "ג'בר עומר",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "050-6212370 , 02-6630331"
+   ],
+   "emails": [
+    "jaberonmar.eng@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0806",
+   "name": "עמי בלום - הנדסת תנועה בע\"מ",
+   "names": [
+    "עמי בלום - הנדסת תנועה בע\"מ",
+    "עמי בלום"
+   ],
+   "published_name": "עמי בלום",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "054-4430427 , 02-6231132"
+   ],
+   "emails": [
+    "amiblum@netvision.net.il"
+   ],
+   "address": "יפו 97, ירושלים",
+   "scheme": "company",
+   "value": "513306878"
+  },
+  {
+   "key": "HIST",
+   "name": "אל.בי.אס הנדסה- לוי בשיר",
+   "names": [
+    "אל.בי.אס הנדסה- לוי בשיר"
+   ],
+   "published_name": "אל.בי.אס הנדסה- לוי בשיר",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "050-5512458 , 04-6313357"
+   ],
+   "emails": [
+    "e_loai@hotmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0544",
+   "name": "ירון עברון הנדסה בע\"מ",
+   "names": [
+    "ירון עברון הנדסה בע\"מ"
+   ],
+   "published_name": "ירון עברון הנדסה בע\"מ",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "052-3937746 , 08-9318184"
+   ],
+   "emails": [
+    "yarone@ye-eng.co.il"
+   ],
+   "address": "אלי הורוביץ 19, רחובות 7608802",
+   "scheme": "company",
+   "value": "512799123"
+  },
+  {
+   "key": "HIST",
+   "name": "PGL",
+   "names": [
+    "PGL"
+   ],
+   "published_name": "PGL",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "050-5248377 , 03-7914111"
+   ],
+   "emails": [
+    "pgl@pgl.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "אמי מתום",
+   "names": [
+    "אמי מתום"
+   ],
+   "published_name": "אמי מתום",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "052-3277784 , 04-8681111"
+   ],
+   "emails": [
+    "ha-office@amymetom.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "משה אלבוחר",
+   "names": [
+    "משה אלבוחר"
+   ],
+   "published_name": "משה אלבוחר",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "052-8689560 , 02-6795581"
+   ],
+   "emails": [
+    "office@albocher-eng.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ח.פאהום ושות'",
+   "names": [
+    "ח.פאהום ושות'"
+   ],
+   "published_name": "ח.פאהום ושות'",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "04-8513050"
+   ],
+   "emails": [
+    "fahoum@kfahoum.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "לוי שטרק זילברשטיין",
+   "names": [
+    "לוי שטרק זילברשטיין"
+   ],
+   "published_name": "לוי שטרק זילברשטיין",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "050-5245916 , 04-8553655"
+   ],
+   "emails": [
+    "office@levyshtark.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "אייל קראוס",
+   "names": [
+    "אייל קראוס"
+   ],
+   "published_name": "אייל קראוס",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "052-3860113 , 02-5328813"
+   ],
+   "emails": [
+    "ekroads@ekroads.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "יוגב הנדסה",
+   "names": [
+    "יוגב הנדסה"
+   ],
+   "published_name": "יוגב הנדסה",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "054-3040001 , 08-9264477"
+   ],
+   "emails": [
+    "irit@yogeveng.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "י.ט הנדסה",
+   "names": [
+    "י.ט הנדסה"
+   ],
+   "published_name": "י.ט הנדסה",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "054-6512730 , 04-8244132"
+   ],
+   "emails": [
+    "office.yteng@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.א.אמאב תחבורה",
+   "names": [
+    "א.א.אמאב תחבורה"
+   ],
+   "published_name": "א.א.אמאב תחבורה",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "054-5262812 , 02-6726992"
+   ],
+   "emails": [
+    "amav@amav.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.ס.ט",
+   "names": [
+    "א.ס.ט"
+   ],
+   "published_name": "א.ס.ט",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "052-6450318 , 077-3451006"
+   ],
+   "emails": [
+    "tsn.arthur@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0540",
+   "name": "ירדן תנועה וכבישים בע\"מ",
+   "names": [
+    "ירדן תנועה וכבישים בע\"מ",
+    "ירדן הנדסה"
+   ],
+   "published_name": "ירדן הנדסה",
+   "field": "תכנון ויעוץ שבילי אופניים",
+   "phones": [
+    "053-6646465 , 02-6275463"
+   ],
+   "emails": [
+    "info@yarden-eng.com"
+   ],
+   "address": "שיח סעד וסעיד 10, ירושלים",
+   "scheme": "company",
+   "value": "513914721"
+  },
+  {
+   "key": "HIST",
+   "name": "ח.פאהום ושות'",
+   "names": [
+    "ח.פאהום ושות'"
+   ],
+   "published_name": "ח.פאהום ושות'",
+   "field": "מודדים",
+   "phones": [
+    "04-8513050"
+   ],
+   "emails": [
+    "fahoum@kfahoum.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0490",
+   "name": "יאיר איזבוצקי מדידות איתור ורישום מקרקעין (1996) בע\"מ",
+   "names": [
+    "יאיר איזבוצקי מדידות איתור ורישום מקרקעין (1996) בע\"מ",
+    "יאיר איזבוצקי"
+   ],
+   "published_name": "יאיר איזבוצקי",
+   "field": "מודדים",
+   "phones": [
+    "054-4264466 , 02-6515661"
+   ],
+   "emails": [
+    "jru@isboutsky.com"
+   ],
+   "address": "הגפן 393, חמד",
+   "scheme": "company",
+   "value": "512410036"
+  },
+  {
+   "key": "SUP-0437",
+   "name": "זייד גאומפ בע\"מ",
+   "names": [
+    "זייד גאומפ בע\"מ"
+   ],
+   "published_name": "זייד גאומפ בע\"מ",
+   "field": "מודדים",
+   "phones": [
+    "054-2274444 , 04-8577444"
+   ],
+   "emails": [
+    "zaid-gemop@geomap.co.il"
+   ],
+   "address": "דרך העצמאות 9, חיפה 3303305",
+   "scheme": "company",
+   "value": "511639551"
+  },
+  {
+   "key": "HIST",
+   "name": "א.פינקס ובניו",
+   "names": [
+    "א.פינקס ובניו"
+   ],
+   "published_name": "א.פינקס ובניו",
+   "field": "מודדים",
+   "phones": [
+    "050-3120205 , 03-6355773"
+   ],
+   "emails": [
+    "mail@pinkas.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "גטניו ושות'",
+   "names": [
+    "גטניו ושות'"
+   ],
+   "published_name": "גטניו ושות'",
+   "field": "מודדים",
+   "phones": [
+    "052-8208939 , 03-7541000"
+   ],
+   "emails": [
+    "danaka@datamap.com"
+   ]
+  },
+  {
+   "key": "SUP-0657",
+   "name": "מיתר מדידות בע\"מ",
+   "names": [
+    "מיתר מדידות בע\"מ",
+    "מיתר מדידות"
+   ],
+   "published_name": "מיתר מדידות",
+   "field": "מודדים",
+   "phones": [
+    "02-6522016 , 050-6371395"
+   ],
+   "emails": [
+    "meitar@meitar-sur.co.il"
+   ],
+   "address": "בראנד אהרון 3, ירושלים (פעילות: כנפי נשרים 68, ירושלים)",
+   "scheme": "company",
+   "value": "513493015"
+  },
+  {
+   "key": "HIST",
+   "name": "מימד הנדסה",
+   "names": [
+    "מימד הנדסה"
+   ],
+   "published_name": "מימד הנדסה",
+   "field": "מודדים",
+   "phones": [
+    "02-6522294 , 050-5331854"
+   ],
+   "emails": [
+    "meimad@meimad-sur.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "קראוס מדידות",
+   "names": [
+    "קראוס מדידות"
+   ],
+   "published_name": "קראוס מדידות",
+   "field": "מודדים",
+   "phones": [
+    "02-5400430 , 052-3860114"
+   ],
+   "emails": [
+    "photocad@kraus-eng.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "מחמוד מאמיד",
+   "names": [
+    "מחמוד מאמיד"
+   ],
+   "published_name": "מחמוד מאמיד",
+   "field": "מודדים",
+   "phones": [
+    "04-6310021, 052-2378690"
+   ],
+   "emails": [
+    "moded1000@walla.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0428",
+   "name": "מיכאל וינפלד - חברה להנדסה בע\"מ",
+   "names": [
+    "מיכאל וינפלד - חברה להנדסה בע\"מ",
+    "מיכאל וינפלד"
+   ],
+   "published_name": "מיכאל וינפלד",
+   "field": "בקרים",
+   "phones": [
+    "02-6523840 , 052-3429990"
+   ],
+   "emails": [
+    "parkedom@netvision.net.il"
+   ],
+   "address": "רבי בנימין 7, ירושלים 9630615",
+   "scheme": "company",
+   "value": "513032771"
+  },
+  {
+   "key": "HIST",
+   "name": "ר.רון",
+   "names": [
+    "ר.רון"
+   ],
+   "published_name": "ר.רון",
+   "field": "בקרים",
+   "phones": [
+    "050-5719292"
+   ],
+   "emails": [
+    "rubi.ronn@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "חברת E.S.Q",
+   "names": [
+    "חברת E.S.Q"
+   ],
+   "published_name": "חברת E.S.Q",
+   "field": "בקרים",
+   "phones": [
+    "04-6626770, 052-6838772"
+   ],
+   "emails": [
+    "yosi@esq-eng.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "מיכאל צ'רנובלסקי",
+   "names": [
+    "מיכאל צ'רנובלסקי"
+   ],
+   "published_name": "מיכאל צ'רנובלסקי",
+   "field": "בקרים",
+   "phones": [
+    "02-5874015 ,050-5669188"
+   ],
+   "emails": [
+    "stabil@zahav.net.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "פ.ק.צ",
+   "names": [
+    "פ.ק.צ"
+   ],
+   "published_name": "פ.ק.צ",
+   "field": "בקרים",
+   "phones": [
+    "054-4682540"
+   ],
+   "emails": [
+    "david@pakatz.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.א.הנדסת בטיחות",
+   "names": [
+    "א.א.הנדסת בטיחות"
+   ],
+   "published_name": "א.א.הנדסת בטיחות",
+   "field": "בטיחות",
+   "phones": [
+    "050-2265604, 02-5805141"
+   ],
+   "emails": [
+    "isacc@netvision.net.il"
+   ]
+  },
+  {
+   "key": "SUP-0050",
+   "name": "אבני אפרת חברה להנדסה אזרחית בע\"מ",
+   "names": [
+    "אבני אפרת חברה להנדסה אזרחית בע\"מ",
+    "אבני אפרת"
+   ],
+   "published_name": "אבני אפרת",
+   "field": "בטיחות",
+   "phones": [
+    "050-5239049 , 02-9931184"
+   ],
+   "emails": [
+    "avefrat1@gmail.com"
+   ],
+   "address": "שד' זלמן שז\"ר 1, ירושלים 9543501",
+   "scheme": "company",
+   "value": "511308348"
+  },
+  {
+   "key": "SUP-0050",
+   "name": "אבני אפרת חברה להנדסה אזרחית בע\"מ",
+   "names": [
+    "אבני אפרת חברה להנדסה אזרחית בע\"מ",
+    "אבני אפרת"
+   ],
+   "published_name": "אבני אפרת",
+   "field": "בטיחות",
+   "phones": [
+    "02-5690700, 050-5239049"
+   ],
+   "emails": [
+    "office@avefrat.co.il"
+   ],
+   "address": "שד' זלמן שז\"ר 1, ירושלים 9543501",
+   "scheme": "company",
+   "value": "511308348"
+  },
+  {
+   "key": "HIST",
+   "name": "להב הנדסה",
+   "names": [
+    "להב הנדסה"
+   ],
+   "published_name": "להב הנדסה",
+   "field": "בטיחות",
+   "phones": [
+    "073-7429590 , 054-8110091"
+   ],
+   "emails": [
+    "lahavsafety@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "אייל קראוס",
+   "names": [
+    "אייל קראוס"
+   ],
+   "published_name": "אייל קראוס",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "052-3860113 , 02-5328813"
+   ],
+   "emails": [
+    "ekroads@ekroads.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "רעמ",
+   "names": [
+    "רעמ"
+   ],
+   "published_name": "רעמ",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "052-2448780 , 03-6344411"
+   ],
+   "emails": [
+    "office@rameng.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ח.פאהום ושות'",
+   "names": [
+    "ח.פאהום ושות'"
+   ],
+   "published_name": "ח.פאהום ושות'",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "04-8513050"
+   ],
+   "emails": [
+    "fahoum@kfahoum.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "פק\"צ",
+   "names": [
+    "פק\"צ"
+   ],
+   "published_name": "פק\"צ",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "054-2347412 , 03-7916916"
+   ],
+   "emails": [
+    "office@pakatz.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "לוי שטרק",
+   "names": [
+    "לוי שטרק"
+   ],
+   "published_name": "לוי שטרק",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "050-5245916 , 04-8553655"
+   ],
+   "emails": [
+    "office@ievyshtark.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0544",
+   "name": "ירון עברון הנדסה בע\"מ",
+   "names": [
+    "ירון עברון הנדסה בע\"מ"
+   ],
+   "published_name": "ירון עברון הנדסה בע\"מ",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "052-3937746 , 08-9318184"
+   ],
+   "emails": [
+    "yarone@ye-eng.co.il"
+   ],
+   "address": "אלי הורוביץ 19, רחובות 7608802",
+   "scheme": "company",
+   "value": "512799123"
+  },
+  {
+   "key": "HIST",
+   "name": "צופיה הנדסה בע\"מ",
+   "names": [
+    "צופיה הנדסה בע\"מ"
+   ],
+   "published_name": "צופיה הנדסה בע\"מ",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "02-9709105 , 050-5260834"
+   ],
+   "emails": [
+    "zofiaeng1@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "PGL",
+   "names": [
+    "PGL"
+   ],
+   "published_name": "PGL",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "050-5248377 , 03-7914111"
+   ],
+   "emails": [
+    "pgl@pgl.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0729",
+   "name": "נחמה הירשברג הנדסה אזרחית בע\"מ",
+   "names": [
+    "נחמה הירשברג הנדסה אזרחית בע\"מ",
+    "נחמה הירשברג"
+   ],
+   "published_name": "נחמה הירשברג",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "054-4549823 , 03-5498239"
+   ],
+   "emails": [
+    "office@hirshberg-eng.co.il"
+   ],
+   "address": "אהוד 16, רמת השרון",
+   "scheme": "company",
+   "value": "513824508"
+  },
+  {
+   "key": "HIST",
+   "name": "ניהול פרוייקטים 770",
+   "names": [
+    "ניהול פרוייקטים 770"
+   ],
+   "published_name": "ניהול פרוייקטים 770",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "054-7267706 , 02-5832554"
+   ],
+   "emails": [
+    "office@pm770.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "פרייברג",
+   "names": [
+    "פרייברג"
+   ],
+   "published_name": "פרייברג",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "054-22047600 , 03-7541046"
+   ],
+   "emails": [
+    "aylonf@datamap.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ג.רוזן הנדסה בע\"מ",
+   "names": [
+    "ג.רוזן הנדסה בע\"מ"
+   ],
+   "published_name": "ג.רוזן הנדסה בע\"מ",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "050-5217860, 03-6093787"
+   ],
+   "emails": [
+    "ellastesin@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "גד נובק",
+   "names": [
+    "גד נובק"
+   ],
+   "published_name": "גד נובק",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "052-8616793 , 08-9255998"
+   ],
+   "emails": [
+    "novak-gd@zahav.net.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "חאלד שחאדה",
+   "names": [
+    "חאלד שחאדה"
+   ],
+   "published_name": "חאלד שחאדה",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "050-7251289 , 073-7260653"
+   ],
+   "emails": [
+    "shehadeh.kha@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0134",
+   "name": "אל בי אס הנדסה - לואי בשיר",
+   "names": [
+    "אל בי אס הנדסה - לואי בשיר",
+    "אל בי אס"
+   ],
+   "published_name": "אל בי אס",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "050-5512458 , 04-6313357"
+   ],
+   "emails": [
+    "e_loai@hotmail.com"
+   ],
+   "scheme": "personal_id",
+   "value": "035956036"
+  },
+  {
+   "key": "HIST",
+   "name": "פטר ליבוביץ",
+   "names": [
+    "פטר ליבוביץ"
+   ],
+   "published_name": "פטר ליבוביץ",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "050-996969 , 09-9511376"
+   ],
+   "emails": [
+    "elad@ple.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "מהוד",
+   "names": [
+    "מהוד"
+   ],
+   "published_name": "מהוד",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "054-4682923 , 03-6251188"
+   ],
+   "emails": [
+    "mahodta@mahod.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ניהול פרוייקטים 770",
+   "names": [
+    "ניהול פרוייקטים 770"
+   ],
+   "published_name": "ניהול פרוייקטים 770",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "054-7267706 , 02-5832554"
+   ],
+   "emails": [
+    "office@pm770.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0033",
+   "name": "א.ש. רנד הנדסה בע\"מ",
+   "names": [
+    "א.ש. רנד הנדסה בע\"מ",
+    "א.ש רנד הנדסה בע\"מ"
+   ],
+   "published_name": "א.ש רנד הנדסה בע\"מ",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "054-3543111"
+   ],
+   "emails": [
+    "anas.engin@gmail.com"
+   ],
+   "address": "ירושלים",
+   "scheme": "company",
+   "value": "515395796"
+  },
+  {
+   "key": "HIST",
+   "name": "יוגב הנדסה",
+   "names": [
+    "יוגב הנדסה"
+   ],
+   "published_name": "יוגב הנדסה",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "054-3040001 , 08-9264477"
+   ],
+   "emails": [
+    "irit@yogeveng.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "י.ט הנדסה",
+   "names": [
+    "י.ט הנדסה"
+   ],
+   "published_name": "י.ט הנדסה",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "054-6512730 , 04-8244132"
+   ],
+   "emails": [
+    "office.yteng@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-1023",
+   "name": "תדם הנדסה אזרחית בע\"מ",
+   "names": [
+    "תדם הנדסה אזרחית בע\"מ",
+    "תדם הנדסה אזרחית- בע\"מ"
+   ],
+   "published_name": "תדם הנדסה אזרחית- בע\"מ",
+   "field": "מהנדס פיזי",
+   "address": "אתגר 2, טירת כרמל, 3903213",
+   "scheme": "company",
+   "value": "510718570"
+  },
+  {
+   "key": "HIST",
+   "name": "א.א. אמאב תחבורה",
+   "names": [
+    "א.א. אמאב תחבורה"
+   ],
+   "published_name": "א.א. אמאב תחבורה",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "054-5262812 , 02-6726992"
+   ],
+   "emails": [
+    "amav@amav.net"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.ס.ט",
+   "names": [
+    "א.ס.ט"
+   ],
+   "published_name": "א.ס.ט",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "052-6450318 , 077-3451006"
+   ],
+   "emails": [
+    "tsn.arthur@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "יורו ברידג' הנדסה בע\"מ",
+   "names": [
+    "יורו ברידג' הנדסה בע\"מ"
+   ],
+   "published_name": "יורו ברידג' הנדסה בע\"מ",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "052-3867697 , 077-5503115"
+   ],
+   "emails": [
+    "office@ebrudge-eng.com"
+   ]
+  },
+  {
+   "key": "SUP-0540",
+   "name": "ירדן תנועה וכבישים בע\"מ",
+   "names": [
+    "ירדן תנועה וכבישים בע\"מ",
+    "ירדן הנדסה"
+   ],
+   "published_name": "ירדן הנדסה",
+   "field": "מהנדס פיזי",
+   "phones": [
+    "053-6646465 , 02-6275463"
+   ],
+   "emails": [
+    "info@yarden-eng.com"
+   ],
+   "address": "שיח סעד וסעיד 10, ירושלים",
+   "scheme": "company",
+   "value": "513914721"
+  },
+  {
+   "key": "SUP-0881",
+   "name": "קומיוניקשר בע\"מ",
+   "names": [
+    "קומיוניקשר בע\"מ"
+   ],
+   "published_name": "קומיוניקשר בע\"מ",
+   "field": "ייעוץ ופיקוח תשתיות",
+   "phones": [
+    "052-2547805 , 09-7926271"
+   ],
+   "emails": [
+    "office@cmk.co.il"
+   ],
+   "address": "קרית התקשורת, נווה אילן",
+   "scheme": "company",
+   "value": "514210947"
+  },
+  {
+   "key": "HIST",
+   "name": "דורון גנץ",
+   "names": [
+    "דורון גנץ"
+   ],
+   "published_name": "דורון גנץ",
+   "field": "ייעוץ ופיקוח תשתיות",
+   "phones": [
+    "0505-602882"
+   ],
+   "emails": [
+    "bakar.dg@gmail.com"
+   ]
+  },
+  {
+   "key": "SUP-0544",
+   "name": "ירון עברון הנדסה בע\"מ",
+   "names": [
+    "ירון עברון הנדסה בע\"מ"
+   ],
+   "published_name": "ירון עברון הנדסה בע\"מ",
+   "field": "שילוט דרך יועץ/ מתכנן",
+   "phones": [
+    "052-3937746 , 08-9318184"
+   ],
+   "emails": [
+    "yarone@ye-eng.co.il"
+   ],
+   "address": "אלי הורוביץ 19, רחובות 7608802",
+   "scheme": "company",
+   "value": "512799123"
+  },
+  {
+   "key": "HIST",
+   "name": "חאלד שחאדה",
+   "names": [
+    "חאלד שחאדה"
+   ],
+   "published_name": "חאלד שחאדה",
+   "field": "שילוט דרך יועץ/ מתכנן",
+   "phones": [
+    "050-7251289 , 073-7260653"
+   ],
+   "emails": [
+    "shehadeh.kha@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "משה אל בוחר שרותי הנדסה בע\"מ",
+   "names": [
+    "משה אל בוחר שרותי הנדסה בע\"מ"
+   ],
+   "published_name": "משה אל בוחר שרותי הנדסה בע\"מ",
+   "field": "שילוט דרך יועץ/ מתכנן"
+  },
+  {
+   "key": "HIST",
+   "name": "יורוברידג' הנדסה בע\"מ",
+   "names": [
+    "יורוברידג' הנדסה בע\"מ"
+   ],
+   "published_name": "יורוברידג' הנדסה בע\"מ",
+   "field": "שילוט דרך יועץ/ מתכנן",
+   "phones": [
+    "052-3867697 , 077-5503115"
+   ],
+   "emails": [
+    "office@ebridge-eng.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ח.פאהום ושות'",
+   "names": [
+    "ח.פאהום ושות'"
+   ],
+   "published_name": "ח.פאהום ושות'",
+   "field": "שילוט דרך יועץ/ מתכנן",
+   "phones": [
+    "04-8513050"
+   ],
+   "emails": [
+    "fahoum@kfahoum.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "הנדסת תכנון תחבורה בע\"מ",
+   "names": [
+    "הנדסת תכנון תחבורה בע\"מ"
+   ],
+   "published_name": "הנדסת תכנון תחבורה בע\"מ",
+   "field": "שילוט דרך יועץ/ מתכנן",
+   "phones": [
+    "050-5248377 , 03-7914111"
+   ],
+   "emails": [
+    "pgl@pgl.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "צופית הנדסה",
+   "names": [
+    "צופית הנדסה"
+   ],
+   "published_name": "צופית הנדסה",
+   "field": "שילוט דרך יועץ/ מתכנן",
+   "phones": [
+    "02-9709105 , 050-5260834"
+   ],
+   "emails": [
+    "zofiaeng1@gmail.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.בלוך תשתיות",
+   "names": [
+    "א.בלוך תשתיות"
+   ],
+   "published_name": "א.בלוך תשתיות",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "052-5642597 , 072-2410887"
+   ],
+   "emails": [
+    "arik@ab-i.net"
+   ]
+  },
+  {
+   "key": "SUP-0675",
+   "name": "ממן ניהול ופיקוח (יואל ממן)",
+   "names": [
+    "ממן ניהול ופיקוח (יואל ממן)",
+    "יואל ממן ניהול ופיקוח בע\"מ"
+   ],
+   "published_name": "יואל ממן ניהול ופיקוח בע\"מ",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "052-4099939 , 02-9709965"
+   ],
+   "emails": [
+    "office@mamaneng.co.il"
+   ],
+   "address": "יפה נוף, ירושלים 9103501 (פעילות: פסגות)",
+   "scheme": "company",
+   "value": "513354084"
+  },
+  {
+   "key": "SUP-0778",
+   "name": "סקאפי שירותי הנדסה אזרחית בע\"מ",
+   "names": [
+    "סקאפי שירותי הנדסה אזרחית בע\"מ",
+    "סקאפי"
+   ],
+   "published_name": "סקאפי",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "054-8193112 , 073-7319395"
+   ],
+   "emails": [
+    "skafi333@gmail.com"
+   ],
+   "address": "האומן 9, א.ת. תלפיות, ירושלים",
+   "scheme": "company",
+   "value": "516543071"
+  },
+  {
+   "key": "HIST",
+   "name": "נווה פתרונות הנדסה ופרויקטים בע\"מ",
+   "names": [
+    "נווה פתרונות הנדסה ופרויקטים בע\"מ"
+   ],
+   "published_name": "נווה פתרונות הנדסה ופרויקטים בע\"מ",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "054-5637233 , 074-7016761"
+   ],
+   "emails": [
+    "ido@naveh-eng.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ניסים שוקר מהנדים יועצים בע\"מ",
+   "names": [
+    "ניסים שוקר מהנדים יועצים בע\"מ"
+   ],
+   "published_name": "ניסים שוקר מהנדים יועצים בע\"מ",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "050-8886655 , 02-6541735"
+   ],
+   "emails": [
+    "shuker@shuker.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0033",
+   "name": "א.ש. רנד הנדסה בע\"מ",
+   "names": [
+    "א.ש. רנד הנדסה בע\"מ",
+    "א.ש.רנד הנדסה בע\"מ"
+   ],
+   "published_name": "א.ש.רנד הנדסה בע\"מ",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "054-3543111 ,"
+   ],
+   "emails": [
+    "anas.engin@gmail.com"
+   ],
+   "address": "ירושלים",
+   "scheme": "company",
+   "value": "515395796"
+  },
+  {
+   "key": "HIST",
+   "name": "מיכאל צ'רנובלסקי",
+   "names": [
+    "מיכאל צ'רנובלסקי"
+   ],
+   "published_name": "מיכאל צ'רנובלסקי",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "02-5874015 ,050-5669188"
+   ],
+   "emails": [
+    "stabil@zahav.net.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "דוד אקרשטיין בע\"מ",
+   "names": [
+    "דוד אקרשטיין בע\"מ"
+   ],
+   "published_name": "דוד אקרשטיין בע\"מ",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "050-6896563 , 02-6517603"
+   ],
+   "emails": [
+    "office@ackerstein-eng.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "א.ד.רהט הנדסה",
+   "names": [
+    "א.ד.רהט הנדסה"
+   ],
+   "published_name": "א.ד.רהט הנדסה",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "052-3984680 , 02-5870071"
+   ],
+   "emails": [
+    "office@e-rahat.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ניהול פרויקטים 770",
+   "names": [
+    "ניהול פרויקטים 770"
+   ],
+   "published_name": "ניהול פרויקטים 770",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "054-7267706 , 02-5832554"
+   ],
+   "emails": [
+    "office@pm770.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "עדי שריסט ניהול הנדסי בע\"מ",
+   "names": [
+    "עדי שריסט ניהול הנדסי בע\"מ"
+   ],
+   "published_name": "עדי שריסט ניהול הנדסי בע\"מ",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "052-2600209 , 02-6789770"
+   ],
+   "emails": [
+    "ady@ady-eng.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "אילן חדד",
+   "names": [
+    "אילן חדד"
+   ],
+   "published_name": "אילן חדד",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "050-5202469 ,03-5498054"
+   ],
+   "emails": [
+    "ilhad@ilhad.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "מרום תובל",
+   "names": [
+    "מרום תובל"
+   ],
+   "published_name": "מרום תובל",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "054-5812250 , 077-4600788"
+   ],
+   "emails": [
+    "office@marom-tuval.co.il"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "עתיד מהנדסים",
+   "names": [
+    "עתיד מהנדסים"
+   ],
+   "published_name": "עתיד מהנדסים",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "054-8169459 , 0722-15950"
+   ],
+   "emails": [
+    "alex@atid-eng.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0881",
+   "name": "קומיוניקשר בע\"מ",
+   "names": [
+    "קומיוניקשר בע\"מ",
+    "קומיוניקשר"
+   ],
+   "published_name": "קומיוניקשר",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "052-2547805 , 09-7926271"
+   ],
+   "emails": [
+    "office@cmk.co.il"
+   ],
+   "address": "קרית התקשורת, נווה אילן",
+   "scheme": "company",
+   "value": "514210947"
+  },
+  {
+   "key": "HIST",
+   "name": "פ.גורדי הנדסה",
+   "names": [
+    "פ.גורדי הנדסה"
+   ],
+   "published_name": "פ.גורדי הנדסה",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "052-5595000 ,09-9565065"
+   ],
+   "emails": [
+    "zion@gordy.co.il"
+   ]
+  },
+  {
+   "key": "SUP-0442",
+   "name": "זמיר - גת הנדסה וניהול בע\"מ",
+   "names": [
+    "זמיר - גת הנדסה וניהול בע\"מ",
+    "זמיר גת הנדסה וניהול בע\"מ"
+   ],
+   "published_name": "זמיר גת הנדסה וניהול בע\"מ",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "052-4498738 , 077-5589089"
+   ],
+   "emails": [
+    "zg@zg-eng.co.il"
+   ],
+   "address": "עמק השלום 7, יקנעם עילית",
+   "scheme": "company",
+   "value": "515621720"
+  },
+  {
+   "key": "SUP-0428",
+   "name": "מיכאל וינפלד - חברה להנדסה בע\"מ",
+   "names": [
+    "מיכאל וינפלד - חברה להנדסה בע\"מ",
+    "מיכאל וינפלד"
+   ],
+   "published_name": "מיכאל וינפלד",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "02-6523840 , 052-3429990"
+   ],
+   "emails": [
+    "parkedom@netvision.net.il"
+   ],
+   "address": "רבי בנימין 7, ירושלים 9630615",
+   "scheme": "company",
+   "value": "513032771"
+  },
+  {
+   "key": "HIST",
+   "name": "אביב ניהול הנדסה",
+   "names": [
+    "אביב ניהול הנדסה"
+   ],
+   "published_name": "אביב ניהול הנדסה",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "073-2590222"
+   ],
+   "emails": [
+    "avivamcg@avivamcg.com"
+   ]
+  },
+  {
+   "key": "HIST",
+   "name": "ארז ניהול פרוייקטים",
+   "names": [
+    "ארז ניהול פרוייקטים"
+   ],
+   "published_name": "ארז ניהול פרוייקטים",
+   "field": "מנהלי פרויקטים",
+   "phones": [
+    "054-2103000 , 077-3351046"
+   ],
+   "emails": [
+    "office@enp.co.il"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,54 @@
+@layer features {
+  .page {
+    display: grid;
+    gap: var(--space-lg);
+  }
+  .card {
+    display: grid;
+    gap: var(--space-md);
+    padding: var(--space-lg) var(--space-xl);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    & h2,
+    & p {
+      margin: 0;
+    }
+  }
+  .amounts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: var(--space-lg);
+    margin: 0;
+    & dt {
+      color: var(--color-muted);
+    }
+    & dd {
+      margin: 0;
+      font-size: var(--font-lg);
+      font-weight: var(--font-weight-strong);
+    }
+  }
+  .official,
+  .internal {
+    padding: 0 var(--space-sm);
+    border-radius: 999px;
+    border: var(--border-width) solid;
+    font-size: var(--font-small);
+  }
+  .official {
+    color: var(--color-badge-success-text);
+    background: var(--color-badge-success-surface);
+    border-color: var(--color-badge-success-border);
+  }
+  .internal {
+    color: var(--color-badge-warning-text);
+    background: var(--color-badge-warning-surface);
+    border-color: var(--color-badge-warning-border);
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+  }
+}

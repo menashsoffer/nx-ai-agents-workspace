@@ -1,0 +1,84 @@
+{
+ "name": "מאגר יועצים לתחום השיווק והפרסום",
+ "status": "unknown",
+ "note": "נטען מקובץ המאגר המאוחד (17.11.2026). מצב המקור בקובץ: אומת מול המקור.",
+ "url": "https://www.jerusalem.muni.il/media/v2hj25ho/marketing-and-advertising-consultants-database.pdf",
+ "file_name": "marketing-and-advertising-consultants-database.pdf",
+ "rows": [
+  {
+   "key": "SUP-1052",
+   "name": "פוליטי פרסום ואינטראקטיב בע\"מ",
+   "names": [
+    "פוליטי פרסום ואינטראקטיב בע\"מ",
+    "פוליטי פרסום ואינטראקטיבי"
+   ],
+   "published_name": "פוליטי פרסום ואינטראקטיבי",
+   "field": "שיווק ופרסום",
+   "phones": [
+    "02-6797770; 050-5211404"
+   ],
+   "emails": [
+    "chen@psad.co.il"
+   ],
+   "address": "הכפיר 148, ירושלים"
+  },
+  {
+   "key": "SUP-1053",
+   "name": "וידל הפקות",
+   "names": [
+    "וידל הפקות"
+   ],
+   "published_name": "וידל הפקות",
+   "field": "שיווק ופרסום",
+   "phones": [
+    "02-5401410/1; 054-4876247"
+   ],
+   "address": "מבוא פל ים 27, ירושלים"
+  },
+  {
+   "key": "SUP-1054",
+   "name": "יוסף כהן",
+   "names": [
+    "יוסף כהן"
+   ],
+   "published_name": "יוסף כהן",
+   "field": "שיווק ופרסום",
+   "phones": [
+    "054-5450440"
+   ],
+   "address": "מנחם בגין 121, תל אביב"
+  },
+  {
+   "key": "SUP-1055",
+   "name": "צ.ר. פרוג'קטיב בע\"מ",
+   "names": [
+    "צ.ר. פרוג'קטיב בע\"מ",
+    "צ.ר פרוג'קטיב"
+   ],
+   "published_name": "צ.ר פרוג'קטיב",
+   "field": "שיווק ופרסום",
+   "phones": [
+    "03-5492636; 052-3371340"
+   ],
+   "emails": [
+    "tzachi@projective.co.il"
+   ],
+   "address": "בשן 4, רמת השרון",
+   "scheme": "company",
+   "value": "515134922"
+  },
+  {
+   "key": "SUP-1056",
+   "name": "וובטיפ (WEBTIP)",
+   "names": [
+    "וובטיפ (WEBTIP)"
+   ],
+   "published_name": "וובטיפ (WEBTIP)",
+   "field": "שיווק ופרסום",
+   "phones": [
+    "052-4605729"
+   ],
+   "address": "צור שמשון 3/35, רחובות"
+  }
+ ]
+}

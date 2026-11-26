@@ -1,0 +1,60 @@
+@layer features {
+  .list {
+    display: grid;
+    gap: var(--space-lg);
+  }
+  .card {
+    display: grid;
+    gap: var(--space-md);
+    padding: var(--space-lg) var(--space-xl);
+    background: var(--color-surface);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    & h2,
+    & p {
+      margin: 0;
+    }
+  }
+  .facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--space-xs) var(--space-lg);
+    margin: 0;
+    & dt {
+      color: var(--color-muted);
+    }
+    & dd {
+      margin: 0;
+    }
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+  }
+  /* The category list scrolls inside the dialog, so the reason and the button stay in view. */
+  .choices {
+    display: grid;
+    gap: var(--space-xs);
+    max-block-size: 16rem;
+    overflow-y: auto;
+    margin: var(--space-md) 0;
+    padding: var(--space-sm) var(--space-md);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-control);
+    & legend {
+      padding-inline: var(--space-xs);
+      font-weight: var(--font-weight-strong);
+    }
+    & label {
+      display: flex;
+      gap: var(--space-sm);
+      align-items: center;
+      min-block-size: var(--control-min-size);
+    }
+    & p {
+      margin: 0;
+      color: var(--color-muted);
+    }
+  }
+}

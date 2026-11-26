@@ -1,0 +1,159 @@
+@layer ui {
+  .panel {
+    padding: var(--space-lg) var(--space-xl);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+  }
+  .dialog {
+    max-inline-size: min(var(--dialog-max-size), calc(100% - var(--space-2xl)));
+    max-block-size: calc(100dvb - var(--space-2xl));
+    padding: var(--space-xl);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: var(--shadow-overlay);
+    /* Long words and addresses wrap, so a sheet never scrolls sideways on a phone. */
+    overflow-wrap: anywhere;
+    &:modal {
+      overscroll-behavior: contain;
+    }
+    &::backdrop {
+      background: var(--color-backdrop);
+      overflow: hidden;
+      overscroll-behavior: contain;
+    }
+  }
+  .dialogHead {
+    display: flex;
+    gap: var(--space-md);
+    align-items: center;
+    justify-content: space-between;
+    margin-block-end: var(--space-md);
+    & h2 {
+      margin: 0;
+    }
+  }
+  /* Spec 6.2: on a phone a dialog is a sheet from the bottom, full width. */
+  @media (width < 40rem) {
+    .dialog:modal {
+      inline-size: 100%;
+      max-inline-size: 100%;
+      margin-block-end: 0;
+      border-end-start-radius: 0;
+      border-end-end-radius: 0;
+    }
+  }
+  .discard {
+    position: sticky;
+    inset-block-end: calc(-1 * var(--space-xl));
+    margin: var(--space-lg) calc(-1 * var(--space-xl)) calc(-1 * var(--space-xl));
+    padding: var(--space-lg) var(--space-xl);
+    border-block-start: var(--border-width) solid var(--color-badge-warning-border);
+    background: var(--color-badge-warning-surface);
+    color: var(--color-badge-warning-text);
+    & p {
+      margin: 0 0 var(--space-md);
+    }
+  }
+  .discardButtons,
+  .confirmButtons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+  }
+  .confirmButtons {
+    justify-content: space-between;
+    margin-block-start: var(--space-xl);
+  }
+  .tableRegion {
+    max-inline-size: 100%;
+    overflow: auto;
+    container-type: inline-size;
+    margin-block: var(--space-lg);
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-panel);
+    background: var(--color-surface);
+  }
+  .table {
+    inline-size: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    text-align: start;
+    font-variant-numeric: tabular-nums;
+    & caption {
+      text-align: start;
+      font-size: var(--font-lg);
+      font-weight: var(--font-weight-strong);
+      padding: var(--space-lg) var(--space-lg) var(--space-sm);
+    }
+    & :where(th, td) {
+      padding: var(--space-md) var(--space-lg);
+      border-block-end: var(--border-width) solid var(--color-border);
+      text-align: start;
+      vertical-align: top;
+    }
+    & tbody tr:last-child :where(th, td) {
+      border-block-end: 0;
+    }
+    & thead th {
+      position: sticky;
+      inset-block-start: 0;
+      background: var(--color-subtle);
+      color: var(--color-muted);
+      font-size: var(--font-small);
+      font-weight: var(--font-weight-label);
+    }
+    & tbody tr:hover :where(th, td) {
+      background: var(--color-brand-soft);
+    }
+    & tbody th {
+      position: sticky;
+      inset-inline-start: 0;
+      background: var(--color-surface);
+    }
+  }
+  .actionsCell {
+    white-space: nowrap;
+  }
+  /* A narrow table (a phone) becomes one card per row, each value under its column name
+     (responsive-table guidance), so no column is squeezed to one letter per line. */
+  @container (inline-size < 36rem) {
+    .table {
+      &,
+      & :where(caption, tbody, tr, th, td) {
+        display: block;
+      }
+      & thead {
+        display: none;
+      }
+      & tbody tr {
+        padding-block: var(--space-sm);
+        border-block-end: var(--border-width) solid var(--color-border);
+      }
+      & tbody tr:last-child {
+        border-block-end: 0;
+      }
+      & :where(th, td) {
+        padding: var(--space-xs) var(--space-lg);
+        border-block-end: 0;
+      }
+      & tbody th {
+        position: static;
+        font-size: var(--font-lg);
+      }
+      & td[data-label]::before {
+        content: attr(data-label) ': ';
+        color: var(--color-muted);
+        font-size: var(--font-small);
+      }
+      & tbody tr:hover :where(th, td) {
+        background: none;
+      }
+    }
+    .actionsCell {
+      white-space: normal;
+    }
+  }
+}

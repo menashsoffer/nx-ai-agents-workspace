@@ -1,0 +1,31 @@
+{
+ "name": "הליך שליחויות - אגף היועץ המשפטי",
+ "status": "unknown",
+ "note": "נטען מקובץ המאגר המאוחד (17.11.2026). מצב המקור בקובץ: אומת מול המקור.",
+ "url": "https://www.jerusalem.muni.il/media/g4hhxwr3/results_shlicoyot.pdf",
+ "file_name": "results_shlicoyot.pdf",
+ "rows": [
+  {
+   "key": "SUP-1050",
+   "name": "עומרי סיבוני",
+   "names": [
+    "עומרי סיבוני"
+   ],
+   "published_name": "עומרי סיבוני",
+   "field": "שירותי שליחויות"
+  },
+  {
+   "key": "SUP-1051",
+   "name": "דניאל שירותי שליחים",
+   "names": [
+    "דניאל שירותי שליחים"
+   ],
+   "published_name": "דניאל שירותי שליחים",
+   "field": "שירותי שליחויות",
+   "phones": [
+    "052-3070701"
+   ],
+   "address": "יד חרוצים 15, ירושלים"
+  }
+ ]
+}
