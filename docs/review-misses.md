@@ -20,9 +20,8 @@ cause, or delete the test and record why here.
 
 ## Log
 
-| Date       | Change                 | What was missed                 | Rule                                      |
-| ---------- | ---------------------- | ------------------------------- | ----------------------------------------- |
-| 2026-11-26 | PR #141 (privacy leak) | A privacy leak got past review. | Logging/storage/network row (provisional) |
+| Date       | Change                 | What was missed                                                                                                                                                                                                                                                                                                                                                                                    | Rule                                                                                                            |
+| ---------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 2026-11-26 | PR #141 (privacy leak) | The run summary copied free-text SDK fields (`result`, `errors[]` text) and enum fields (`subtype`, `stop_reason`, `terminal_reason`) verbatim, so private text or a registered secret could reach the output. Fixed in a5697d4: only `error_count` is kept, enum fields are allowlisted with an `[unrecognized]` placeholder, `api_error_status` is numeric only, and both leak paths have tests. | Copying external or SDK response fields into logs or a summary needs an allowlist and a leak test (provisional) |
 
-Owner: fill in the exact cause of the #141 miss; the rule row is provisional
-until a second miss confirms the pattern.
+Provisional until a second miss confirms the pattern.
