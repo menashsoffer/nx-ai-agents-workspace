@@ -340,7 +340,7 @@ grows a file past the limits splits it, without pausing to ask.
 
 **Scope:** all committed source code, test code, docs (`*.md`) and workflow
 YAML. Exempt: generated files (lockfiles, build output, `docs/pipeline-map.md`)
-and vendored third-party text (`.agents/skills/`, `.github/skills/`).
+and vendored third-party text (`.agents/skills/`, `.github/skills/`, the imported `apps/jerusalem/`).
 
 ### Limits
 

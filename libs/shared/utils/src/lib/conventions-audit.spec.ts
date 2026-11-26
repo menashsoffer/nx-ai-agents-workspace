@@ -27,7 +27,11 @@ const EXCLUDED_DIRECTORY_NAMES = new Set([
   'test-output',
 ]);
 
+// The imported jerusalem project (git subtree) keeps its own conventions.
+const VENDORED_FOLDER = 'apps/jerusalem/';
+
 function isExcludedPath(relativePath: string): boolean {
+  if (relativePath.startsWith(VENDORED_FOLDER)) return true;
   return relativePath
     .split('/')
     .some((segment) => EXCLUDED_DIRECTORY_NAMES.has(segment));
