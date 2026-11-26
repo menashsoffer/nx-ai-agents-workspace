@@ -89,6 +89,9 @@ pnpm new:spike <name>       # new sandbox experiment
 | GitHub Copilot | `AGENTS.md`, `.github/copilot-instructions.md`, `.github/skills/`                                                                                      |
 | Grok Build     | `AGENTS.md` (native)                                                                                                                                   |
 
+Every agent that works on this repo (pipeline, expert bots, Slack) is listed in
+[`docs/agents.md`](docs/agents.md).
+
 Edit rules in **`AGENTS.md` only**; the other files just point to it. Nx
 maintains its own block at the end of `AGENTS.md` and the skills in
 `.agents/skills/` and `.github/skills/`; refresh them with

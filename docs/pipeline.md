@@ -1,5 +1,7 @@
 # Multi-agent pipeline (stage 1)
 
+Who the agents are: [agents.md](agents.md).
+
 An issue goes in; a reviewed, previewed, human-approved pull request comes
 out. Claude does the writing. Deterministic workflows move work
 between stages, check every agent output, and hold every token that can
