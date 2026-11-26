@@ -55,6 +55,9 @@ Gemini stages ([ADR](decisions/2026-11-23-claude-review-stage.md)).
   `pipeline:plan` comments: requirements not implemented, missing tests for
   edge cases the plan lists, correctness and security. **No style.** Earlier
   findings on the PR are passed in, so a resolved one is not raised again.
+- **Rules:** the reviewer also applies `.github/prompts/review-rules.md`, a
+  checklist of diff triggers loaded from the default branch, never from the PR.
+  Misses become rules through [review-misses.md](review-misses.md).
 - **Read-only agent:** its job has read permissions only, tools `Read`,
   `Glob`, `Grep`, and the PR's `.claude/`, `.codex/` and `.mcp.json` are
   deleted from the checkout first. It does not run `pnpm verify`: CI already
