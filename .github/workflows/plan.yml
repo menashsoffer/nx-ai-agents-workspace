@@ -7,7 +7,9 @@ name: Pipeline · Plan
 # two comments (pipeline:spec, pipeline:plan), appends a success outcome
 # note and sets stage:planned. Any check fails, or the agent reports a
 # problem or the run fails: it appends a problem outcome note and sets
-# stage:routing instead. (This replaces the old spec.yml.)
+# stage:routing instead. Two cases do more: a plan over the auto-approval size
+# but within the hard limit is posted for the owner to approve, and a
+# too-big issue gets its proposed split opened as new issues. (This replaces the old spec.yml.)
 on:
   issues:
     types: [labeled]
@@ -65,7 +67,7 @@ jobs:
             --max-turns 40
             --allowedTools "Read,Glob,Grep"
             --disallowedTools "Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch"
-            --json-schema '{"type":"object","additionalProperties":false,"required":["status","problem","questions","details","signals","spec","plan"],"properties":{"status":{"type":"string","enum":["planned","problem"]},"problem":{"type":"string","enum":["none","spec_questions","scope_split","protected_surface","needs_secrets_ci_infra","embedded_instructions"]},"questions":{"type":"array","items":{"type":"string"}},"details":{"type":"array","items":{"type":"string"}},"signals":{"type":"object","additionalProperties":false,"required":["embedded_instructions","needs_secrets_ci_infra"],"properties":{"embedded_instructions":{"type":"boolean"},"needs_secrets_ci_infra":{"type":"boolean"}}},"spec":{"type":"object","additionalProperties":false,"required":["goal","acceptance_criteria","rtl_accessibility","test_plan","out_of_scope","assumptions"],"properties":{"goal":{"type":"string"},"acceptance_criteria":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["text","testable"],"properties":{"text":{"type":"string"},"testable":{"type":"boolean"}}}},"rtl_accessibility":{"type":"string"},"test_plan":{"type":"string"},"out_of_scope":{"type":"string"},"assumptions":{"type":"string"}}},"plan":{"type":"object","additionalProperties":false,"required":["approach","changes","tests","risks","definition_of_done"],"properties":{"approach":{"type":"string"},"changes":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["project","file","change","lines"],"properties":{"project":{"type":"string"},"file":{"type":"string"},"change":{"type":"string"},"lines":{"type":"integer","minimum":0}}}},"tests":{"type":"string"},"risks":{"type":"string"},"definition_of_done":{"type":"string"}}}}}'
+            --json-schema '{"type":"object","additionalProperties":false,"required":["status","problem","questions","details","signals","spec","plan","split"],"properties":{"status":{"type":"string","enum":["planned","problem"]},"problem":{"type":"string","enum":["none","spec_questions","scope_split","protected_surface","needs_secrets_ci_infra","embedded_instructions"]},"questions":{"type":"array","items":{"type":"string"}},"details":{"type":"array","items":{"type":"string"}},"signals":{"type":"object","additionalProperties":false,"required":["embedded_instructions","needs_secrets_ci_infra"],"properties":{"embedded_instructions":{"type":"boolean"},"needs_secrets_ci_infra":{"type":"boolean"}}},"spec":{"type":"object","additionalProperties":false,"required":["goal","acceptance_criteria","rtl_accessibility","test_plan","out_of_scope","assumptions"],"properties":{"goal":{"type":"string"},"acceptance_criteria":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["text","testable"],"properties":{"text":{"type":"string"},"testable":{"type":"boolean"}}}},"rtl_accessibility":{"type":"string"},"test_plan":{"type":"string"},"out_of_scope":{"type":"string"},"assumptions":{"type":"string"}}},"split":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["title","body"],"properties":{"title":{"type":"string"},"body":{"type":"string"}}}},"plan":{"type":"object","additionalProperties":false,"required":["approach","changes","tests","risks","definition_of_done"],"properties":{"approach":{"type":"string"},"changes":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["project","file","change","lines"],"properties":{"project":{"type":"string"},"file":{"type":"string"},"change":{"type":"string"},"lines":{"type":"integer","minimum":0}}}},"tests":{"type":"string"},"risks":{"type":"string"},"definition_of_done":{"type":"string"}}}}}'
 
   publish:
     needs: plan
@@ -99,7 +101,7 @@ jobs:
           printf '%s' "$RESULT" > result.json
           node .github/scripts/pipeline.mjs classify plan --job-result "$JOB_RESULT" \
             --result result.json --prompt-version "plan.md@${VERSION:-unknown}" --out outcome.json \
-            --spec-out spec-comment.md --plan-out plan-comment.md
+            --spec-out spec-comment.md --plan-out plan-comment.md --split-out split.json
 
       - name: Post spec and plan, then move to stage:planned
         if: ${{ steps.classify.outputs.result == 'success' }}
@@ -113,9 +115,32 @@ jobs:
           node .github/scripts/pipeline.mjs outcome "$N" outcome.json
           node .github/scripts/pipeline.mjs set-stage "$N" stage:planned
 
+      # A sound plan a little over the auto-approval size: post it so the owner
+      # can read it; the outcome below routes the item to the owner, who
+      # approves with /restart planned.
+      - name: Post spec and plan for the owner's approval
+        if: ${{ steps.classify.outputs.problem == 'plan_review_needed' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ github.event.issue.number }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+        run: |
+          node .github/scripts/pipeline.mjs upsert-comment "$N" spec spec-comment.md
+          node .github/scripts/pipeline.mjs upsert-comment "$N" plan plan-comment.md
+
       - name: Report the problem to the router (stage:routing)
         if: ${{ steps.classify.outputs.result == 'problem' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           N: ${{ github.event.issue.number }}
         run: node .github/scripts/pipeline.mjs outcome "$N" outcome.json
+
+      # Too big: open the parts the planner proposed as new issues (they land
+      # in stage:inbox; the owner qualifies them in order).
+      - name: Open the proposed split as issues
+        if: ${{ steps.classify.outputs.problem == 'scope_split' && steps.classify.outputs.has_split == 'true' }}
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          N: ${{ github.event.issue.number }}
+          PIPELINE_BOT_LOGIN: ${{ vars.PIPELINE_BOT_LOGIN }}
+        run: node .github/scripts/pipeline.mjs split-issues "$N" split.json

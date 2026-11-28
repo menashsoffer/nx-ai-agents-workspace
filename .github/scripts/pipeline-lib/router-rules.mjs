@@ -76,6 +76,15 @@ const RULES = [
     target: 'human',
     reason: 'the work is too big for one PR: split the issue',
   },
+  // The plan is fine, only a little over the auto-approval size: the spec
+  // and plan are posted; the owner approves with /restart planned.
+  {
+    stage: 'plan',
+    problems: ['plan_review_needed'],
+    target: 'human',
+    reason:
+      'the plan is over the auto-approval size: read the spec and plan, then approve with /restart planned',
+  },
   {
     stage: 'develop',
     problems: ['verify_failed', 'agent_error'],

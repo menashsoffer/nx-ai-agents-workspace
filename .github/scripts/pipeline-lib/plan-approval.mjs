@@ -16,10 +16,18 @@ export const parseJson = (raw) => {
 
 // The plan stage is one Claude run that writes two artifacts (a spec and a
 // plan). The item moves straight to stage:planned only if every check in
-// evaluatePlanApproval passes. Two-week trial: tune these two numbers here.
+// evaluatePlanApproval passes. Tune these numbers here.
 /** Auto-approval size limits: files the plan touches, and estimated lines. */
 export const PLAN_MAX_FILES = 10;
 
+/** Up to this many estimated lines the plan is approved automatically. */
+export const PLAN_AUTO_MAX_LINES = 300;
+
+/**
+ * Hard limit: above it the work must be split (`scope_split`). Between
+ * PLAN_AUTO_MAX_LINES and this limit the plan is posted and the owner
+ * approves it (`plan_review_needed`).
+ */
 export const PLAN_MAX_LINES = 400;
 
 /**
@@ -43,6 +51,7 @@ const PLAN_PROBLEM_PRIORITY = [
   'invalid_output',
   'spec_questions',
   'scope_split',
+  'plan_review_needed',
 ];
 
 const isText = (v) => typeof v === 'string' && v.trim().length > 0;
@@ -124,8 +133,9 @@ function checkPlanShape(r) {
  *   FORBIDDEN_PATH_PATTERNS; approvable ones pass and are reported as
  *   `protectedPaths`, the owner approves them before a PR opens), and the
  *   planner reports no need for secrets, CI or infrastructure;
- * - size: at most `limits.maxFiles` files and `limits.maxLines` estimated
- *   changed lines;
+ * - size: at most `limits.maxFiles` files and `limits.autoMaxLines`
+ *   estimated changed lines (more, up to `limits.maxLines`, is a sound plan
+ *   that the owner approves: `plan_review_needed`; beyond that: `scope_split`);
  * - the planner reported no instructions embedded in the issue.
  * Returns `{ approved: true, files, lines, protectedPaths? }` (the last only
  * when the plan touches approvable protected paths), or `{ approved: false,
@@ -134,7 +144,11 @@ function checkPlanShape(r) {
  */
 export function evaluatePlanApproval(
   result,
-  { maxFiles = PLAN_MAX_FILES, maxLines = PLAN_MAX_LINES } = {},
+  {
+    maxFiles = PLAN_MAX_FILES,
+    maxLines = PLAN_MAX_LINES,
+    autoMaxLines = PLAN_AUTO_MAX_LINES,
+  } = {},
 ) {
   const r = result && typeof result === 'object' ? result : {};
   const failures = [];
@@ -174,6 +188,11 @@ export function evaluatePlanApproval(
       fail(
         'scope_split',
         `The plan is estimated at ${shape.lines} changed lines (limit ${maxLines}).`,
+      );
+    else if (shape.lines > autoMaxLines)
+      fail(
+        'plan_review_needed',
+        `The plan is estimated at ${shape.lines} changed lines: over the auto-approval size (${autoMaxLines}) but within the limit (${maxLines}). The owner approves it with /restart planned.`,
       );
   }
   if (!failures.length)

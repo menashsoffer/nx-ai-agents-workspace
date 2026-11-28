@@ -58,6 +58,12 @@ export const MARKERS = {
   // Prefix with attributes: the top comment of a review thread the pipeline
   // bot opened for one finding of the Claude review (review.yml).
   reviewFinding: '<!-- pipeline:review-finding',
+  // One upserted bot comment on a too-big issue: the parts the pipeline
+  // opened from the planner's proposed split (see pipeline-lib/split.mjs).
+  split: '<!-- pipeline:split -->',
+  // Prefix with attributes, in the body of an issue the pipeline opened as
+  // one part of a split.
+  splitChild: '<!-- pipeline:split-child',
   // The one-time pointer to /restart after a person moved an item out of
   // stage:needs-attention by hand (see decideRestartHint).
   restartHint: '<!-- pipeline:restart-hint -->',

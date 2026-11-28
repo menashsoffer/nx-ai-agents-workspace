@@ -4,6 +4,7 @@ import {
   issueFromBranch,
   branchIssueEligible,
   planPrClosed,
+  stageEdits,
   stageTransition,
   clearStages,
   prClosedOutcome,
@@ -185,7 +186,7 @@ export const lifecycleCommands = {
     for (const i of plan.issues) {
       const n = num(i.number);
       if (i.action === 'done')
-        editLabels(n, stageTransition(labelsOf(n), 'stage:done'));
+        editLabels(n, stageEdits(labelsOf(n), 'stage:done'));
       else if (i.action === 'route')
         writeOutcome(n, prClosedOutcome({ pr, closedBy: plan.closedBy }));
     }

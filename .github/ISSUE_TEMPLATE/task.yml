@@ -19,7 +19,7 @@ body:
     id: acceptance-criteria
     attributes:
       label: Acceptance criteria
-      description: Testable statements, one per line.
+      description: One Given/When/Then statement per line that a test could check. Say which cases and which result, not "covers X".
       placeholder: |
         - A theme toggle is visible in the header on every page.
         - The choice persists across reloads.
@@ -30,7 +30,7 @@ body:
     id: size
     attributes:
       label: Size
-      description: 'S: under a day. M: 1 to 3 days. L: up to a week. Bigger? Split it.'
+      description: 'S: under a day. M: 1 to 3 days. L: up to a week. One pull request per issue: at most 300 changed lines and 10 files, tests included. Bigger, or several stages? Open one issue per stage.'
       options:
         - S
         - M

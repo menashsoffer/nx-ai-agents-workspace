@@ -8,6 +8,8 @@ import {
   normalizeOutcome,
   renderSpecComment,
   renderPlanComment,
+  parseJson,
+  parseSplit,
   routerSkip,
   collectRouterInput,
   allowedTargets,
@@ -50,6 +52,30 @@ const classifiers = {
       patchRejected: f['patch-rejected'] === 'true',
     }),
 };
+
+/**
+ * A plan run's extra files. An approved plan, or one that waits for the
+ * owner's approval (`plan_review_needed`), yields its two comment bodies.
+ * A too-big issue yields the parts of the planner's proposed split.
+ */
+function writePlanOutputs(outcome, f) {
+  const result = parseJson(readIf(f.result));
+  const version = f['prompt-version'] ?? undefined;
+  const needsOwnerApproval = outcome.problem === 'plan_review_needed';
+  if (outcome.result === 'success' || needsOwnerApproval) {
+    writeFileSync(
+      f['spec-out'],
+      renderSpecComment(result, version, { needsOwnerApproval }),
+    );
+    writeFileSync(
+      f['plan-out'],
+      renderPlanComment(result, version, { needsOwnerApproval }),
+    );
+  }
+  const parts = outcome.problem === 'scope_split' ? parseSplit(result) : [];
+  if (f['split-out']) writeFileSync(f['split-out'], JSON.stringify(parts));
+  setOutput('has_split', String(parts.length > 0));
+}
 
 // ------------------------------------------------------------ commands
 export const coreCommands = {
@@ -99,13 +125,7 @@ export const coreCommands = {
       prompt_version: f['prompt-version'] ?? '',
     });
     writeFileSync(f.out, JSON.stringify(outcome));
-    // An approved plan run also yields its two comment bodies.
-    if (stage === 'plan' && outcome.result === 'success') {
-      const result = JSON.parse(readIf(f.result));
-      const version = f['prompt-version'] ?? undefined;
-      writeFileSync(f['spec-out'], renderSpecComment(result, version));
-      writeFileSync(f['plan-out'], renderPlanComment(result, version));
-    }
+    if (stage === 'plan') writePlanOutputs(outcome, f);
     setOutput('result', outcome.result);
     setOutput('problem', outcome.problem);
   },

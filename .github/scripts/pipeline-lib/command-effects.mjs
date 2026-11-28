@@ -128,6 +128,15 @@ export const COMMAND_EFFECTS = {
     appends: ['outcome', 'reviewFinding'],
     emits: ['issue_comment', 'pull_request_review'],
   },
+  // plan.yml: opens the parts of a too-big issue's proposed split as new
+  // issues (each triggers the inbox workflow) and records them in the split
+  // comment on the too-big issue.
+  'split-issues': {
+    stages: [],
+    markers: ['split'],
+    appends: [],
+    emits: [],
+  },
   // A new head with protected changes: a new approval request on the issue.
   'protected-status': {
     stages: ['stage:awaiting-approval'],

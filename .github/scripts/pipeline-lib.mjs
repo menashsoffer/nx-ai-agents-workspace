@@ -21,7 +21,11 @@ export {
   previewUrl,
   promptVersion,
   shouldMarkReady,
+  STATUS_IN_PROGRESS,
+  STATUS_WAITING_FOR_OWNER,
+  stageEdits,
   stageTransition,
+  statusLabelEdits,
 } from './pipeline-lib/naming.mjs';
 export { parseFlags, renderPrompt } from './pipeline-lib/prompts.mjs';
 export {
@@ -130,9 +134,11 @@ export {
 } from './pipeline-lib/restart.mjs';
 export {
   PLAN_AGENT_PROBLEMS,
+  PLAN_AUTO_MAX_LINES,
   PLAN_MAX_FILES,
   PLAN_MAX_LINES,
   evaluatePlanApproval,
+  parseJson,
 } from './pipeline-lib/plan-approval.mjs';
 export {
   classifyDevelop,
@@ -140,4 +146,11 @@ export {
   renderPlanComment,
   renderSpecComment,
 } from './pipeline-lib/plan-comments.mjs';
+export {
+  isSplitChild,
+  parseCreatedParts,
+  parseSplit,
+  renderChildBody,
+  renderSplitComment,
+} from './pipeline-lib/split.mjs';
 export { COMMAND_EFFECTS } from './pipeline-lib/command-effects.mjs';
