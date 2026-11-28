@@ -8,6 +8,7 @@ import { coreCommands } from './pipeline/commands-core.mjs';
 import { lifecycleCommands } from './pipeline/commands-lifecycle.mjs';
 import { ownerCommands } from './pipeline/commands-owner.mjs';
 import { protectedCommands } from './pipeline/commands-protected.mjs';
+import { splitCommands } from './pipeline/commands-split.mjs';
 import { reviewCommands } from './pipeline/commands-review.mjs';
 
 const [, , command, ...argv] = process.argv;
@@ -19,6 +20,7 @@ const commands = {
   ...ownerCommands,
   ...protectedCommands,
   ...lifecycleCommands,
+  ...splitCommands,
 };
 
 if (!commands[command]) {

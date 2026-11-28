@@ -31,7 +31,7 @@ decides what happens next.
 | `stage:inbox`             | `inbox.yml`                            | New issue. A maintainer triages it.                                                                                                                                                                  |
 | `stage:qualified`         | **a human**, `restart.yml`             | Starts the planning agent (`plan.yml`): one Claude run writes the spec **and** the plan. (Also the owner's `/restart qualified`.)                                                                    |
 | `stage:spec`              | _nothing_                              | **Deprecated.** No workflow sets it or starts a stage on it. It stays so old items keep their board column.                                                                                          |
-| `stage:planned`           | `plan.yml`, `restart.yml`              | Spec and plan comments posted and auto-approved (or the owner's `/restart planned`). Starts the develop agent.                                                                                       |
+| `stage:planned`           | `plan.yml`, `restart.yml`              | Spec and plan comments posted and auto-approved (up to 300 lines), or the owner's `/restart planned` (needed for 301 to 400 lines). Starts the develop agent.                                        |
 | `stage:awaiting-approval` | `develop.yml`, `protected-approve.yml` | Protected changes are pushed to a branch with **no PR**; the owner reads the diff and approves or rejects. See [Protected-change approval](pipeline-protected-changes.md#protected-change-approval). |
 | `stage:building`          | `develop.yml`                          | Draft PR open (on the issue and the PR). CI runs, then the independent Claude review (`review.yml`).                                                                                                 |
 | `stage:human-approval`    | `approval.yml`                         | Everything green. A human reviews the PR and the preview, then approves and merges.                                                                                                                  |
@@ -70,6 +70,46 @@ trusted by the router.
 to a closed issue or PR, except `stage:done`, so a late label cannot pull a
 card out of Done. The router ignores closed issues and PRs (label events
 and manual runs); an open issue whose PR was closed still routes.
+
+## Writing an issue the planner accepts
+
+Most stops at `stage:needs-attention` come from the issue, not the agents:
+too big, or criteria nobody can test. Write each issue (a person, or Claude
+in a project thread) so that it passes the first time:
+
+- **One pull request per issue.** At most **300 changed lines** and
+  **10 files**, tests and screen baselines included. Many changed baselines
+  or fixtures count as files. A plan of 301 to 400 lines still goes through,
+  but waits for the owner (below); over 400 lines or 10 files the issue is
+  split.
+- **One stage per issue.** A spec with stages 1 to 4 is four issues. Open
+  them in build order and say in each what it relies on.
+- **Testable criteria.** One Given/When/Then statement per line that a unit,
+  component or Playwright test could check. Not "the topics cover X" or "the
+  text matches document Y": say which cases, which inputs, which result.
+- **Task format.** Goal, Acceptance criteria, Size, Area (see the Task issue
+  form). Do not set the board's in-progress status label by hand on an issue
+  the pipeline has not started.
+
+### What the planner does when an issue does not fit
+
+| Plan size or problem                | What happens                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| up to 300 lines and 10 files        | Auto-approved: `stage:planned`.                                                                                                                                                                                                                                                                                                                                                                                         |
+| 301 to 400 lines (at most 10 files) | The spec and plan are posted and the item goes to `stage:needs-attention` (`plan_review_needed`). The owner reads them and approves with `/restart planned <reason>`.                                                                                                                                                                                                                                                   |
+| over 400 lines or over 10 files     | `scope_split`. The planner writes the split (two to six parts, in build order, each a complete task issue). `split-issues` opens the parts in `stage:inbox` and lists them in a `pipeline:split` comment. The owner qualifies them one at a time, each after the previous part merged. The too-big issue stays in `stage:needs-attention` for the owner to close. A part of a split is never split again automatically. |
+| a criterion that is not testable    | The planner rewrites it as a testable statement and records how it read it under `assumptions`. It asks (`spec_questions`) only when two readings would lead to different work.                                                                                                                                                                                                                                         |
+
+### Status labels
+
+When an item moves to `stage:needs-attention` and carries the board's
+in-progress label (`סטטוס: בעבודה`), the pipeline swaps it for the
+waiting-for-owner label (`סטטוס: ממתין לבעלים`); `/restart` swaps it back, and
+`stage:done` removes it. Items without the in-progress label are left alone, so
+a repository that does not use these labels sees no change. A product that
+names them differently sets `STATUS_LABEL_IN_PROGRESS` and
+`STATUS_LABEL_WAITING_FOR_OWNER` as environment variables on the workflow jobs
+that run the pipeline script.
 
 ## Workflows
 

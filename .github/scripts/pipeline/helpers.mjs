@@ -16,7 +16,7 @@ import {
   emptyState,
   parseRequireCopilot,
   renderState,
-  stageTransition,
+  stageEdits,
   normalizeOutcome,
   renderOutcome,
   GATES_CONTEXT,
@@ -69,7 +69,7 @@ export function writeState(pr, state, labels = labelsOf(pr)) {
 }
 
 export function setStage(number, stage) {
-  editLabels(number, stageTransition(labelsOf(number), stage));
+  editLabels(number, stageEdits(labelsOf(number), stage));
 }
 
 // ------------------------------------------------------------ outcomes

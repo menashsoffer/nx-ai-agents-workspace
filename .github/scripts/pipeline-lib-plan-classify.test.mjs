@@ -99,6 +99,7 @@ test('the planner schema in plan.yml matches the lib', () => {
     'questions',
     'signals',
     'spec',
+    'split',
     'status',
   ]);
   // an example built from the schema's own required fields is accepted

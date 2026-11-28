@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import {
   evaluatePlanApproval,
+  PLAN_AUTO_MAX_LINES,
   PLAN_MAX_FILES,
   PLAN_MAX_LINES,
 } from './pipeline-lib.mjs';
@@ -188,11 +189,21 @@ test('auto-approval: size limits are scope_split, both thresholds inclusive', ()
   const tooManyFiles = at(PLAN_MAX_FILES + 1, 1);
   assert.equal(tooManyFiles.problem, 'scope_split');
   assert.match(tooManyFiles.details[0], /11 files \(limit 10\)/);
-  // 4 files x 100 lines = exactly the line limit
+  // 4 files x 75 lines = exactly the auto-approval line limit
   assert.equal(
-    at(4, PLAN_MAX_LINES / 4).approved,
+    at(4, PLAN_AUTO_MAX_LINES / 4).approved,
     true,
-    'exactly the line limit',
+    'exactly the auto-approval line limit',
+  );
+  // 4 files x 76 lines = 304: a sound plan the owner must approve
+  const needsOwner = at(4, PLAN_AUTO_MAX_LINES / 4 + 1);
+  assert.equal(needsOwner.problem, 'plan_review_needed');
+  assert.match(needsOwner.details[0], /304 changed lines/);
+  // 4 files x 100 lines = exactly the hard line limit
+  assert.equal(
+    at(4, PLAN_MAX_LINES / 4).problem,
+    'plan_review_needed',
+    'exactly the hard line limit',
   );
   const tooManyLines = at(4, PLAN_MAX_LINES / 4 + 1);
   assert.equal(tooManyLines.problem, 'scope_split');
@@ -218,11 +229,15 @@ test('auto-approval: size limits are scope_split, both thresholds inclusive', ()
     'scope_split',
   );
   assert.equal(
-    evaluatePlanApproval(planned(), { maxLines: 49 }).problem,
+    evaluatePlanApproval(planned(), { maxLines: 49, autoMaxLines: 49 }).problem,
     'scope_split',
   );
   assert.equal(
-    evaluatePlanApproval(planned(), { maxLines: 50 }).approved,
+    evaluatePlanApproval(planned(), { autoMaxLines: 49 }).problem,
+    'plan_review_needed',
+  );
+  assert.equal(
+    evaluatePlanApproval(planned(), { autoMaxLines: 50 }).approved,
     true,
   );
 });

@@ -3,7 +3,7 @@ import { MARKERS, STAGES } from './constants.mjs';
 import { MAX_LIFETIME_RESETS, emptyState } from './state.mjs';
 import { clean } from './outcomes.mjs';
 import { checkDispositionAuthor } from './dispositions.mjs';
-import { sameLogin, stageTransition } from './naming.mjs';
+import { sameLogin, stageEdits } from './naming.mjs';
 
 // ---------------------------------------------------------------- restart
 
@@ -140,7 +140,7 @@ export function decideRestart({
     return reply(
       `pull request #${pullRequests[0].number} is still open for this issue: close it first`,
     );
-  const edit = stageTransition(issue.labels, RESTART_STAGES[stage]);
+  const edit = stageEdits(issue.labels, RESTART_STAGES[stage]);
   if (state.resetCount >= MAX_LIFETIME_RESETS)
     return {
       action: 'reply',

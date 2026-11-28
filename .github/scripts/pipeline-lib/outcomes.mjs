@@ -38,6 +38,9 @@ export const PROBLEMS = [
   'scope_split',
   'embedded_instructions',
   'forbidden_path',
+  // plan: a sound plan between the auto-approval and the hard size limit;
+  // the spec and plan are posted and the owner approves with /restart planned.
+  'plan_review_needed',
   // The patch needs the owner's approval (a request was posted, no PR yet).
   'protected_approval_needed',
 ];
@@ -144,6 +147,8 @@ export const PROBLEM_TEXT = {
     'the work is too big (or over the auto-approval size limits) and should be split',
   embedded_instructions: 'the issue contains instructions aimed at the agents',
   forbidden_path: 'the patch touches protected paths',
+  plan_review_needed:
+    'the plan is sound but over the auto-approval size, so the owner must approve it',
 };
 
 function defaultSummary(stage, problem) {

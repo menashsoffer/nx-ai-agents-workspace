@@ -34,6 +34,10 @@ and `pipeline/gates`) is the only way into `main`
   `<!-- pipeline:plan -->`) and, if every
   [auto-approval check](pipeline-running.md#spec-and-plan-auto-approval)
   passes, sets `stage:planned`. Otherwise an outcome note and `stage:routing`.
+  Two cases do more (see "Writing an issue the planner accepts" in
+  [pipeline.md](pipeline.md)): a plan of 301 to 400 lines is posted for the
+  owner to approve with `/restart planned`, and a too-big issue (`scope_split`)
+  gets the planner's `split` opened as new issues by `split-issues`.
 
 ### Develop
 

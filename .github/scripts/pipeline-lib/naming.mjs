@@ -13,6 +13,59 @@ export function stageTransition(currentLabels, target) {
 }
 
 /**
+ * The board's "in progress" status label (set by people, not the pipeline).
+ * A product that names it differently sets the STATUS_LABEL_IN_PROGRESS
+ * environment variable in its workflows.
+ */
+export const STATUS_IN_PROGRESS =
+  process.env.STATUS_LABEL_IN_PROGRESS || 'סטטוס: בעבודה';
+
+/**
+ * The board's "waiting for the owner" status label. Override with
+ * STATUS_LABEL_WAITING_FOR_OWNER (for example to name the owner).
+ */
+export const STATUS_WAITING_FOR_OWNER =
+  process.env.STATUS_LABEL_WAITING_FOR_OWNER || 'סטטוס: ממתין לבעלים';
+
+/**
+ * Edits that keep the board's status label true to the stage. An item that
+ * stops at stage:needs-attention is waiting for the owner, not in progress;
+ * when the owner restarts it, it is in progress again; a finished item is no
+ * longer in progress. Items without the in-progress label are left alone
+ * (unless they come back from stage:needs-attention with the waiting label),
+ * so repositories that do not use these labels see no change.
+ */
+export function statusLabelEdits(currentLabels, target) {
+  const none = { add: [], remove: [] };
+  const hasLabel = (l) => currentLabels.includes(l);
+  if (hasLabel(STATUS_IN_PROGRESS)) {
+    if (target === 'stage:needs-attention')
+      return { add: [STATUS_WAITING_FOR_OWNER], remove: [STATUS_IN_PROGRESS] };
+    if (target === 'stage:done')
+      return { add: [], remove: [STATUS_IN_PROGRESS] };
+    return none;
+  }
+  const isResumed = ['stage:qualified', 'stage:planned'].includes(target);
+  if (
+    isResumed &&
+    hasLabel('stage:needs-attention') &&
+    hasLabel(STATUS_WAITING_FOR_OWNER)
+  )
+    return { add: [STATUS_IN_PROGRESS], remove: [STATUS_WAITING_FOR_OWNER] };
+  return none;
+}
+
+/** The stage transition plus the status label edits that go with it. */
+export function stageEdits(currentLabels, target) {
+  const stage = stageTransition(currentLabels, target);
+  const status = statusLabelEdits(currentLabels, target);
+  return {
+    add: [...stage.add, ...status.add],
+    remove: [...stage.remove, ...status.remove],
+  };
+}
+
+/**
  * Label edits that leave no stage: for a PR closed without merging, which no
  * stage may pick up again.
  */
